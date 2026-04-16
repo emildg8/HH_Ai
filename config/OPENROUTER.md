@@ -18,7 +18,7 @@
 - **`openrouter/free`** — маршрутизатор, сам выбирает доступную бесплатную модель, или  
 - id заканчивается на **`:free`** (например `google/gemma-2-9b-it:free`).
 
-Переменная **`OPENROUTER_MODEL`**, если не задана: в коде используется **`qwen/qwen3.6-plus-preview:free`**. Чтобы снова доверить выбор модели OpenRouter, задайте **`OPENROUTER_MODEL=openrouter/free`**.
+Переменная **`OPENROUTER_MODEL`**, если не задана: в коде используется **`openrouter/free`** (маршрутизатор бесплатных моделей). Явную модель с суффиксом `:free` задайте так: **`OPENROUTER_MODEL=google/gemma-2-9b-it:free`** и т.п.
 
 Чтобы разрешить **платные** модели (не для тестового «только free» режима):
 
@@ -46,6 +46,37 @@ OPENROUTER_MODEL=anthropic/claude-3.5-haiku
 Промпт сформулирован от лица **соискателя** (советы «вам», отклик).
 
 Резюме в `CV/` поддерживаются **`.md`**, `.txt` и `.pdf`.
+
+## Свой LLM (Ollama, LM Studio, vLLM…)
+
+Оценка вакансий использует **тот же** формат, что и OpenRouter: `POST …/v1/chat/completions` (ответ OpenAI Chat).
+
+Если заданы **и OpenRouter, и внутренний LLM**, по умолчанию вызывается **только внутренний LLM** (`HH_OPENROUTER_MAX_CALLS_PER_RUN` пусто → **0**). Чтобы сначала идти в OpenRouter, задайте, например, **`HH_OPENROUTER_MAX_CALLS_PER_RUN=30`**: тогда до N успешных вызовов — OpenRouter, при ошибке квоты (429 и т.п.) — запасной канал.
+
+Сопроводительные в дашборде используют ту же схему (`HH_CUSTOM_LLM_*` и лимит вызовов OpenRouter).
+
+Пример **Ollama**:
+
+```env
+HH_CUSTOM_LLM_BASE_URL=http://127.0.0.1:11434/v1
+HH_CUSTOM_LLM_MODEL=llama3.2
+# при необходимости:
+# HH_CUSTOM_LLM_API_KEY=
+```
+
+Пример **LM Studio** (локальный сервер на порту по умолчанию):
+
+```env
+HH_CUSTOM_LLM_BASE_URL=http://127.0.0.1:1234/v1
+HH_CUSTOM_LLM_MODEL=…
+HH_CUSTOM_LLM_API_KEY=…
+```
+
+Допустимые алиасы: **`OLLAMA_BASE_URL`**, **`OLLAMA_MODEL`** вместо первых двух переменных.
+
+Переменные для OpenRouter (`OPENROUTER_MODEL`, `:free` и т.д.) задают модель **пока** запросы идут через OpenRouter; после переключения на внутренний LLM используется **`HH_CUSTOM_LLM_MODEL`**.
+
+- **`HH_OPENROUTER_MAX_CALLS_PER_RUN`** — сколько раз за прогон сначала вызывать OpenRouter при настроенном и ключе, и внутреннем LLM. Пустое значение + внутренний LLM = **0** по умолчанию (только локальный канал). **`30`** — гибрид «сначала OpenRouter». Без внутреннего LLM — без верхней границы по OpenRouter.
 
 ## Команды
 

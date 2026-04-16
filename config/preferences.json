@@ -1,4 +1,5 @@
 {
+  "minMonthlyRub": 150000,
   "minMonthlyUsd": 0,
   "rubPerUsd": 98,
   "requireRemote": false,

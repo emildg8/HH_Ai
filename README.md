@@ -212,7 +212,7 @@ npm run codegen-hh
 | `HH_MAX_TOTAL` / `HH_SESSION_LIMIT` | Лимит вакансий за запуск |
 | `HH_OPEN_DELAY_MIN_MS` | Пауза между открытиями, мс |
 | `OpenRouter_API_KEY` | Ключ OpenRouter |
-| `OPENROUTER_MODEL` | Модель (по умолчанию `qwen/qwen3.6-plus-preview:free`) |
+| `OPENROUTER_MODEL` | Модель (по умолчанию `openrouter/free`) |
 | `TELEGRAM_BOT_TOKEN` | Токен Telegram-бота |
 | `TELEGRAM_CHAT_ID` | ID чата/канала |
 

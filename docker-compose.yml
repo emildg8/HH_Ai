@@ -11,4 +11,8 @@ services:
     env_file:
       - .env
       - config/secrets.local.env
+    environment:
+      # Ollama на хосте Windows/Mac (Docker Desktop): 127.0.0.1 из контейнера не виден.
+      HH_CUSTOM_LLM_BASE_URL: http://host.docker.internal:11434/v1
+      HH_CUSTOM_LLM_MODEL: llama3.2
     restart: unless-stopped

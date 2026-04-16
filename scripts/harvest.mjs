@@ -1,8 +1,12 @@
 /**
- * Сбор вакансий: поиск → парсинг → фильтры → оценка через OpenRouter (бесплатные модели по умолчанию) → data/vacancies-queue.json.
+ * Сбор вакансий по ключам (как у vacancies) → парсинг → фильтры → оценка LLM (OpenRouter, при лимите — HH_CUSTOM_LLM_*) → data/vacancies-queue.json для дашборда.
+ * Открытие множества вкладок — только npm run vacancies; для очереди+оценки используйте эту команду.
  *
  * Перед запуском: npm run login, в secrets — OpenRouter_API_KEY.
  * Флаги: --skip-llm | --skip-gemini — без вызова LLM (score=0).
+ * Лимиты: до 500 записей за запуск (HH_SESSION_LIMIT / HH_MAX_TOTAL, HH_PER_KEYWORD_LIMIT).
+ * Квота LLM: HH_LLM_MAX_PER_RUN — макс. вызовов OpenRouter за запуск (по умолчанию 30; дальше — без оценки).
+ * Дашборд: каждые HH_DASHBOARD_TICK_EVERY (20) новых записей — сигнал в data/harvest-dashboard-tick.json для обновления UI.
  */
 
 import { chromium } from 'playwright';
@@ -13,14 +17,24 @@ import { loadEnv } from '../lib/load-env.mjs';
 loadEnv();
 
 import { loadSearchKeywords } from '../lib/load-keywords.mjs';
-import { sessionProfilePath, ROOT, SKIPPED_FILE, DATA_DIR } from '../lib/paths.mjs';
+import {
+  sessionProfilePath,
+  ROOT,
+  SKIPPED_FILE,
+  DATA_DIR,
+  HARVEST_DASHBOARD_TICK_FILE,
+} from '../lib/paths.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
 import { parseVacancyPage, vacancyIdFromUrl } from '../lib/vacancy-parse.mjs';
 import { runHardFilters } from '../lib/filters.mjs';
 import { loadCvBundle } from '../lib/cv-load.mjs';
 import {
+  createLlmRoutingContext,
   getOpenRouterApiKey,
-  scoreVacancyWithOpenRouter,
+  hasScoreProviderCredentials,
+  isCustomLlmRunnable,
+  resolveMaxOpenRouterCallsPerRun,
+  scoreVacancyWithLlm,
 } from '../lib/openrouter-score.mjs';
 import { addVacancyRecord, knownVacancyIds } from '../lib/store.mjs';
 
@@ -29,8 +43,28 @@ const DEFAULT_KEYWORDS_FILE = path.join(ROOT, 'config', 'search-keywords.txt');
 const headless = process.env.HH_HEADLESS === '1';
 const skipLlm =
   process.argv.includes('--skip-llm') || process.argv.includes('--skip-gemini');
-const sessionLimit = Math.min(40, Math.max(1, Number(process.env.HH_SESSION_LIMIT ?? process.env.HH_MAX_TOTAL ?? 7) || 7));
-const perKeyLimit = Math.min(30, Math.max(1, Number(process.env.HH_PER_KEYWORD_LIMIT || 8) || 8));
+
+/** Максимум новых записей за один запуск harvest (см. HH_SESSION_LIMIT / HH_PER_KEYWORD_LIMIT). */
+const MAX_RECORDS_PER_HARVEST = 500;
+
+const perKeyLimit = Math.min(
+  MAX_RECORDS_PER_HARVEST,
+  Math.max(1, Number(process.env.HH_PER_KEYWORD_LIMIT || MAX_RECORDS_PER_HARVEST) || MAX_RECORDS_PER_HARVEST)
+);
+const sessionLimitRaw =
+  process.env.HH_SESSION_LIMIT ?? process.env.HH_MAX_TOTAL ?? String(MAX_RECORDS_PER_HARVEST);
+const sessionLimit = Math.min(
+  MAX_RECORDS_PER_HARVEST,
+  Math.max(1, Number(sessionLimitRaw) || MAX_RECORDS_PER_HARVEST)
+);
+
+/** Вызовов OpenRouter за один harvest; 0 = не звать LLM (как --skip-llm по квоте). */
+const DEFAULT_LLM_CALLS_PER_RUN = 30;
+const rawLlmMax = process.env.HH_LLM_MAX_PER_RUN;
+const llmMaxPerRun =
+  rawLlmMax === undefined || String(rawLlmMax).trim() === ''
+    ? DEFAULT_LLM_CALLS_PER_RUN
+    : Math.max(0, Number(rawLlmMax) || 0);
 
 const openDelayMin = Math.max(0, Number(process.env.HH_OPEN_DELAY_MIN_MS || 3000) || 3000);
 const openDelayMax = Math.max(openDelayMin, Number(process.env.HH_OPEN_DELAY_MAX_MS || 5000) || 5000);
@@ -87,12 +121,34 @@ function logSkipped(payload) {
   fs.appendFileSync(SKIPPED_FILE, `${JSON.stringify({ ...payload, at: new Date().toISOString() })}\n`, 'utf8');
 }
 
+const DASH_TICK_EVERY = Math.max(1, Number(process.env.HH_DASHBOARD_TICK_EVERY || 20) || 20);
+let dashboardTickSeq = 0;
+
+function writeDashboardHarvestTick(addedThisRun) {
+  dashboardTickSeq++;
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(
+    HARVEST_DASHBOARD_TICK_FILE,
+    `${JSON.stringify({
+      sequence: dashboardTickSeq,
+      addedThisRun,
+      at: new Date().toISOString(),
+      every: DASH_TICK_EVERY,
+    })}\n`,
+    'utf8'
+  );
+  console.log(`  [дашборд] сигнал обновления #${dashboardTickSeq} (+${addedThisRun} новых за прогон к этому моменту)`);
+}
+
 async function main() {
   const prefs = loadPreferences();
 
-  if (!skipLlm && !getOpenRouterApiKey()) {
-    console.error('Нужен OpenRouter_API_KEY (или OPENROUTER_API_KEY) в .env / .env.local / config/secrets.local.env');
-    console.error('Шаблон: config/secrets.example.env  |  Либо: npm run harvest -- --skip-llm');
+  const needsLlmCredentials = !skipLlm && llmMaxPerRun > 0;
+  if (needsLlmCredentials && !hasScoreProviderCredentials()) {
+    console.error(
+      'Нужен канал оценки: OpenRouter_API_KEY либо свой LLM (HH_CUSTOM_LLM_BASE_URL + HH_CUSTOM_LLM_MODEL). См. config/secrets.example.env и config/OPENROUTER.md'
+    );
+    console.error('Либо: npm run harvest -- --skip-llm  |  HH_LLM_MAX_PER_RUN=0');
     process.exit(1);
   }
 
@@ -162,7 +218,32 @@ async function main() {
       return;
     }
 
+    if (!skipLlm && llmMaxPerRun > 0) {
+      console.log(
+        `LLM: не более ${llmMaxPerRun} оценок за этот запуск (остальные записи без LLM — HH_LLM_MAX_PER_RUN).`
+      );
+    } else if (!skipLlm && llmMaxPerRun === 0) {
+      console.log('LLM: вызовы отключены (HH_LLM_MAX_PER_RUN=0).');
+    }
+    if (!skipLlm && llmMaxPerRun > 0 && isCustomLlmRunnable()) {
+      const n = resolveMaxOpenRouterCallsPerRun();
+      if (n === 0) {
+        console.log(
+          'Маршрут оценки: только HH_CUSTOM_LLM_* (OpenRouter не вызывается при пустом HH_OPENROUTER_MAX_CALLS_PER_RUN или =0).'
+        );
+      } else if (getOpenRouterApiKey()) {
+        const cap = n === Number.POSITIVE_INFINITY ? '∞' : String(n);
+        console.log(
+          `Маршрут оценки: сначала OpenRouter (до ${cap} успешных вызовов), затем внутренний LLM (HH_OPENROUTER_MAX_CALLS_PER_RUN).`
+        );
+      }
+    }
+
+    const llmRouting = createLlmRoutingContext();
     let added = 0;
+    let llmCallsDone = 0;
+    let llmQuotaNoteShown = false;
+    let newRecordsSinceDashboardTick = 0;
     for (let i = 0; i < urls.length; i++) {
       if (i > 0) {
         const pause = randomIntInclusive(openDelayMin, openDelayMax);
@@ -203,9 +284,27 @@ async function main() {
         providerModel: null,
       };
 
-      if (!skipLlm) {
+      const canSpendLlmQuota = !skipLlm && llmCallsDone < llmMaxPerRun;
+
+      if (!skipLlm && !canSpendLlmQuota) {
+        if (!llmQuotaNoteShown) {
+          if (llmMaxPerRun === 0) {
+            console.log('  LLM: без вызова API (HH_LLM_MAX_PER_RUN=0).');
+          } else {
+            console.log(`  LLM: лимит исчерпан (${llmMaxPerRun} за запуск), дальше без API.`);
+          }
+          llmQuotaNoteShown = true;
+        }
+        llm = {
+          ...llm,
+          summary:
+            llmMaxPerRun === 0
+              ? '(без LLM: HH_LLM_MAX_PER_RUN=0)'
+              : '(без LLM: достигнут HH_LLM_MAX_PER_RUN)',
+        };
+      } else if (canSpendLlmQuota) {
         try {
-          llm = await scoreVacancyWithOpenRouter(
+          llm = await scoreVacancyWithLlm(
             {
               title: parsed.title,
               company: parsed.company,
@@ -214,14 +313,17 @@ async function main() {
               url,
             },
             cvBundle,
-            prefs
+            prefs,
+            llmRouting
           );
+          llmCallsDone++;
+          const src = llm.llmSource === 'custom' ? 'внутренний LLM' : 'OpenRouter';
           console.log(
-            `  OpenRouter: итог ${llm.scoreOverall} (вакансия ${llm.scoreVacancy}, CV ${llm.scoreCvMatch}) — ${llm.providerModel || '?'}`
+            `  ${src}: итог ${llm.scoreOverall} (вакансия ${llm.scoreVacancy}, CV ${llm.scoreCvMatch}) — ${llm.providerModel || '?'}`
           );
         } catch (e) {
-          console.error('  OpenRouter error:', e.message);
-          llm.summary = `Ошибка OpenRouter: ${e.message}`;
+          console.error('  LLM error:', e.message);
+          llm.summary = `Ошибка LLM: ${e.message}`;
         }
       }
 
@@ -238,7 +340,7 @@ async function main() {
         salaryNote: filter.salaryReason,
         descriptionPreview: parsed.description.slice(0, 600),
         descriptionForLlm: parsed.description.slice(0, 6000),
-        llmProvider: 'openrouter',
+        llmProvider: llm.llmSource === 'custom' ? 'openai-compatible' : 'openrouter',
         openRouterModel: llm.providerModel || null,
         scoreVacancy: llm.scoreVacancy,
         scoreCvMatch: llm.scoreCvMatch,
@@ -256,10 +358,19 @@ async function main() {
 
       if (addVacancyRecord(record)) {
         added++;
+        newRecordsSinceDashboardTick++;
         console.log('  → В очередь дашборда');
+        if (newRecordsSinceDashboardTick >= DASH_TICK_EVERY) {
+          newRecordsSinceDashboardTick = 0;
+          writeDashboardHarvestTick(added);
+        }
       } else {
         console.log('  → Уже была в очереди, пропуск');
       }
+    }
+
+    if (newRecordsSinceDashboardTick > 0) {
+      writeDashboardHarvestTick(added);
     }
 
     console.log(`\nГотово. Новых записей в очереди: ${added}. Запустите: npm run dashboard`);

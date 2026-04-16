@@ -6,7 +6,9 @@
  *   --stay-open  — не закрывать браузер, пока не нажмёте Enter в терминале (по умолчанию без headless ждёт Enter).
  *
  * Переменные: HH_SESSION_LIMIT (или HH_MAX_TOTAL), HH_PER_KEYWORD_LIMIT, HH_OPEN_DELAY_MIN_MS,
- *   HH_OPEN_DELAY_MAX_MS, HH_SEARCH_JITTER_MIN_MS, HH_SEARCH_JITTER_MAX_MS, HH_KEYWORDS_FILE, HH_AREA, HH_HEADLESS
+ *   HH_OPEN_DELAY_MAX_MS, HH_SEARCH_JITTER_MIN_MS, HH_SEARCH_JITTER_MAX_MS, HH_KEYWORDS_FILE, HH_AREA, HH_HEADLESS,
+ *   HH_GOTO_MAX_RETRIES, HH_GOTO_RETRY_BACKOFF_MIN_MS, HH_GOTO_RETRY_BACKOFF_MAX_MS,
+ *   HH_MAX_OPEN_VACANCY_TABS — одновременно открытых вкладок с вакансиями (старые закрываются).
  */
 
 import { chromium } from 'playwright';
@@ -28,10 +30,20 @@ const DEFAULT_KEYWORDS_FILE = path.join(ROOT, 'config', 'search-keywords.txt');
 
 const headless = process.env.HH_HEADLESS === '1';
 const stayOpen = process.argv.includes('--stay-open');
-const perKeyLimit = Math.min(30, Math.max(1, Number(process.env.HH_PER_KEYWORD_LIMIT || 8) || 8));
+
+/** Максимум вакансий за один запуск (открытых вкладок). */
+const MAX_VACANCIES_PER_RUN = 500;
+
+const perKeyLimit = Math.min(
+  MAX_VACANCIES_PER_RUN,
+  Math.max(1, Number(process.env.HH_PER_KEYWORD_LIMIT || MAX_VACANCIES_PER_RUN) || MAX_VACANCIES_PER_RUN)
+);
 const sessionLimitRaw =
-  process.env.HH_SESSION_LIMIT ?? process.env.HH_MAX_TOTAL ?? '7';
-const sessionLimit = Math.min(40, Math.max(1, Number(sessionLimitRaw) || 7));
+  process.env.HH_SESSION_LIMIT ?? process.env.HH_MAX_TOTAL ?? String(MAX_VACANCIES_PER_RUN);
+const sessionLimit = Math.min(
+  MAX_VACANCIES_PER_RUN,
+  Math.max(1, Number(sessionLimitRaw) || MAX_VACANCIES_PER_RUN)
+);
 
 const openDelayMin = Math.max(0, Number(process.env.HH_OPEN_DELAY_MIN_MS || 3000) || 3000);
 const openDelayMax = Math.max(openDelayMin, Number(process.env.HH_OPEN_DELAY_MAX_MS || 5000) || 5000);
@@ -42,12 +54,57 @@ const searchJitterMax = Math.max(searchJitterMin, Number(process.env.HH_SEARCH_J
 const postLoadMin = Math.max(0, Number(process.env.HH_POST_LOAD_JITTER_MIN_MS || 200) || 200);
 const postLoadMax = Math.max(postLoadMin, Number(process.env.HH_POST_LOAD_JITTER_MAX_MS || 800) || 800);
 
+const gotoMaxRetries = Math.max(1, Number(process.env.HH_GOTO_MAX_RETRIES || 3) || 3);
+const gotoRetryBackoffMin = Math.max(0, Number(process.env.HH_GOTO_RETRY_BACKOFF_MIN_MS || 2000) || 2000);
+const gotoRetryBackoffMax = Math.max(
+  gotoRetryBackoffMin,
+  Number(process.env.HH_GOTO_RETRY_BACKOFF_MAX_MS || 6000) || 6000
+);
+
+const gotoDefaultOptions = { waitUntil: 'domcontentloaded', timeout: 60_000 };
+
+/** Сколько вкладок с карточками вакансий держать открытыми; лишние закрываются с начала очереди. */
+const maxOpenVacancyTabs = Math.max(1, Number(process.env.HH_MAX_OPEN_VACANCY_TABS || 10) || 10);
+
 function randomIntInclusive(min, max) {
   return Math.floor(min + Math.random() * (max - min + 1));
 }
 
 function sleepMs(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function isRetriableNavigationError(err) {
+  const msg = String(err?.message ?? err);
+  return /TIMED_OUT|timeout exceeded|Timeout \d+ms exceeded|ERR_CONNECTION|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_INTERNET_DISCONNECTED|ERR_ABORTED/i.test(
+    msg
+  );
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {string} url
+ * @param {import('playwright').PageGotoOptions} [options]
+ */
+async function gotoWithRetry(page, url, options = {}) {
+  const merged = { ...gotoDefaultOptions, ...options };
+  let lastErr;
+  for (let attempt = 1; attempt <= gotoMaxRetries; attempt++) {
+    try {
+      await page.goto(url, merged);
+      return;
+    } catch (e) {
+      lastErr = e;
+      const retriable = isRetriableNavigationError(e);
+      if (!retriable || attempt === gotoMaxRetries) throw e;
+      const wait = randomIntInclusive(gotoRetryBackoffMin, gotoRetryBackoffMax);
+      console.warn(
+        `Сеть/таймаут при goto (попытка ${attempt}/${gotoMaxRetries}), пауза ${wait} мс: ${String(e?.message ?? e)}`
+      );
+      await sleepMs(wait);
+    }
+  }
+  throw lastErr;
 }
 
 const keywordsPath = path.resolve(
@@ -123,10 +180,7 @@ async function main() {
   const searchPage = ctx.pages()[0] || (await ctx.newPage());
 
   try {
-    await searchPage.goto('https://hh.ru/applicant', {
-      waitUntil: 'domcontentloaded',
-      timeout: 60_000,
-    });
+    await gotoWithRetry(searchPage, 'https://hh.ru/applicant');
     await searchPage.waitForTimeout(1500);
     if (looksLikeLoginUrl(searchPage.url())) {
       console.error('Сессия не активна. Выполните: npm run login');
@@ -140,7 +194,12 @@ async function main() {
       if (toOpen.length >= sessionLimit) break;
       const url = buildSearchUrl(key);
       console.log('Поиск:', key, '→', url);
-      await searchPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      try {
+        await gotoWithRetry(searchPage, url);
+      } catch (e) {
+        console.error(`Не удалось открыть выдачу для «${key}» после ${gotoMaxRetries} попыток:`, e?.message ?? e);
+        continue;
+      }
       await sleepMs(randomIntInclusive(searchJitterMin, searchJitterMax));
       const found = await collectVacancyUrls(searchPage);
       let n = 0;
@@ -161,7 +220,12 @@ async function main() {
       return;
     }
 
+    console.log(
+      `Одновременно открытых вкладок с вакансиями не больше ${maxOpenVacancyTabs} — при лишних старые закрываются.`
+    );
+
     const vacancyPages = [];
+    let vacancyOpenedTotal = 0;
     for (let i = 0; i < toOpen.length; i++) {
       const { url, query } = toOpen[i];
       if (i > 0) {
@@ -170,15 +234,31 @@ async function main() {
         await sleepMs(pause);
       }
       const p = await ctx.newPage();
-      vacancyPages.push(p);
       console.log('Открываю:', url, `(запрос: ${query})`);
-      await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-      await sleepMs(randomIntInclusive(postLoadMin, postLoadMax));
+      try {
+        await gotoWithRetry(p, url);
+        await sleepMs(randomIntInclusive(postLoadMin, postLoadMax));
+        vacancyPages.push(p);
+        vacancyOpenedTotal++;
+        while (vacancyPages.length > maxOpenVacancyTabs) {
+          const old = vacancyPages.shift();
+          await old?.close().catch(() => {});
+        }
+      } catch (e) {
+        console.error(
+          `Пропуск вакансии после ${gotoMaxRetries} попыток:`,
+          url,
+          String(e?.message ?? e)
+        );
+        await p.close().catch(() => {});
+      }
     }
 
     await searchPage.close().catch(() => {});
 
-    console.log(`Открыто вкладок с вакансиями: ${vacancyPages.length}`);
+    console.log(
+      `Вакансий успешно открыто за прогон: ${vacancyOpenedTotal}. Сейчас активно вкладок: ${vacancyPages.length}.`
+    );
 
     const needWait = stayOpen || !headless;
     if (needWait) {

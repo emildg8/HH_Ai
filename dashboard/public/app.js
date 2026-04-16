@@ -11,9 +11,6 @@ let scoreWeights = { vacancy: 0.35, cvMatch: 0.65 };
 /** @type {{ id: string, variants: string[], selectedIndex: number } | null} */
 let draftModalState = null;
 
-/** @type {ReturnType<typeof setInterval> | null} */
-let applyLogRefreshTimer = null;
-
 document.addEventListener('click', () => {
   document.querySelectorAll('.model-info-panel').forEach((p) => {
     p.hidden = true;
@@ -100,10 +97,6 @@ function closeApprovedLetterModal() {
 }
 
 function closeApplyLogModal() {
-  if (applyLogRefreshTimer != null) {
-    clearInterval(applyLogRefreshTimer);
-    applyLogRefreshTimer = null;
-  }
   const modal = document.getElementById('apply-log-modal');
   if (!modal) return;
   modal.hidden = true;
@@ -139,14 +132,9 @@ async function refreshApplyLogModal() {
 function openApplyLogModal() {
   const modal = document.getElementById('apply-log-modal');
   if (!modal) return;
-  if (applyLogRefreshTimer != null) {
-    clearInterval(applyLogRefreshTimer);
-    applyLogRefreshTimer = null;
-  }
   modal.hidden = false;
   document.addEventListener('keydown', onApplyLogModalEscape);
   refreshApplyLogModal();
-  applyLogRefreshTimer = setInterval(() => refreshApplyLogModal(), 2500);
 }
 
 function onApprovedModalEscape(e) {
@@ -183,11 +171,6 @@ function openDraftModal(item) {
     draftModalState = null;
     return;
   }
-
-  while (variants.length < 3) {
-    variants.push(variants[variants.length - 1] || '');
-  }
-  variants.splice(3);
 
   const name = `draft-v-${item.id}`;
   let selectedIndex = 0;
@@ -265,7 +248,8 @@ function openDraftModal(item) {
     if (t.name !== name || t.type !== 'radio') return;
     syncTextareaToVariant();
     const idx = Number(t.value);
-    if (!Number.isFinite(idx) || idx < 0 || idx > 2) return;
+    const max = draftModalState.variants.length - 1;
+    if (!Number.isFinite(idx) || idx < 0 || idx > max) return;
     draftModalState.selectedIndex = idx;
     ta.value = draftModalState.variants[idx] ?? '';
   });
@@ -545,7 +529,7 @@ function renderCard(item) {
       refreshBtn.disabled = true;
       try {
         await requestCoverLetterGenerate(item.id, false);
-        showToast('Сопроводительное сгенерировано', 'good');
+        showToast('Сгенерированы варианты сопроводительного', 'good');
         await load();
       } catch (e) {
         if (e.status === 409) {

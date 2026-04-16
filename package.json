@@ -9,7 +9,10 @@
     "scan-tg": "node scripts/scan-telegram.mjs",
     "vacancies": "node scripts/open-vacancies.mjs",
     "harvest": "node scripts/harvest.mjs",
+    "search-and-score": "node scripts/harvest.mjs",
     "dashboard": "node scripts/dashboard-server.mjs",
+    "ollama:pull": "ollama pull llama3.2",
+    "rescore-queue": "node scripts/rescore-queue.mjs",
     "hh-fill-letter": "node scripts/hh-fill-response-letter.mjs",
     "hh-apply-chat": "node scripts/hh-apply-chat-letter.mjs",
     "codegen-hh": "node scripts/codegen-hh.mjs"

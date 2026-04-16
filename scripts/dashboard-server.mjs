@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url';
 import { loadEnv } from '../lib/load-env.mjs';
 loadEnv();
 
-import { ROOT, HH_APPLY_CHAT_LOG_FILE, DATA_DIR } from '../lib/paths.mjs';
+import { ROOT, HH_APPLY_CHAT_LOG_FILE, DATA_DIR, HARVEST_DASHBOARD_TICK_FILE } from '../lib/paths.mjs';
 import { countApplyLaunchesLastHour, recordApplyLaunch } from '../lib/hh-apply-rate.mjs';
 import {
   loadQueue,
@@ -19,9 +19,19 @@ import {
   removeVacancyRecord,
 } from '../lib/store.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
+import {
+  recordPassesMinSalary,
+  recordHasDescription,
+  recordPassesLlmList,
+  recordPassesNotFirstLine,
+} from '../lib/filters.mjs';
 import { appendFeedback } from '../lib/feedback-context.mjs';
 import { loadCvBundle } from '../lib/cv-load.mjs';
-import { getOpenRouterApiKey, scoreVacancyWithOpenRouter } from '../lib/openrouter-score.mjs';
+import {
+  createLlmRoutingContext,
+  hasScoreProviderCredentials,
+  scoreVacancyWithLlm,
+} from '../lib/openrouter-score.mjs';
 import {
   generateCoverLetterVariants,
   normalizeVariants,
@@ -103,9 +113,33 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${host}`);
   const pathname = requestPathname(url);
 
+  if (req.method === 'GET' && pathname === '/api/harvest-tick') {
+    if (!fs.existsSync(HARVEST_DASHBOARD_TICK_FILE)) {
+      return sendJson(res, 200, { sequence: 0, addedThisRun: null, at: null });
+    }
+    try {
+      const raw = fs.readFileSync(HARVEST_DASHBOARD_TICK_FILE, 'utf8').trim();
+      const data = JSON.parse(raw);
+      return sendJson(res, 200, data);
+    } catch {
+      return sendJson(res, 200, { sequence: 0, addedThisRun: null, at: null });
+    }
+  }
+
   if (req.method === 'GET' && pathname === '/api/vacancies') {
     const status = url.searchParams.get('status') || 'pending';
-    const q = loadQueue().filter((x) => x.status === status);
+    let prefs = {};
+    try {
+      prefs = loadPreferences();
+    } catch {
+      /* ignore */
+    }
+    const q = loadQueue()
+      .filter((x) => x.status === status)
+      .filter((x) => recordHasDescription(x))
+      .filter((x) => recordPassesNotFirstLine(x))
+      .filter((x) => recordPassesLlmList(x))
+      .filter((x) => recordPassesMinSalary(x, prefs));
     q.sort(
       (a, b) =>
         (b.scoreOverall ?? b.geminiScore ?? 0) - (a.scoreOverall ?? a.geminiScore ?? 0)
@@ -118,7 +152,11 @@ const server = http.createServer(async (req, res) => {
     if (!['pending', 'approved', 'declined'].includes(letterStatus)) {
       return sendJson(res, 400, { error: 'status: pending | approved | declined' });
     }
-    const q = loadQueue().filter((x) => x.coverLetter?.status === letterStatus);
+    const q = loadQueue()
+      .filter((x) => x.coverLetter?.status === letterStatus)
+      .filter((x) => recordHasDescription(x))
+      .filter((x) => recordPassesNotFirstLine(x))
+      .filter((x) => recordPassesLlmList(x));
     q.sort(
       (a, b) =>
         (b.scoreOverall ?? b.geminiScore ?? 0) - (a.scoreOverall ?? a.geminiScore ?? 0)
@@ -223,14 +261,14 @@ const server = http.createServer(async (req, res) => {
     let scoreUpdated = false;
     let scoreError = null;
 
-    if (getOpenRouterApiKey()) {
+    if (hasScoreProviderCredentials()) {
       try {
         const cvBundle = await loadCvBundle();
         if (!cvBundle.text.trim()) {
           scoreError = 'Нет текста CV в CV/ — оценка пропущена';
         } else {
           const prefs = loadPreferences();
-          const llm = await scoreVacancyWithOpenRouter(
+          const llm = await scoreVacancyWithLlm(
             {
               title,
               company,
@@ -239,10 +277,11 @@ const server = http.createServer(async (req, res) => {
               url: rec.url,
             },
             cvBundle,
-            prefs
+            prefs,
+            createLlmRoutingContext()
           );
           Object.assign(patch, {
-            llmProvider: 'openrouter',
+            llmProvider: llm.llmSource === 'custom' ? 'openai-compatible' : 'openrouter',
             openRouterModel: llm.providerModel || null,
             scoreVacancy: llm.scoreVacancy,
             scoreCvMatch: llm.scoreCvMatch,
@@ -259,7 +298,7 @@ const server = http.createServer(async (req, res) => {
         scoreError = e.message || String(e);
       }
     } else {
-      scoreError = 'Нет ключа OpenRouter — обновлён только текст с hh.ru';
+      scoreError = 'Нет OpenRouter и не настроен HH_CUSTOM_LLM_* — обновлён только текст с hh.ru';
     }
 
     updateVacancyRecord(id, patch);
@@ -294,8 +333,10 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    if (!getOpenRouterApiKey()) {
-      return sendJson(res, 503, { error: 'Нет OpenRouter_API_KEY в окружении' });
+    if (!hasScoreProviderCredentials()) {
+      return sendJson(res, 503, {
+        error: 'Нужен OpenRouter_API_KEY или HH_CUSTOM_LLM_BASE_URL + HH_CUSTOM_LLM_MODEL',
+      });
     }
 
     let cvBundle;
@@ -312,7 +353,17 @@ const server = http.createServer(async (req, res) => {
     try {
       result = await generateCoverLetterVariants(rec, cvBundle);
     } catch (e) {
-      return sendJson(res, 502, { error: e.message || 'Ошибка OpenRouter' });
+      const raw = String(e?.message || e || 'Ошибка LLM');
+      let error = raw;
+      if (/\b429\b|rate\s*limit|Rate limit exceeded|лимит/i.test(raw)) {
+        error =
+          'Лимит запросов OpenRouter (часто дневной лимит бесплатных моделей). ' +
+          'Запустите Ollama и задайте HH_CUSTOM_LLM_BASE_URL + HH_CUSTOM_LLM_MODEL в .env как запасной канал, ' +
+          'или подождите / пополните баланс на openrouter.ai.';
+      } else if (raw.length > 600) {
+        error = `${raw.slice(0, 600)}…`;
+      }
+      return sendJson(res, 502, { error });
     }
 
     const now = new Date().toISOString();
@@ -344,7 +395,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 409, { error: 'Черновик можно править только в статусе «на согласовании»' });
     }
 
-    const normalized = normalizeVariants(rawVariants);
+    const normalized = normalizeVariants(rawVariants, { forSaveDraft: true });
     const now = new Date().toISOString();
     const prev = rec.coverLetter || {};
     const coverLetter = {
