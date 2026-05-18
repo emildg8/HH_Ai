@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "docx": "^9.6.1",
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.4.2",
     "pdf-parse": "^2.4.5",
     "playwright": "^1.49.0"
   }
