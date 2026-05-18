@@ -4,18 +4,18 @@
  *
  * Перед запуском: npm run login, в secrets — OpenRouter_API_KEY.
  * Флаги: --skip-llm | --skip-gemini — без вызова LLM (score=0).
- * Лимиты: до 500 записей за запуск (HH_SESSION_LIMIT / HH_MAX_TOTAL, HH_PER_KEYWORD_LIMIT).
+ * Лимиты: до 1000 записей за запуск (HH_SESSION_LIMIT / HH_MAX_TOTAL, HH_PER_KEYWORD_LIMIT).
+ * Период выдачи hh.ru: HH_SEARCH_PERIOD (7 = неделя, 0 = за всё время — без search_period).
+ * Отдельный файл очереди: HH_VACANCIES_QUEUE_FILE (например data/vacancies-queue-week.json).
  * Квота LLM: HH_LLM_MAX_PER_RUN — макс. вызовов OpenRouter за запуск (по умолчанию 30; дальше — без оценки).
+ * Лимиты одного прогона (перебивают .env): --session-limit=N, --per-keyword-limit=N
  * Дашборд: каждые HH_DASHBOARD_TICK_EVERY (20) новых записей — сигнал в data/harvest-dashboard-tick.json для обновления UI.
  */
 
-import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { loadEnv } from '../lib/load-env.mjs';
-loadEnv();
-
 import { loadSearchKeywords } from '../lib/load-keywords.mjs';
 import {
   sessionProfilePath,
@@ -25,8 +25,19 @@ import {
   HARVEST_DASHBOARD_TICK_FILE,
 } from '../lib/paths.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
+import { parseHarvestPeriodDays, applySearchPeriodToParams, harvestPeriodLabel } from '../lib/hh-search-period.mjs';
+import {
+  launchPersistentContextSafe,
+  closeContextSafe,
+  clearStaleBrowserLock,
+  formatBrowserLaunchError,
+} from '../lib/chromium-session.mjs';
+import { createHarvestProgressTracker, writeHarvestError } from '../lib/job-progress.mjs';
+
+const BROWSER_OWNER = 'harvest';
 import { parseVacancyPage, vacancyIdFromUrl } from '../lib/vacancy-parse.mjs';
 import { runHardFilters } from '../lib/filters.mjs';
+import { buildHhSearchText } from '../lib/hh-search.mjs';
 import { loadCvBundle } from '../lib/cv-load.mjs';
 import {
   createLlmRoutingContext,
@@ -37,15 +48,26 @@ import {
   scoreVacancyWithLlm,
 } from '../lib/openrouter-score.mjs';
 import { addVacancyRecord, knownVacancyIds } from '../lib/store.mjs';
+import { scoreVacancyLocally, resolveScoreMode } from '../lib/local-vacancy-score.mjs';
+
+loadEnv();
+/** CLI после loadEnv: переопределяет .env для одного запуска (иначе override в load-env перебивает shell). */
+for (const a of process.argv) {
+  const mLimit = /^--session-limit=(\d+)$/.exec(a);
+  if (mLimit) process.env.HH_SESSION_LIMIT = mLimit[1];
+  const mPerKey = /^--per-keyword-limit=(\d+)$/.exec(a);
+  if (mPerKey) process.env.HH_PER_KEYWORD_LIMIT = mPerKey[1];
+}
 
 const DEFAULT_KEYWORDS_FILE = path.join(ROOT, 'config', 'search-keywords.txt');
 
-const headless = process.env.HH_HEADLESS === '1';
+/** По умолчанию headless: headed Chromium на Windows часто падает сразу после launch. */
+const headless = process.env.HH_HEADLESS !== '0';
 const skipLlm =
   process.argv.includes('--skip-llm') || process.argv.includes('--skip-gemini');
 
 /** Максимум новых записей за один запуск harvest (см. HH_SESSION_LIMIT / HH_PER_KEYWORD_LIMIT). */
-const MAX_RECORDS_PER_HARVEST = 500;
+const MAX_RECORDS_PER_HARVEST = 1000;
 
 const perKeyLimit = Math.min(
   MAX_RECORDS_PER_HARVEST,
@@ -91,15 +113,21 @@ function looksLikeLoginUrl(url) {
 
 function buildSearchUrl(text) {
   const params = new URLSearchParams();
-  params.set('text', text);
+  params.set('text', buildHhSearchText(text));
   params.set('ored_clusters', 'true');
   const area = (process.env.HH_AREA || '').trim();
   if (area) params.set('area', area);
+  applySearchPeriodToParams(params, parseHarvestPeriodDays(process.env.HH_SEARCH_PERIOD));
+  const orderBy = (process.env.HH_SEARCH_ORDER_BY || 'publication_time').trim();
+  if (orderBy) params.set('order_by', orderBy);
   return `https://hh.ru/search/vacancy?${params.toString()}`;
 }
 
 async function collectVacancyUrls(page) {
-  await page.waitForTimeout(2000);
+  await page
+    .waitForSelector('a[href*="/vacancy/"]', { timeout: 15_000 })
+    .catch(() => {});
+  await page.waitForTimeout(800);
   return page.evaluate(() => {
     const seen = new Set();
     const out = [];
@@ -141,6 +169,8 @@ function writeDashboardHarvestTick(addedThisRun) {
 }
 
 async function main() {
+  const progress = createHarvestProgressTracker();
+  progress.starting();
   const prefs = loadPreferences();
 
   const needsLlmCredentials = !skipLlm && llmMaxPerRun > 0;
@@ -176,11 +206,23 @@ async function main() {
     process.exit(1);
   }
 
-  const ctx = await chromium.launchPersistentContext(profile, {
-    headless,
-    viewport: { width: 1280, height: 800 },
-    locale: 'ru-RU',
-  });
+  const periodDays = parseHarvestPeriodDays(process.env.HH_SEARCH_PERIOD);
+  console.log(`[harvest] Период на hh.ru: ${harvestPeriodLabel(periodDays)}`);
+
+  let ctx;
+  try {
+    ctx = await launchPersistentContextSafe(
+      profile,
+      {
+        headless,
+        viewport: { width: 1280, height: 800 },
+        locale: 'ru-RU',
+      },
+      { owner: BROWSER_OWNER }
+    );
+  } catch (e) {
+    throw new Error(formatBrowserLaunchError(e));
+  }
   const page = ctx.pages()[0] || (await ctx.newPage());
 
   try {
@@ -194,12 +236,32 @@ async function main() {
     const seenIds = knownVacancyIds();
     const urls = [];
     const globalSeen = new Set();
+    const keywordsTotal = keywords.length;
+    let keywordIndex = 0;
+
+    progress.collecting(0, keywordsTotal, { urlsFound: 0 });
 
     for (const key of keywords) {
       if (urls.length >= sessionLimit) break;
+      keywordIndex++;
+      progress.collecting(keywordIndex, keywordsTotal, {
+        urlsFound: urls.length,
+        currentKeyword: key,
+      });
       await page.goto(buildSearchUrl(key), { waitUntil: 'domcontentloaded', timeout: 60_000 });
       await sleepMs(randomIntInclusive(searchJitterMin, searchJitterMax));
       const found = await collectVacancyUrls(page);
+      if (!found.length) {
+        const hint = await page
+          .evaluate(() => {
+            const t = document.body?.innerText || '';
+            if (/ничего не найдено/i.test(t)) return 'ничего не найдено';
+            if (/captcha|подтвердите/i.test(t)) return 'капча/проверка';
+            return '';
+          })
+          .catch(() => '');
+        if (hint) console.warn(`  [harvest] пустая выдача (${hint}) для «${key}»`);
+      }
       let n = 0;
       for (const u of found) {
         if (urls.length >= sessionLimit) break;
@@ -211,10 +273,12 @@ async function main() {
         n++;
       }
       console.log(`Ключ «${key}»: +${n} URL (в очереди на обход ${urls.length})`);
+      progress.collecting(keywordIndex, keywordsTotal, { urlsFound: urls.length, currentKeyword: key });
     }
 
     if (!urls.length) {
       console.log('Нет новых ссылок (все уже в очереди или пустая выдача).');
+      progress.done({ added: 0, message: 'Нет новых ссылок' });
       return;
     }
 
@@ -240,10 +304,23 @@ async function main() {
     }
 
     const llmRouting = createLlmRoutingContext();
+    const scoreMode = resolveScoreMode();
+    if (scoreMode === 'local') {
+      console.log('Оценка: только локальная (HH_SCORE_MODE=local), без OpenRouter.');
+    } else if (scoreMode === 'local-first') {
+      console.log(
+        `Оценка: до ${llmMaxPerRun} вызовов LLM, остальное — локальная эвристика (HH_SCORE_MODE=local-first).`
+      );
+    }
     let added = 0;
+    let skipped = 0;
     let llmCallsDone = 0;
     let llmQuotaNoteShown = false;
     let newRecordsSinceDashboardTick = 0;
+    const scoringStartedAt = Date.now();
+    const urlsTotal = urls.length;
+    progress.scoring(0, urlsTotal, { added: 0, skipped: 0 }, scoringStartedAt);
+
     for (let i = 0; i < urls.length; i++) {
       if (i > 0) {
         const pause = randomIntInclusive(openDelayMin, openDelayMax);
@@ -253,6 +330,12 @@ async function main() {
 
       const { url, query } = urls[i];
       const vacancyId = vacancyIdFromUrl(url);
+      progress.scoring(
+        i + 1,
+        urlsTotal,
+        { added, skipped, llmCallsDone },
+        scoringStartedAt
+      );
       console.log(`Парсинг ${i + 1}/${urls.length}`, url);
 
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
@@ -269,6 +352,7 @@ async function main() {
           reason: filter.reason,
           title: parsed.title,
         });
+        skipped++;
         continue;
       }
 
@@ -284,46 +368,40 @@ async function main() {
         providerModel: null,
       };
 
-      const canSpendLlmQuota = !skipLlm && llmCallsDone < llmMaxPerRun;
+      const vacancyPayload = {
+        title: parsed.title,
+        company: parsed.company,
+        salaryRaw: parsed.salaryRaw,
+        description: parsed.description,
+        url,
+      };
+      const canSpendLlmQuota =
+        !skipLlm && scoreMode !== 'local' && llmCallsDone < llmMaxPerRun;
 
-      if (!skipLlm && !canSpendLlmQuota) {
+      if (scoreMode === 'local' || skipLlm) {
+        llm = scoreVacancyLocally(vacancyPayload, cvBundle);
+        console.log(
+          `  Локальная оценка: итог ${llm.scoreOverall} (вакансия ${llm.scoreVacancy}, CV ${llm.scoreCvMatch})`
+        );
+      } else if (!canSpendLlmQuota) {
         if (!llmQuotaNoteShown) {
-          if (llmMaxPerRun === 0) {
-            console.log('  LLM: без вызова API (HH_LLM_MAX_PER_RUN=0).');
-          } else {
-            console.log(`  LLM: лимит исчерпан (${llmMaxPerRun} за запуск), дальше без API.`);
-          }
+          console.log(`  LLM-лимит (${llmMaxPerRun}) — дальше локальная оценка.`);
           llmQuotaNoteShown = true;
         }
-        llm = {
-          ...llm,
-          summary:
-            llmMaxPerRun === 0
-              ? '(без LLM: HH_LLM_MAX_PER_RUN=0)'
-              : '(без LLM: достигнут HH_LLM_MAX_PER_RUN)',
-        };
-      } else if (canSpendLlmQuota) {
+        llm = scoreVacancyLocally(vacancyPayload, cvBundle);
+        console.log(`  Локальная оценка: итог ${llm.scoreOverall}`);
+      } else {
         try {
-          llm = await scoreVacancyWithLlm(
-            {
-              title: parsed.title,
-              company: parsed.company,
-              salaryRaw: parsed.salaryRaw,
-              description: parsed.description,
-              url,
-            },
-            cvBundle,
-            prefs,
-            llmRouting
-          );
+          llm = await scoreVacancyWithLlm(vacancyPayload, cvBundle, prefs, llmRouting);
           llmCallsDone++;
           const src = llm.llmSource === 'custom' ? 'внутренний LLM' : 'OpenRouter';
           console.log(
             `  ${src}: итог ${llm.scoreOverall} (вакансия ${llm.scoreVacancy}, CV ${llm.scoreCvMatch}) — ${llm.providerModel || '?'}`
           );
         } catch (e) {
-          console.error('  LLM error:', e.message);
-          llm.summary = `Ошибка LLM: ${e.message}`;
+          console.error('  LLM error:', e.message, '→ локальная оценка');
+          llm = scoreVacancyLocally(vacancyPayload, cvBundle);
+          console.log(`  Локальная оценка: итог ${llm.scoreOverall}`);
         }
       }
 
@@ -340,7 +418,12 @@ async function main() {
         salaryNote: filter.salaryReason,
         descriptionPreview: parsed.description.slice(0, 600),
         descriptionForLlm: parsed.description.slice(0, 6000),
-        llmProvider: llm.llmSource === 'custom' ? 'openai-compatible' : 'openrouter',
+        llmProvider:
+          llm.llmSource === 'local'
+            ? 'local-heuristic'
+            : llm.llmSource === 'custom'
+              ? 'openai-compatible'
+              : 'openrouter',
         openRouterModel: llm.providerModel || null,
         scoreVacancy: llm.scoreVacancy,
         scoreCvMatch: llm.scoreCvMatch,
@@ -373,13 +456,15 @@ async function main() {
       writeDashboardHarvestTick(added);
     }
 
+    progress.done({ added, skipped, urlsTotal });
     console.log(`\nГотово. Новых записей в очереди: ${added}. Запустите: npm run dashboard`);
   } finally {
-    await ctx.close();
+    await closeContextSafe(ctx, BROWSER_OWNER);
   }
 }
 
 main().catch((e) => {
+  writeHarvestError(e?.message || e);
   console.error(e);
   process.exit(1);
 });

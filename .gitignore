@@ -1,18 +1,44 @@
 node_modules/
 .env
-data/session/
+.playwright-browsers/
 playwright-report/
 test-results/
 *.log
 .DS_Store
-CV/
+Thumbs.db
+
+# Секреты и личные конфиги
+config/secrets.local.env
+config/devops.env
 config/cover-letter.txt
 config/cover-letter-style-examples.txt
-config/secrets.local.env
+config/profiles/*.env
+!config/profiles/*.example.env
+
+# Данные и сессия
+data/session/
 data/vacancies-queue.json
-data/skipped-vacancies.jsonl
-data/feedback.jsonl
-data/cover-letter-user-edits.jsonl
+data/vacancies-devops.json
+data/vacancies-*.json
+!data/vacancies-queue.example.json
+data/*.jsonl
 data/hh-apply-chat.log
 data/hh-apply-chat-error-*.png
 data/hh-apply-launches.json
+data/harvest-run.log
+data/batch-progress.json
+data/harvest-progress.json
+data/harvest-dashboard-tick.json
+data/apply-chat-progress.json
+
+CV/
+*.pdf
+
+# Артефакты сборки и бэкапы
+dist/
+backups/
+releases/*.zip
+releases/.staging/
+
+# Локальные архивы в корне
+Шахваладов*.pdf

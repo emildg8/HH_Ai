@@ -1,8 +1,8 @@
 {
-  "minMonthlyRub": 150000,
+  "minMonthlyRub": 200000,
   "minMonthlyUsd": 0,
   "rubPerUsd": 98,
-  "requireRemote": false,
+  "requireRemote": true,
   "allowHybrid": false,
   "allowUnknownSalary": true,
   "remotePositivePatterns": [
@@ -12,7 +12,9 @@
     "remote",
     "работа из дома",
     "из любой точки",
-    "любая локация"
+    "любая локация",
+    "удаленная работа",
+    "удалённая работа"
   ],
   "hybridPatterns": [
     "гибрид",
@@ -24,9 +26,60 @@
     "работа в офисе компании",
     "в офисе ежедневно"
   ],
+  "excludeSeniorRoles": true,
+  "excludeSeniorRolePatterns": [
+    "senior",
+    "сеньор",
+    "tech lead",
+    "team lead",
+    "techlead",
+    "техлид",
+    "тимлид",
+    "lead devops",
+    "lead sre",
+    "lead golang",
+    "lead go",
+    "golang lead",
+    "старший devops",
+    "ведущий devops"
+  ],
+  "exclude1CRoles": true,
+  "exclude1CRolePatterns": [
+    "1с:предприятие",
+    "архитектор 1с",
+    "ит-архитектор 1с",
+    "программист 1с",
+    "разработчик 1с",
+    "платформа 1с",
+    "erp 1с"
+  ],
+  "excludeDeveloperRoles": true,
+  "excludeDeveloperRolePatterns": [
+    "разработчик",
+    "developer",
+    "программист",
+    "programmer",
+    "fullstack",
+    "full-stack",
+    "software engineer",
+    "software developer",
+    "backend developer",
+    "backend-разработ",
+    "frontend developer",
+    "frontend-разработ",
+    "python разработ",
+    "java разработ",
+    "golang разработ",
+    "go разработчик",
+    "mobile developer",
+    "веб-разработ",
+    "web developer"
+  ],
   "llmScoreWeights": {
     "vacancy": 0.35,
     "cvMatch": 0.65
   },
-  "hhApplyChatMaxPerHour": 8
+  "hhApplyChatMaxPerHour": 50,
+  "hhApplyChatMaxPerDay": 50,
+  "dashboardMinScoreFilter": 50
 }

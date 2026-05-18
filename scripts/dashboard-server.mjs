@@ -8,22 +8,45 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { loadEnv } from '../lib/load-env.mjs';
+import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { parseHarvestPeriodDays, harvestPeriodLabel } from '../lib/hh-search-period.mjs';
+import { getBrowserLockInfo, clearStaleBrowserLock } from '../lib/chromium-session.mjs';
 loadEnv();
+loadDevOpsEnv();
 
-import { ROOT, HH_APPLY_CHAT_LOG_FILE, DATA_DIR, HARVEST_DASHBOARD_TICK_FILE } from '../lib/paths.mjs';
-import { countApplyLaunchesLastHour, recordApplyLaunch } from '../lib/hh-apply-rate.mjs';
+import {
+  ROOT,
+  HH_APPLY_CHAT_LOG_FILE,
+  HARVEST_RUN_LOG_FILE,
+  DATA_DIR,
+  HARVEST_DASHBOARD_TICK_FILE,
+} from '../lib/paths.mjs';
+import { readApplyChatLogTail, readHarvestRunLogTail } from '../lib/apply-chat-log.mjs';
+import {
+  countApplyLaunchesLastHour,
+  countApplyLaunchesLastDay,
+  getMaxApplyChatPerHour,
+  getMaxApplyChatPerDay,
+  recordApplyLaunch,
+} from '../lib/hh-apply-rate.mjs';
 import {
   loadQueue,
   updateVacancyRecord,
   getVacancyRecord,
   removeVacancyRecord,
 } from '../lib/store.mjs';
+import { vacancyHasHhApply, vacancyQuestionnairePending } from '../lib/vacancy-hh-apply.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
 import {
   recordPassesMinSalary,
   recordHasDescription,
   recordPassesLlmList,
   recordPassesNotFirstLine,
+  recordPassesNotDeveloper,
+  recordPassesNotSenior,
+  recordPassesNot1C,
+  recordHiddenRoleReasons,
+  recordIsHiddenByRoleFilters,
 } from '../lib/filters.mjs';
 import { appendFeedback } from '../lib/feedback-context.mjs';
 import { loadCvBundle } from '../lib/cv-load.mjs';
@@ -38,14 +61,48 @@ import {
 } from '../lib/cover-letter-openrouter.mjs';
 import { appendCoverLetterUserEditSnippet } from '../lib/cover-letter-user-edits.mjs';
 import { fetchVacancyTextFromHh } from '../lib/refresh-vacancy-from-hh.mjs';
+import { generateQuestionnaireAnswers } from '../lib/hh-questionnaire-answers.mjs';
+import { meaningfulQuestions } from '../lib/questionnaire-labels.mjs';
+import { getJobStatus, setHarvestPid, setBatchPid, isProcessAlive } from '../lib/job-pids.mjs';
+import {
+  getBatchControlSummary,
+  requestBatchPause,
+  requestBatchResume,
+  requestBatchStop,
+  canResumeFromState,
+  clearBatchResumeState,
+} from '../lib/batch-control.mjs';
+import { readLogTail } from '../lib/log-tail.mjs';
+import { readJobProgress } from '../lib/job-progress.mjs';
+import { HARVEST_PROGRESS_FILE, BATCH_PROGRESS_FILE, APPLY_CHAT_PROGRESS_FILE } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATIC_DIR = path.join(ROOT, 'dashboard', 'public');
 const PORT = Number(process.env.DASHBOARD_PORT || 3849) || 3849;
+let activeApplyChatPid = null;
+
+function scoreThreshold(prefs) {
+  const n = Number(prefs?.dashboardMinScoreFilter ?? prefs?.dashboardHighScoreThreshold);
+  return Number.isFinite(n) && n > 0 ? n : 50;
+}
+
+function filterByScoreBand(items, band, threshold) {
+  if (band === 'high') {
+    return items.filter((x) => scoreOfItem(x) >= threshold);
+  }
+  if (band === 'low') {
+    return items.filter((x) => {
+      const s = scoreOfItem(x);
+      return s > 0 ? s < threshold : true;
+    });
+  }
+  return items;
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.ico': 'image/x-icon',
@@ -61,32 +118,8 @@ function sendJson(res, code, obj) {
   res.end(body);
 }
 
-/**
- * Последние строки лога сценария отклика (для UI и отладки).
- * @param {number} lineCount
- */
-function readApplyChatLogTail(lineCount) {
-  const n = Math.min(500, Math.max(1, Number(lineCount) || 80));
-  if (!fs.existsSync(HH_APPLY_CHAT_LOG_FILE)) {
-    return { exists: false, lines: [], text: '' };
-  }
-  const raw = fs.readFileSync(HH_APPLY_CHAT_LOG_FILE, 'utf8');
-  const all = raw.split('\n');
-  const slice = all.length > n ? all.slice(-n) : all;
-  const text = slice.join('\n');
-  return { exists: true, lines: slice, text, path: HH_APPLY_CHAT_LOG_FILE };
-}
-
-
-function getMaxApplyChatPerHour() {
-  try {
-    const p = loadPreferences();
-    const n = Number(p.hhApplyChatMaxPerHour);
-    if (Number.isFinite(n) && n >= 1) return Math.min(100, Math.floor(n));
-  } catch {
-    /* ignore */
-  }
-  return 8;
+function scoreOfItem(x) {
+  return Number(x.scoreOverall ?? x.geminiScore ?? 0) || 0;
 }
 
 /** Без завершающего слэша, кроме корня `/` — иначе `/api/foo/` не совпадёт с маршрутом. */
@@ -108,6 +141,40 @@ function readBody(req) {
   });
 }
 
+/** pause | resume | stop — для /api/batch-control и /api/hh-launch-apply-batch */
+function handleBatchControlAction(action) {
+  const st = getJobStatus();
+  if (action === 'pause') {
+    if (!st.batch.running) {
+      return { code: 409, body: { error: 'Батч не запущен' } };
+    }
+    requestBatchPause();
+    return { code: 200, body: { ok: true, message: 'Пауза после текущей вакансии' } };
+  }
+  if (action === 'resume') {
+    const ctrl = getBatchControlSummary();
+    if (ctrl.batchRunning && ctrl.command === 'paused') {
+      requestBatchResume();
+      return { code: 200, body: { ok: true, message: 'Продолжение батча' } };
+    }
+    if (ctrl.batchRunning) {
+      return { code: 409, body: { error: 'Батч уже выполняется' } };
+    }
+    if (!canResumeFromState()) {
+      return { code: 409, body: { error: 'Нет сохранённого батча для продолжения' } };
+    }
+    return { code: 200, body: { ok: true, needsRelaunch: true, message: 'Запустите продолжение' } };
+  }
+  if (action === 'stop') {
+    if (!st.batch.running) {
+      return { code: 409, body: { error: 'Батч не запущен' } };
+    }
+    requestBatchStop({ killChild: true });
+    return { code: 200, body: { ok: true, message: 'Остановка батча…' } };
+  }
+  return { code: 400, body: { error: 'action: pause | resume | stop' } };
+}
+
 const server = http.createServer(async (req, res) => {
   const host = req.headers.host || '127.0.0.1';
   const url = new URL(req.url || '/', `http://${host}`);
@@ -126,25 +193,203 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === 'GET' && pathname === '/api/job-status') {
+    const st = getJobStatus();
+    if (activeApplyChatPid && !isProcessAlive(activeApplyChatPid)) {
+      activeApplyChatPid = null;
+    }
+    st.applyChat = {
+      pid: activeApplyChatPid,
+      running: isProcessAlive(activeApplyChatPid),
+    };
+    let harvestTick = null;
+    if (fs.existsSync(HARVEST_DASHBOARD_TICK_FILE)) {
+      try {
+        harvestTick = JSON.parse(fs.readFileSync(HARVEST_DASHBOARD_TICK_FILE, 'utf8').trim());
+      } catch {
+        /* ignore */
+      }
+    }
+    const queuePath = process.env.HH_VACANCIES_QUEUE_FILE || 'data/vacancies-devops.json';
+    const browserLock = getBrowserLockInfo();
+    const harvestLog = readLogTail(HARVEST_RUN_LOG_FILE, 18);
+    const harvestProgressRaw = readJobProgress(HARVEST_PROGRESS_FILE);
+    const batchProgressRaw = readJobProgress(BATCH_PROGRESS_FILE);
+    const applyChatProgressRaw = readJobProgress(APPLY_CHAT_PROGRESS_FILE);
+    const uiProgress = (p, running) => {
+      if (!p) return null;
+      if (running || p.phase === 'paused') return p;
+      const age = Date.now() - new Date(p.updatedAt || 0).getTime();
+      if ((p.phase === 'done' || p.phase === 'error') && age < 90_000) return p;
+      return null;
+    };
+    const applyLogTail = readApplyChatLogTail(14, { lastRunOnly: true });
+    return sendJson(res, 200, {
+      ...st,
+      harvestTick,
+      queuePath,
+      browserLock,
+      harvestProgress: uiProgress(harvestProgressRaw, st.harvest.running),
+      batchProgress: uiProgress(batchProgressRaw, st.batch.running),
+      applyChatProgress: uiProgress(applyChatProgressRaw, st.applyChat.running || st.batch.running),
+      harvestLog: {
+        lastError: harvestLog.lastError,
+        tail: harvestLog.lines.slice(-6).join('\n'),
+      },
+      applyLog: {
+        tail: applyLogTail.lines.slice(-8).join('\n'),
+        modifiedAt: applyLogTail.modifiedAt,
+        lastRunHeader: applyLogTail.lastRunHeader,
+      },
+      batchControl: getBatchControlSummary(),
+    });
+  }
+
+  if (
+    (req.method === 'GET' || req.method === 'POST') &&
+    (pathname === '/api/batch-control' || pathname === '/api/hh-batch-control')
+  ) {
+    if (req.method === 'GET') {
+      return sendJson(res, 200, { ok: true, api: 'batch-control', ...getBatchControlSummary() });
+    }
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const action = String(body.action || '').toLowerCase();
+    const result = handleBatchControlAction(action);
+    return sendJson(res, result.code, result.body);
+  }
+
   if (req.method === 'GET' && pathname === '/api/vacancies') {
     const status = url.searchParams.get('status') || 'pending';
+    const scoreBand = url.searchParams.get('scoreBand') || 'all';
+    const applyViewRaw = url.searchParams.get('applyView') || 'queue';
+    const applyView =
+      applyViewRaw === 'applied'
+        ? 'applied'
+        : applyViewRaw === 'hidden'
+          ? 'hidden'
+          : applyViewRaw === 'questionnaire'
+            ? 'questionnaire'
+            : 'queue';
     let prefs = {};
     try {
       prefs = loadPreferences();
     } catch {
       /* ignore */
     }
-    const q = loadQueue()
-      .filter((x) => x.status === status)
+    const threshold = scoreThreshold(prefs);
+    const minScoreLegacy = url.searchParams.get('minScore');
+    let q = loadQueue();
+    if (applyView !== 'applied') {
+      q = q.filter((x) => x.status === status);
+    }
+    q = q
       .filter((x) => recordHasDescription(x))
-      .filter((x) => recordPassesNotFirstLine(x))
       .filter((x) => recordPassesLlmList(x))
       .filter((x) => recordPassesMinSalary(x, prefs));
-    q.sort(
-      (a, b) =>
-        (b.scoreOverall ?? b.geminiScore ?? 0) - (a.scoreOverall ?? a.geminiScore ?? 0)
-    );
-    return sendJson(res, 200, { items: q });
+    if (applyView === 'hidden') {
+      q = q.filter((x) => !vacancyHasHhApply(x));
+      q = q.filter((x) => recordIsHiddenByRoleFilters(x, prefs));
+    } else if (applyView === 'questionnaire') {
+      q = q.filter((x) => !vacancyHasHhApply(x));
+      q = q.filter((x) => vacancyQuestionnairePending(x));
+    } else {
+      q = q
+        .filter((x) => recordPassesNotFirstLine(x))
+        .filter((x) => recordPassesNotDeveloper(x, prefs))
+        .filter((x) => recordPassesNotSenior(x, prefs))
+        .filter((x) => recordPassesNot1C(x, prefs));
+      if (applyView === 'applied') {
+        q = q.filter((x) => vacancyHasHhApply(x));
+      } else {
+        q = q.filter((x) => !vacancyHasHhApply(x));
+      }
+    }
+    if (minScoreLegacy != null && minScoreLegacy !== '' && scoreBand === 'all') {
+      const minScore = Math.max(0, Number(minScoreLegacy) || 0);
+      if (minScore > 0) q = q.filter((x) => scoreOfItem(x) >= minScore);
+    } else {
+      q = filterByScoreBand(q, scoreBand, threshold);
+    }
+    q.sort((a, b) => {
+      if (applyView === 'applied') {
+        const ta = Date.parse(a.hhApply?.lastAt || '') || 0;
+        const tb = Date.parse(b.hhApply?.lastAt || '') || 0;
+        if (tb !== ta) return tb - ta;
+      }
+      return scoreOfItem(b) - scoreOfItem(a);
+    });
+    let baseForCounts = loadQueue().filter((x) => recordHasDescription(x));
+    if (applyView !== 'applied') {
+      baseForCounts = baseForCounts.filter((x) => x.status === status);
+    }
+    baseForCounts = baseForCounts
+      .filter((x) => recordPassesNotFirstLine(x))
+      .filter((x) => recordPassesNotDeveloper(x, prefs))
+      .filter((x) => recordPassesNotSenior(x, prefs))
+      .filter((x) => recordPassesNot1C(x, prefs))
+      .filter((x) => recordPassesLlmList(x))
+      .filter((x) => recordPassesMinSalary(x, prefs));
+    const queueBase = baseForCounts.filter((x) => !vacancyHasHhApply(x) && !vacancyQuestionnairePending(x));
+    const questionnaireBase = baseForCounts.filter((x) => vacancyQuestionnairePending(x));
+    const appliedBase = baseForCounts.filter((x) => vacancyHasHhApply(x));
+    const high = filterByScoreBand(queueBase, 'high', threshold).length;
+    const low = filterByScoreBand(queueBase, 'low', threshold).length;
+    const appliedHigh = filterByScoreBand(appliedBase, 'high', threshold).length;
+    const appliedLow = filterByScoreBand(appliedBase, 'low', threshold).length;
+
+    let rawInBand = 0;
+    let hiddenByRole = 0;
+    if (applyView !== 'applied') {
+      let rawStatus = loadQueue().filter((x) => x.status === status && !vacancyHasHhApply(x));
+      rawStatus = rawStatus.filter((x) => recordHasDescription(x));
+      if (scoreBand === 'high' || scoreBand === 'low' || scoreBand === 'all') {
+        rawInBand =
+          scoreBand === 'all' ? rawStatus.length : filterByScoreBand(rawStatus, scoreBand, threshold).length;
+      }
+      const afterRole = rawStatus
+        .filter((x) => recordPassesNotFirstLine(x))
+        .filter((x) => recordPassesNotDeveloper(x, prefs))
+        .filter((x) => recordPassesNotSenior(x, prefs))
+        .filter((x) => recordPassesNot1C(x, prefs))
+        .filter((x) => recordPassesLlmList(x))
+        .filter((x) => recordPassesMinSalary(x, prefs));
+      const inBandAfterRole =
+        scoreBand === 'all' ? afterRole.length : filterByScoreBand(afterRole, scoreBand, threshold).length;
+      hiddenByRole = Math.max(0, rawInBand - inBandAfterRole);
+    }
+
+    const itemsOut = q.map((x) => {
+      const row = { ...x };
+      if (applyView === 'hidden') {
+        row.hiddenRoleReasons = recordHiddenRoleReasons(x, prefs);
+      }
+      return row;
+    });
+
+    return sendJson(res, 200, {
+      items: itemsOut,
+      threshold,
+      scoreBand,
+      applyView,
+      counts: {
+        high,
+        low,
+        shown: q.length,
+        applied: appliedBase.length,
+        appliedHigh,
+        appliedLow,
+        queue: queueBase.length,
+        questionnaire: questionnaireBase.length,
+        rawInBand,
+        hiddenByRole,
+        totalPending: loadQueue().filter((x) => x.status === status).length,
+      },
+    });
   }
 
   if (req.method === 'GET' && pathname === '/api/cover-letters') {
@@ -155,25 +400,37 @@ const server = http.createServer(async (req, res) => {
     const q = loadQueue()
       .filter((x) => x.coverLetter?.status === letterStatus)
       .filter((x) => recordHasDescription(x))
-      .filter((x) => recordPassesNotFirstLine(x))
+      .filter((x) => recordPassesNotFirstLine(x));
+    let letterPrefs = {};
+    try {
+      letterPrefs = loadPreferences();
+    } catch {
+      /* ignore */
+    }
+    const qLetters = q
+      .filter((x) => recordPassesNotDeveloper(x, letterPrefs))
+      .filter((x) => recordPassesNotSenior(x, letterPrefs))
+      .filter((x) => recordPassesNot1C(x, letterPrefs))
       .filter((x) => recordPassesLlmList(x));
-    q.sort(
+    qLetters.sort(
       (a, b) =>
         (b.scoreOverall ?? b.geminiScore ?? 0) - (a.scoreOverall ?? a.geminiScore ?? 0)
     );
-    return sendJson(res, 200, { items: q });
+    return sendJson(res, 200, { items: qLetters });
   }
 
   if (req.method === 'GET' && pathname === '/api/hh-apply-chat-log') {
     const lines = url.searchParams.get('lines');
-    const tail = readApplyChatLogTail(lines);
-    const rel = path.relative(ROOT, HH_APPLY_CHAT_LOG_FILE).replace(/\\/g, '/');
-    const relativePath =
-      rel && rel !== '.' && !rel.startsWith('..') ? rel : 'data/hh-apply-chat.log';
-    return sendJson(res, 200, {
-      ...tail,
-      relativePath,
-    });
+    const lastRunOnly = url.searchParams.get('lastRun') !== '0';
+    const tail = readApplyChatLogTail(lines, { lastRunOnly });
+    return sendJson(res, 200, { ...tail, logKind: 'apply-chat' });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/harvest-log') {
+    const lines = url.searchParams.get('lines');
+    const lastRunOnly = url.searchParams.get('lastRun') !== '0';
+    const tail = readHarvestRunLogTail(lines, { lastRunOnly });
+    return sendJson(res, 200, { ...tail, logKind: 'harvest' });
   }
 
   if (req.method === 'GET' && pathname === '/api/preferences') {
@@ -219,7 +476,25 @@ const server = http.createServer(async (req, res) => {
       url: rec.url,
     });
 
-    return sendJson(res, 200, { ok: true, status: nextStatus });
+    let autoRejected = [];
+    if (action === 'reject') {
+      const reasonText = String(reason || '').trim();
+      if (reasonText) {
+        const { isAutoRejectSimilarEnabled, rejectSimilarPendingFromReason } = await import(
+          '../lib/reject-similar-apply.mjs'
+        );
+        if (isAutoRejectSimilarEnabled()) {
+          const result = rejectSimilarPendingFromReason({
+            feedbackReason: reasonText,
+            excludeRecordId: id,
+            source: 'dashboard-reject',
+          });
+          autoRejected = result.applied;
+        }
+      }
+    }
+
+    return sendJson(res, 200, { ok: true, status: nextStatus, autoRejected });
   }
 
   if (req.method === 'POST' && pathname === '/api/vacancy/refresh-body') {
@@ -379,6 +654,183 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { ok: true, coverLetter });
   }
 
+  if (req.method === 'POST' && pathname === '/api/questionnaire/generate') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const { id } = body;
+    if (!id) return sendJson(res, 400, { error: 'Нужен id' });
+
+    const rec = getVacancyRecord(id);
+    if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+
+    const questions = meaningfulQuestions(rec.hhApply?.questionnaire?.questions);
+    if (!questions.length) {
+      return sendJson(res, 400, {
+        error:
+          'Нет текста вопросов (в JSON только «Текстовое поле N»). Нажмите «Загрузить с hh.ru» в модалке анкеты.',
+      });
+    }
+
+    if (!hasScoreProviderCredentials()) {
+      return sendJson(res, 503, {
+        error: 'Нужен OpenRouter_API_KEY или HH_CUSTOM_LLM_*',
+      });
+    }
+
+    let cvBundle;
+    try {
+      cvBundle = await loadCvBundle();
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || 'Не удалось загрузить CV' });
+    }
+    if (!cvBundle.text.trim()) {
+      return sendJson(res, 400, { error: 'Нет текста CV — положите файлы в папку CV/' });
+    }
+
+    let result;
+    try {
+      result = await generateQuestionnaireAnswers({
+        record: rec,
+        questions,
+        cvText: cvBundle.text,
+      });
+    } catch (e) {
+      return sendJson(res, 502, { error: String(e?.message || e).slice(0, 600) });
+    }
+
+    const now = new Date().toISOString();
+    const prevQ = rec.hhApply?.questionnaire || {};
+    const questionnaire = {
+      ...prevQ,
+      status: prevQ.status || 'pending_manual',
+      questions,
+      suggestedAnswers: result.answers,
+      answersModel: result.model,
+      answersGeneratedAt: now,
+    };
+    updateVacancyRecord(id, {
+      hhApply: { ...rec.hhApply, lastAt: now, questionnaire },
+    });
+
+    return sendJson(res, 200, {
+      ok: true,
+      questionnaire,
+      model: result.model,
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/questionnaire/save-answers') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const { id, answers: rawAnswers } = body;
+    if (!id) return sendJson(res, 400, { error: 'Нужен id' });
+
+    const rec = getVacancyRecord(id);
+    if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+
+    const questions = rec.hhApply?.questionnaire?.questions;
+    if (!Array.isArray(questions) || !questions.length) {
+      return sendJson(res, 400, { error: 'Нет вопросов анкеты' });
+    }
+
+    const answers = (Array.isArray(rawAnswers) ? rawAnswers : [])
+      .map((row) => ({
+        index: Number(row.index),
+        answer: String(row.answer ?? '').trim(),
+      }))
+      .filter((a) => Number.isFinite(a.index) && a.index >= 1);
+
+    const now = new Date().toISOString();
+    const prevQ = rec.hhApply?.questionnaire || {};
+    const questionnaire = {
+      ...prevQ,
+      questions,
+      savedAnswers: answers,
+      answersSavedAt: now,
+    };
+    updateVacancyRecord(id, {
+      hhApply: { ...rec.hhApply, lastAt: now, questionnaire },
+    });
+
+    return sendJson(res, 200, { ok: true, questionnaire });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/questionnaire/probe') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const { id } = body;
+    if (!id) return sendJson(res, 400, { error: 'Нужен id' });
+
+    const rec = getVacancyRecord(id);
+    if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+
+    const harvestSt = getJobStatus();
+    if (harvestSt.harvest.running) {
+      return sendJson(res, 409, { error: 'Идёт сбор вакансий — дождитесь завершения.' });
+    }
+    if (activeApplyChatPid) {
+      try {
+        process.kill(activeApplyChatPid, 0);
+        return sendJson(res, 409, { error: 'Сейчас открыт отклик в браузере — дождитесь завершения.' });
+      } catch {
+        activeApplyChatPid = null;
+      }
+    }
+    const lock = getBrowserLockInfo();
+    if (lock.held && lock.owner !== 'probe-questionnaire') {
+      return sendJson(res, 409, {
+        error: `Профиль браузера занят (${lock.owner}). Закройте Chromium или подождите.`,
+      });
+    }
+
+    const scriptPath = path.join(ROOT, 'scripts', 'probe-questionnaire.mjs');
+    if (!fs.existsSync(scriptPath)) {
+      return sendJson(res, 500, { error: 'probe-questionnaire.mjs не найден' });
+    }
+
+    const exitCode = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [scriptPath, `--id=${id}`], {
+        cwd: ROOT,
+        env: { ...process.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let errText = '';
+      child.stderr?.on('data', (d) => {
+        errText += d.toString();
+      });
+      child.on('close', (code) => resolve({ code: code ?? 1, errText }));
+    });
+
+    const updated = getVacancyRecord(id);
+    if (exitCode.code === 0) {
+      return sendJson(res, 200, {
+        ok: true,
+        questionnaire: updated?.hhApply?.questionnaire,
+        questionCount: meaningfulQuestions(updated?.hhApply?.questionnaire?.questions).length,
+      });
+    }
+    if (exitCode.code === 2) {
+      return sendJson(res, 404, {
+        error: 'На странице отклика анкета не найдена (возможно, вопросы только после «Далее»).',
+      });
+    }
+    return sendJson(res, 502, {
+      error: (exitCode.errText || 'Ошибка probe-questionnaire').trim().slice(0, 500),
+    });
+  }
+
   if (req.method === 'POST' && pathname === '/api/cover-letter/save-draft') {
     let body;
     try {
@@ -462,15 +914,39 @@ const server = http.createServer(async (req, res) => {
     } catch {
       return sendJson(res, 400, { error: 'Invalid JSON' });
     }
-    const { id } = body;
+    const { id, usePoolLetter, tailorResume, questionnaireWait, questionnaireAuto } = body;
     if (!id) return sendJson(res, 400, { error: 'Нужен id' });
 
     const rec = getVacancyRecord(id);
     if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
     const letter = String(rec.coverLetter?.approvedText || '').trim();
-    if (!letter) {
+    if (!letter && !usePoolLetter) {
       return sendJson(res, 400, {
-        error: 'Нет утверждённого письма — сначала утвердите текст в «Черновик письма»',
+        error:
+          'Нет утверждённого письма — утвердите в «Черновик письма» или нажмите «Авто-отклик» (письмо из пула)',
+      });
+    }
+
+    if (activeApplyChatPid) {
+      try {
+        process.kill(activeApplyChatPid, 0);
+        return sendJson(res, 409, {
+          error: `Уже запущен «Отклик в браузере» (pid=${activeApplyChatPid}). Дождитесь завершения текущего сценария.`,
+        });
+      } catch {
+        activeApplyChatPid = null;
+      }
+    }
+    const harvestSt = getJobStatus();
+    if (harvestSt.harvest.running) {
+      return sendJson(res, 409, {
+        error: `Сейчас идёт сбор вакансий (pid=${harvestSt.harvest.pid}). Сначала дождитесь его завершения.`,
+      });
+    }
+    const applyLock = getBrowserLockInfo();
+    if (applyLock.held && applyLock.owner !== 'apply-chat') {
+      return sendJson(res, 409, {
+        error: `Профиль браузера занят (${applyLock.owner}). Закройте лишний Chromium или дождитесь сбора.`,
       });
     }
 
@@ -479,10 +955,16 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 500, { error: 'Скрипт hh-apply-chat-letter.mjs не найден' });
     }
 
-    const maxApply = getMaxApplyChatPerHour();
-    if (countApplyLaunchesLastHour() >= maxApply) {
+    const maxApplyHour = getMaxApplyChatPerHour();
+    const maxApplyDay = getMaxApplyChatPerDay();
+    if (countApplyLaunchesLastHour() >= maxApplyHour) {
       return sendJson(res, 429, {
-        error: `Слишком частые отклики: максимум ${maxApply} запусков в час (hhApplyChatMaxPerHour в preferences.json).`,
+        error: `Слишком частые отклики: максимум ${maxApplyHour} в час (hhApplyChatMaxPerHour).`,
+      });
+    }
+    if (countApplyLaunchesLastDay() >= maxApplyDay) {
+      return sendJson(res, 429, {
+        error: `Дневной лимит откликов: ${maxApplyDay} (hhApplyChatMaxPerDay). Продолжите завтра.`,
       });
     }
     recordApplyLaunch();
@@ -498,17 +980,45 @@ const server = http.createServer(async (req, res) => {
     const logFd = fs.openSync(HH_APPLY_CHAT_LOG_FILE, 'a');
     let child;
     try {
-      child = spawn(process.execPath, [scriptPath, `--id=${id}`], {
+      const playwrightBrowsersPath =
+        String(process.env.PLAYWRIGHT_BROWSERS_PATH || '').trim() || path.join(ROOT, '.playwright-browsers');
+      const childArgs = [scriptPath, `--id=${id}`];
+      if (usePoolLetter) childArgs.push('--use-pool-letter');
+      if (tailorResume !== false) childArgs.push('--tailor-resume');
+      if (questionnaireWait) {
+        childArgs.push('--questionnaire-wait', '--stay-open');
+      }
+      if (questionnaireAuto || (usePoolLetter && process.env.HH_QUESTIONNAIRE_AUTO === '1')) {
+        childArgs.push('--questionnaire-auto');
+      }
+      loadDevOpsEnv();
+      child = spawn(process.execPath, childArgs, {
         cwd: ROOT,
         detached: true,
-        stdio: ['ignore', logFd, logFd],
-        env: process.env,
+        // Лог только через appendApplyChatLog в скрипте — иначе каждая строка дублируется.
+        stdio: ['ignore', 'ignore', 'ignore'],
+        env: {
+          ...process.env,
+          PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath,
+          HH_HEADLESS: '0',
+          HH_FAST: '1',
+          HH_USE_POOL_LETTER: usePoolLetter ? '1' : '',
+          HH_TAILOR_RESUME: tailorResume !== false ? '1' : '',
+          HH_QUESTIONNAIRE_WAIT: questionnaireWait ? '1' : '',
+          HH_QUESTIONNAIRE_AUTO:
+            questionnaireAuto || (usePoolLetter && process.env.HH_QUESTIONNAIRE_AUTO === '1') ? '1' : '',
+        },
       });
     } finally {
-      fs.closeSync(logFd);
+      try {
+        fs.closeSync(logFd);
+      } catch {
+        /* ignore */
+      }
     }
 
     child.on('exit', (code, signal) => {
+      if (activeApplyChatPid === child.pid) activeApplyChatPid = null;
       const line = `\n--- child exit code=${code} signal=${signal || ''} at ${new Date().toISOString()} ---\n`;
       try {
         fs.appendFileSync(HH_APPLY_CHAT_LOG_FILE, line, 'utf8');
@@ -517,6 +1027,7 @@ const server = http.createServer(async (req, res) => {
       }
     });
 
+    activeApplyChatPid = child.pid;
     child.unref();
 
     return sendJson(res, 200, {
@@ -524,6 +1035,172 @@ const server = http.createServer(async (req, res) => {
       pid: child.pid,
       logFile: path.relative(ROOT, HH_APPLY_CHAT_LOG_FILE),
       logFileAbsolute: HH_APPLY_CHAT_LOG_FILE,
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/run-harvest') {
+    let body = {};
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const periodDays = parseHarvestPeriodDays(body.periodDays ?? 7);
+    const st = getJobStatus();
+    if (st.harvest.running) {
+      return sendJson(res, 409, { error: `Сбор уже идёт (pid=${st.harvest.pid})` });
+    }
+    clearStaleBrowserLock();
+    const lock = getBrowserLockInfo();
+    if (lock.held) {
+      return sendJson(res, 409, {
+        error: `Профиль браузера занят (${lock.owner}, pid=${lock.pid}). Закройте все окна Chromium с hh.ru (сбор/отклик) и повторите.`,
+      });
+    }
+    if (isProcessAlive(activeApplyChatPid)) {
+      return sendJson(res, 409, {
+        error: `Сейчас идёт отклик в браузере (pid=${activeApplyChatPid}). Дождитесь завершения или закройте окно.`,
+      });
+    }
+    const harvestScript = path.join(ROOT, 'scripts', 'run-devops-harvest.mjs');
+    const logPath = path.join(DATA_DIR, 'harvest-run.log');
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const logFd = fs.openSync(logPath, 'a');
+    fs.writeSync(
+      logFd,
+      `\n======== HARVEST ${new Date().toISOString()} period=${harvestPeriodLabel(periodDays)} ========\n`
+    );
+    loadDevOpsEnv();
+    const child = spawn(process.execPath, [harvestScript], {
+      cwd: ROOT,
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+      env: {
+        ...process.env,
+        HH_SEARCH_PERIOD: periodDays === 0 ? '0' : String(periodDays),
+        // Headed Chromium на Windows часто падает сразу после launch; сбор — в headless.
+        HH_HEADLESS: process.env.HH_HEADLESS ?? '1',
+        PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(ROOT, '.playwright-browsers'),
+      },
+    });
+    fs.closeSync(logFd);
+    setHarvestPid(child.pid);
+    child.on('exit', () => setHarvestPid(null));
+    child.unref();
+    try {
+      const devopsEnvPath = path.join(ROOT, 'config', 'devops.env');
+      let txt = fs.readFileSync(devopsEnvPath, 'utf8');
+      if (/^HH_SEARCH_PERIOD=.*/m.test(txt)) {
+        txt = txt.replace(
+          /^HH_SEARCH_PERIOD=.*/m,
+          `HH_SEARCH_PERIOD=${periodDays === 0 ? '0' : periodDays}`
+        );
+      } else {
+        txt += `\nHH_SEARCH_PERIOD=${periodDays === 0 ? '0' : periodDays}\n`;
+      }
+      fs.writeFileSync(devopsEnvPath, txt, 'utf8');
+    } catch {
+      /* ignore */
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      pid: child.pid,
+      periodDays,
+      logFile: 'data/harvest-run.log',
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/tailor-resume') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const { id } = body;
+    if (!id) return sendJson(res, 400, { error: 'Нужен id' });
+    const rec = getVacancyRecord(id);
+    if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+    try {
+      const { ensureTailoredResumePdf } = await import('../lib/tailor-resume.mjs');
+      const { pdfPath, mdPath } = await ensureTailoredResumePdf(rec.id, {
+        title: rec.title,
+        company: rec.company,
+        description: String(rec.descriptionForLlm || rec.descriptionPreview || ''),
+      });
+      const tailoredResume = { pdfPath, mdPath, updatedAt: new Date().toISOString() };
+      updateVacancyRecord(id, { tailoredResume });
+      return sendJson(res, 200, { ok: true, tailoredResume });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/hh-launch-apply-batch') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const controlAction = String(body.action || body.control || '').toLowerCase();
+    if (controlAction === 'pause' || controlAction === 'resume' || controlAction === 'stop') {
+      const result = handleBatchControlAction(controlAction);
+      return sendJson(res, result.code, result.body);
+    }
+    const minScore = body.minScore != null ? Math.max(0, Number(body.minScore) || 0) : 50;
+    const maxScore = body.maxScore != null ? Math.max(0, Number(body.maxScore) || 0) : 0;
+    const limit = Math.min(50, Math.max(1, Number(body.limit) || 10));
+    const batchScript = path.join(ROOT, 'scripts', 'hh-apply-batch.mjs');
+    if (!fs.existsSync(batchScript)) {
+      return sendJson(res, 500, { error: 'hh-apply-batch.mjs не найден' });
+    }
+    if (countApplyLaunchesLastDay() >= getMaxApplyChatPerDay()) {
+      return sendJson(res, 429, {
+        error: `Дневной лимит откликов (${getMaxApplyChatPerDay()}) исчерпан.`,
+      });
+    }
+    const resume = Boolean(body.resume);
+    const batchSt = getJobStatus();
+    if (batchSt.batch.running) {
+      return sendJson(res, 409, { error: `Батч уже идёт (pid=${batchSt.batch.pid})` });
+    }
+    if (resume) {
+      if (!canResumeFromState()) {
+        return sendJson(res, 409, { error: 'Нет сохранённого батча для продолжения' });
+      }
+    } else {
+      clearBatchResumeState();
+    }
+    const logFd = fs.openSync(HH_APPLY_CHAT_LOG_FILE, 'a');
+    const header = `\n======== BATCH ${new Date().toISOString()} minScore=${minScore} limit=${limit} resume=${resume} ========\n`;
+    fs.writeSync(logFd, header);
+    const args = [batchScript, '--use-pool-letters', '--tailor-resume'];
+    if (resume) {
+      args.push('--resume');
+    } else {
+      args.push(`--limit=${limit}`);
+      if (minScore > 0) args.push(`--min-score=${minScore}`);
+      if (maxScore > 0) args.push(`--max-score=${maxScore}`);
+    }
+    loadDevOpsEnv();
+    const child = spawn(process.execPath, args, {
+      cwd: ROOT,
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+      env: {
+        ...process.env,
+        PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(ROOT, '.playwright-browsers'),
+      },
+    });
+    fs.closeSync(logFd);
+    setBatchPid(child.pid);
+    child.on('exit', () => setBatchPid(null));
+    child.unref();
+    return sendJson(res, 200, {
+      ok: true,
+      pid: child.pid,
+      message: `Батч запущен (до ${limit} откликов${minScore ? `, ≥${minScore}` : ''}${maxScore ? `, ≤${maxScore}` : ''}). Смотрите лог.`,
     });
   }
 
@@ -567,5 +1244,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Дашборд: http://127.0.0.1:${PORT}`);
+  console.log(`Дашборд: http://127.0.0.1:${PORT} (batch-control: pause/stop/resume)`);
 });

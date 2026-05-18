@@ -1,0 +1,9 @@
+{
+  "id": "backend-python",
+  "label": "Backend Python (пример)",
+  "keywordsFile": "config/search-keywords.txt",
+  "queueFile": "data/vacancies-backend.json",
+  "preferencesFile": "config/preferences.json",
+  "resumeTitle": "Python",
+  "notes": "Скопируйте config/profiles/custom.env.example → config/profiles/backend-python.env и задайте HH_PROFILE=backend-python"
+}

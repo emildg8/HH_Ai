@@ -1,6 +1,6 @@
 {
   "name": "hh-ru-apply",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,15 +9,32 @@
     "scan-tg": "node scripts/scan-telegram.mjs",
     "vacancies": "node scripts/open-vacancies.mjs",
     "harvest": "node scripts/harvest.mjs",
+    "devops:harvest": "node scripts/run-devops-harvest.mjs",
+    "devops:rescore": "node scripts/run-devops-rescore.mjs",
+    "devops:reject-similar": "node scripts/run-devops-reject-similar.mjs",
+    "cv:export": "node scripts/export-cv-docs.mjs",
+    "devops:apply-batch": "node scripts/hh-apply-batch.mjs --use-pool-letters --tailor-resume",
+    "devops:pipeline": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/devops-pipeline.ps1",
     "search-and-score": "node scripts/harvest.mjs",
     "dashboard": "node scripts/dashboard-server.mjs",
+    "devops:dashboard": "node scripts/dashboard-server.mjs",
+    "devops:test-dashboard-ui": "node scripts/test-dashboard-ui.mjs",
+    "devops:probe-questionnaire": "node scripts/probe-questionnaire.mjs",
     "ollama:pull": "ollama pull llama3.2",
     "rescore-queue": "node scripts/rescore-queue.mjs",
+    "score-openrouter-quota": "node scripts/score-openrouter-until-quota.mjs",
     "hh-fill-letter": "node scripts/hh-fill-response-letter.mjs",
     "hh-apply-chat": "node scripts/hh-apply-chat-letter.mjs",
-    "codegen-hh": "node scripts/codegen-hh.mjs"
+    "probe-response": "node scripts/probe-vacancy-response.mjs",
+    "codegen-hh": "node scripts/codegen-hh.mjs",
+    "backup": "node scripts/backup.mjs",
+    "release:pack": "node scripts/release-pack.mjs",
+    "export:public": "node scripts/export-public.mjs",
+    "profile:init": "node scripts/profile-init.mjs",
+    "profile:list": "node -e \"import('./lib/load-profile.mjs').then(m=>console.log(m.listProfiles()))\""
   },
   "dependencies": {
+    "docx": "^9.6.1",
     "dotenv": "^16.4.5",
     "pdf-parse": "^2.4.5",
     "playwright": "^1.49.0"

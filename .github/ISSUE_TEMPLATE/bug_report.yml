@@ -1,0 +1,33 @@
+name: Bug report
+description: Ошибка в скрипте или дашборде
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что произошло
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия (файл VERSION)
+      placeholder: "1.0.0"
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Профиль
+      options:
+        - devops
+        - other
+  - type: textarea
+    id: logs
+    attributes:
+      label: Лог (без секретов)
+      description: Последние строки data/hh-apply-chat.log или harvest-run.log

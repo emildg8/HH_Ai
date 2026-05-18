@@ -1,8 +1,18 @@
-# hh-ru-apply
+# hh-ru-apply / HH Ai
 
-Автоматизация работы с [hh.ru](https://hh.ru) на Node.js + Playwright: сбор вакансий, оценка с помощью LLM, генерация сопроводительных писем и отклики через браузер с сохранением сессии.
+**Версия:** 1.0.0 — см. [CHANGELOG.md](CHANGELOG.md), [docs/ROADMAP.md](docs/ROADMAP.md)
 
-> **Важно:** Автоматизация откликов и массовые действия могут противоречить правилам сервиса и привести к ограничению аккаунта. Используйте на свой страх и риск.
+Автоматизация работы с [hh.ru](https://hh.ru) на Node.js + Playwright: сбор вакансий, оценка с помощью LLM, генерация сопроводительных писем и отклики через браузер с сохранением сессии. Подходит не только для DevOps — через **профили** `HH_PROFILE` (см. [docs/SETUP.md](docs/SETUP.md)).
+
+> **Важно:** Автоматизация откликов и массовые действия могут противоречить правилам сервиса и привести к ограничению аккаунта. Используйте на свой страх и риск. Секреты и сессии не коммить — [SECURITY.md](SECURITY.md).
+
+| Документ | Описание |
+|----------|----------|
+| [docs/SETUP.md](docs/SETUP.md) | Установка, профили, бэкапы |
+| [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) | Запуск без Docker, варианты desktop/SaaS |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | План развития |
+| [SECURITY.md](SECURITY.md) | Безопасность и отчёт об уязвимостях |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Ветки, PR, проверки |
 
 ## Возможности
 
@@ -217,6 +227,17 @@ npm run codegen-hh
 | `TELEGRAM_CHAT_ID` | ID чата/канала |
 
 Полный список и значения по умолчанию — в [`.env.example`](.env.example).
+
+## Версии, бэкапы, публикация
+
+```bash
+npm run backup              # локальный zip (data, config, CV)
+npm run release:pack        # снимок HH_DevOps_Emil_v1.0.zip → releases/
+npm run export:public       # копия без секретов → dist/hh-ai-public
+npm run profile:init -- --id=my-role --title="Аналитик"
+```
+
+Приватный репозиторий для разработки: **HH_Ai** на GitHub (ветка `HH_Ai`).
 
 ## Лицензия
 

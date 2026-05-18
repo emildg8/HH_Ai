@@ -17,6 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import 'dotenv/config';
+import { buildHhSearchText } from '../lib/hh-search.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -48,7 +49,7 @@ function keywordsFromArgs() {
 
 function buildSearchUrl(text) {
   const params = new URLSearchParams();
-  params.set('text', text);
+  params.set('text', buildHhSearchText(text));
   params.set('ored_clusters', 'true');
   const area = (process.env.HH_AREA || '').trim();
   if (area) params.set('area', area);

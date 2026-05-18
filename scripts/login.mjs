@@ -3,23 +3,14 @@
  * Войдите на hh.ru вручную, затем нажмите Enter в терминале — профиль сохранится для npm run apply.
  */
 
-import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import readline from 'readline';
-import 'dotenv/config';
+import { loadEnv } from '../lib/load-env.mjs';
+loadEnv();
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.join(__dirname, '..');
-const SESSION_DIR = process.env.HH_SESSION_DIR
-  ? path.resolve(process.cwd(), process.env.HH_SESSION_DIR)
-  : path.join(ROOT, 'data', 'session');
-const PERSISTENT_PROFILE = path.join(SESSION_DIR, 'chromium-profile');
-
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
+import { sessionProfilePath } from '../lib/paths.mjs';
+import { launchPersistentContextSafe, closeContextSafe, getBrowserLockInfo } from '../lib/chromium-session.mjs';
 
 function waitEnter(message) {
   return new Promise((resolve) => {
@@ -32,24 +23,45 @@ function waitEnter(message) {
 }
 
 async function main() {
-  ensureDir(SESSION_DIR);
-  const ctx = await chromium.launchPersistentContext(PERSISTENT_PROFILE, {
+  const profile = sessionProfilePath();
+  fs.mkdirSync(path.dirname(profile), { recursive: true });
+
+  const lock = getBrowserLockInfo();
+  if (lock.held) {
+    console.warn(
+      `Внимание: профиль может быть занят (${lock.owner}, pid=${lock.pid}). ` +
+        'Закройте другие окна Chromium с data/session/chromium-profile.'
+    );
+  }
+
+  const launchOpts = {
     headless: false,
     viewport: { width: 1280, height: 800 },
     locale: 'ru-RU',
+  };
+  const ch = String(process.env.HH_PLAYWRIGHT_CHANNEL || 'chrome').trim();
+  if (ch) launchOpts.channel = ch;
+
+  const ctx = await launchPersistentContextSafe(profile, launchOpts, {
+    owner: 'login',
+    retries: 4,
+    lockTimeoutMs: 30_000,
   });
   const page = ctx.pages()[0] || (await ctx.newPage());
-  await page.goto('https://hh.ru/', { waitUntil: 'domcontentloaded' });
+  await page.goto('https://hh.ru/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
   await waitEnter(
     'Войдите в аккаунт hh.ru в открытом окне. Когда закончите, нажмите Enter здесь: '
   );
 
-  await ctx.close();
-  console.log('Профиль сохранён:', PERSISTENT_PROFILE);
+  await closeContextSafe(ctx, 'login');
+  console.log('Профиль сохранён:', profile);
 }
 
 main().catch((e) => {
   console.error(e);
+  console.error(
+    '\nЕсли браузер сразу закрылся: закройте все окна с профилем hh-ru-apply и повторите npm run login.'
+  );
   process.exit(1);
 });

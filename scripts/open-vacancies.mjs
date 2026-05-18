@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import readline from 'readline';
 import 'dotenv/config';
 import { loadSearchKeywords } from '../lib/load-keywords.mjs';
+import { buildHhSearchText } from '../lib/hh-search.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -32,7 +33,7 @@ const headless = process.env.HH_HEADLESS === '1';
 const stayOpen = process.argv.includes('--stay-open');
 
 /** Максимум вакансий за один запуск (открытых вкладок). */
-const MAX_VACANCIES_PER_RUN = 500;
+const MAX_VACANCIES_PER_RUN = 1000;
 
 const perKeyLimit = Math.min(
   MAX_VACANCIES_PER_RUN,
@@ -129,7 +130,7 @@ function waitEnter(message) {
 
 function buildSearchUrl(text) {
   const params = new URLSearchParams();
-  params.set('text', text);
+  params.set('text', buildHhSearchText(text));
   params.set('ored_clusters', 'true');
   const area = (process.env.HH_AREA || '').trim();
   if (area) params.set('area', area);

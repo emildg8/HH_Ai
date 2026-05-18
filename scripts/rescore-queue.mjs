@@ -6,6 +6,7 @@
  * Все pending с url: node scripts/rescore-queue.mjs --all-pending
  * Ограничить число карточек: node scripts/rescore-queue.mjs --limit=20
  * Пауза между вакансиями (мс, снижает 429): HH_RESCORE_DELAY_MS=5000
+ * Только записи после harvest --skip-llm (плейсхолдер в summary): --only-placeholder-llm
  */
 
 import { loadEnv } from '../lib/load-env.mjs';
@@ -21,6 +22,7 @@ import {
   scoreVacancyWithLlm,
   createLlmRoutingContext,
 } from '../lib/openrouter-score.mjs';
+import { scoreVacancyLocally, resolveScoreMode } from '../lib/local-vacancy-score.mjs';
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -29,6 +31,8 @@ function sleep(ms) {
 const argv = process.argv.slice(2);
 const argSet = new Set(argv);
 const allPending = argSet.has('--all-pending');
+const onlyPlaceholderLlm = argSet.has('--only-placeholder-llm');
+const forceRefresh = argSet.has('--force-refresh');
 
 let limitN = Infinity;
 for (const a of argv) {
@@ -44,13 +48,25 @@ function looksLikePreviousError(rec) {
     /Ошибка\s*(LLM|OpenRouter)/i.test(s) ||
     /openrouter\s*\d{3}/i.test(s) ||
     /fetch failed/i.test(s) ||
-    /no endpoints found/i.test(s)
+    /no endpoints found/i.test(s) ||
+    /нет\s+(полного\s+)?JSON-объекта/i.test(s) ||
+    /скобки\s*\{\s*\}\s*не\s*сбалансированы/i.test(s)
+  );
+}
+
+function looksLikeHarvestSkipLlmPlaceholder(rec) {
+  const s = String(rec.geminiSummary || '');
+  return (
+    s.includes('(LLM отключён') ||
+    s.includes('(без LLM: достигнут HH_LLM_MAX_PER_RUN') ||
+    s.includes('(без LLM: HH_LLM_MAX_PER_RUN=0)')
   );
 }
 
 async function main() {
-  if (!hasScoreProviderCredentials()) {
-    console.error('Нужен OpenRouter_API_KEY или HH_CUSTOM_LLM_BASE_URL + HH_CUSTOM_LLM_MODEL.');
+  const scoreMode = resolveScoreMode();
+  if (!hasScoreProviderCredentials() && scoreMode === 'llm') {
+    console.error('Нужен OpenRouter_API_KEY или HH_CUSTOM_LLM_* (или HH_SCORE_MODE=local).');
     process.exit(1);
   }
 
@@ -71,20 +87,26 @@ async function main() {
   const q = loadQueue();
 
   let items = q.filter((x) => x.status === 'pending' && x.url);
-  if (!allPending) {
+  if (onlyPlaceholderLlm) {
+    items = items.filter(looksLikeHarvestSkipLlmPlaceholder);
+  } else if (!allPending) {
     items = items.filter(looksLikePreviousError);
   }
 
-  if (!items.length && !allPending) {
+  if (!items.length && !allPending && !onlyPlaceholderLlm) {
     console.log(
       'Нет pending-записей с текстом ошибки в summary. Для пересчёта всех: node scripts/rescore-queue.mjs --all-pending'
     );
     return;
   }
+  if (!items.length && onlyPlaceholderLlm) {
+    console.log('Нет pending-записей с плейсхолдером «LLM отключён» / «без LLM».');
+    return;
+  }
 
   items = items.slice(0, limitN);
   console.log(
-    `Пересчёт: ${items.length} записей (allPending=${allPending}, limit=${Number.isFinite(limitN) ? limitN : '∞'}, delayMs=${delayMs})`
+    `Пересчёт: ${items.length} записей (allPending=${allPending}, onlyPlaceholderLlm=${onlyPlaceholderLlm}, limit=${Number.isFinite(limitN) ? limitN : '∞'}, delayMs=${delayMs})`
   );
 
   for (let i = 0; i < items.length; i++) {
@@ -92,11 +114,23 @@ async function main() {
     const label = (rec.title || rec.id).slice(0, 72);
     console.log(`[${i + 1}/${items.length}] ${label}`);
     try {
-      const parsed = await fetchVacancyTextFromHh(rec.url);
-      const desc = String(parsed.description || '');
-      const title = parsed.title || rec.title;
-      const company = parsed.company || rec.company;
-      const salaryRaw = parsed.salaryRaw || rec.salaryRaw;
+      // Хранимое в очереди descriptionForLlm обычно достаточно для LLM-оценки.
+      // Обновлять с hh стоит только если описание отсутствует/слишком короткое или включён --force-refresh.
+      let title = rec.title;
+      let company = rec.company;
+      let salaryRaw = rec.salaryRaw;
+      let desc = String(rec.descriptionForLlm || rec.description || '');
+      let descPreview = String(rec.descriptionPreview || '');
+
+      const descOk = desc.trim().length >= 200;
+      if (!descOk || forceRefresh) {
+        const parsed = await fetchVacancyTextFromHh(rec.url);
+        desc = String(parsed.description || '');
+        descPreview = String(parsed.description || '').slice(0, 600);
+        title = parsed.title || rec.title;
+        company = parsed.company || rec.company;
+        salaryRaw = parsed.salaryRaw || rec.salaryRaw;
+      }
 
       const vacancy = {
         title,
@@ -107,33 +141,44 @@ async function main() {
       };
 
       let llm;
-      let lastErr;
-      for (let attempt = 0; attempt < 4; attempt++) {
-        try {
-          llm = await scoreVacancyWithLlm(vacancy, cvBundle, prefs, routing);
-          lastErr = null;
-          break;
-        } catch (e) {
-          lastErr = e;
-          const msg = String(e.message || e);
-          const retryable =
-            /\b429\b/i.test(msg) ||
-            /rate\s*limit/i.test(msg) ||
-            /\b403\b/i.test(msg) ||
-            /capacity/i.test(msg);
-          if (!retryable || attempt >= 3) throw e;
-          const pause = 20000 + attempt * 25000;
-          console.warn(`  … временная ошибка OpenRouter (${msg.slice(0, 80)}…), пауза ${pause} мс и повтор`);
-          await sleep(pause);
+      if (scoreMode === 'local' || !hasScoreProviderCredentials()) {
+        llm = scoreVacancyLocally(vacancy, cvBundle);
+        console.log(`  Локальная оценка: итог ${llm.scoreOverall}`);
+      } else {
+        let lastErr;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          try {
+            llm = await scoreVacancyWithLlm(vacancy, cvBundle, prefs, routing);
+            lastErr = null;
+            break;
+          } catch (e) {
+            lastErr = e;
+            const msg = String(e.message || e);
+            const retryable =
+              /\b429\b/i.test(msg) ||
+              /rate\s*limit/i.test(msg) ||
+              /\b403\b/i.test(msg) ||
+              /capacity/i.test(msg);
+            if (!retryable || attempt >= 3) {
+              console.warn(`  LLM: ${msg.slice(0, 100)} → локальная оценка`);
+              llm = scoreVacancyLocally(vacancy, cvBundle);
+              lastErr = null;
+              break;
+            }
+            const pause = 20000 + attempt * 25000;
+            console.warn(`  … OpenRouter (${msg.slice(0, 80)}…), пауза ${pause} мс`);
+            await sleep(pause);
+          }
         }
+        if (lastErr) throw lastErr;
+        console.log(`  LLM: итог ${llm.scoreOverall}`);
       }
-      if (lastErr) throw lastErr;
 
       updateVacancyRecord(rec.id, {
         title,
         company,
         salaryRaw,
-        descriptionPreview: desc.slice(0, 600),
+        descriptionPreview: descPreview.slice(0, 600),
         descriptionForLlm: desc.slice(0, 6000),
         vacancyBodyRefreshedAt: new Date().toISOString(),
         llmProvider: llm.llmSource === 'custom' ? 'openai-compatible' : 'openrouter',

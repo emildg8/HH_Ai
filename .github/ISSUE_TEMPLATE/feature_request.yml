@@ -1,0 +1,22 @@
+name: Feature request
+description: Новая возможность
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую боль решаем
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Предлагаемое решение
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Приоритет для вас
+      options:
+        - nice to have
+        - important
+        - critical

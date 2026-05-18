@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main, HH_Ai]
+  pull_request:
+    branches: [main, HH_Ai]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install chromium --with-deps
+
+      - name: Syntax check scripts
+        run: |
+          for f in scripts/*.mjs lib/*.mjs; do
+            node --check "$f"
+          done
+
+      - name: Public export (no secrets)
+        run: npm run export:public
+
+      - name: Verify export has no session dir
+        run: test ! -d dist/hh-ai-public/data/session
+
+      - name: Dashboard UI smoke
+        run: npm run devops:test-dashboard-ui
+        env:
+          HH_VACANCIES_QUEUE_FILE: ./data/vacancies-queue.example.json
