@@ -1,0 +1,18 @@
+services:
+  dashboard:
+    build: .
+    container_name: hh-ru-apply-dashboard
+    ports:
+      - "3849:3849"
+    volumes:
+      - ./data:/app/data
+      - ./config/cover-letter.txt:/app/config/cover-letter.txt:ro
+      - ./CV:/app/CV:ro
+    env_file:
+      - .env
+      - config/secrets.local.env
+    environment:
+      # Ollama на хосте Windows/Mac (Docker Desktop): 127.0.0.1 из контейнера не виден.
+      HH_CUSTOM_LLM_BASE_URL: http://host.docker.internal:11434/v1
+      HH_CUSTOM_LLM_MODEL: llama3.2
+    restart: unless-stopped

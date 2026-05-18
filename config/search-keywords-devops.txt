@@ -1,0 +1,27 @@
+# DevOps / SRE / платформенная инженерия — Россия (удалёнку отсекаем при разборе в preferences.json)
+# Senior не ищем: HH_SEARCH_EXCLUDE_TOKENS и excludeSeniorRoles в preferences.json
+DevOps
+DevOps engineer
+инженер DevOps
+Junior DevOps
+Middle DevOps
+DevOps-инженер
+DevOps инженер middle
+DevOps инженер junior
+SRE
+Site Reliability Engineer
+инженер по эксплуатации
+инженер по надёжности
+платформенный инженер
+инженер инфраструктуры
+Linux DevOps
+Kubernetes инженер
+CI/CD инженер
+инженер облачной инфраструктуры
+системный инженер DevOps
+инженер сопровождения DevOps
+MLOps инженер
+инженер автоматизации инфраструктуры
+DevSecOps
+инженер OpenShift
+инженер контейнерной платформы
