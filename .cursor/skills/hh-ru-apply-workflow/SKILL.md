@@ -1,7 +1,7 @@
 ---
 name: hh-ru-apply-workflow
 description: >-
-  Maps hh.ru automation in this repo: Playwright scripts, vacancies queue, dashboard,
+  Maps hh.ru automation in HH Ai (canonical repo: github.com/emildg8/HH_Ai; Steev193/hh-ru-apply — idea only, do not push there). Playwright scripts, vacancies queue, dashboard,
   cover letter fill vs chat apply, selector files. Use when editing or running hh-ru-apply,
   debugging Playwright flows, or answering questions about npm scripts, data paths, and
   hh.ru response/chat automation.

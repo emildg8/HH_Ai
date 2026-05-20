@@ -91,12 +91,13 @@ npm run dashboard
 
 ## Документация
 
-- docs/PUBLIC-RELEASE.md — релиз 2.0 для получателя
-- docs/SETUP.md — установка
+- docs/README.md — оглавление всей документации HH Ai
+- docs/PUBLIC-RELEASE.md — релиз для получателя
+- docs/SETUP.md, docs/USAGE.md, docs/BATCH.md, docs/DASHBOARD.md
 - docs/SECURITY.md — что не публиковать
-- CHANGELOG.md — список изменений 2.0
+- CHANGELOG.md — история версий
 
-Основано на [Steev193/hh-ru-apply](https://github.com/Steev193/hh-ru-apply) (MIT). См. docs/ATTRIBUTION.md.
+HH Ai — [github.com/emildg8/HH_Ai](https://github.com/emildg8/HH_Ai). Идея-основа: Steev193/hh-ru-apply (MIT). См. docs/ATTRIBUTION.md.
 `;
   fs.writeFileSync(path.join(OUT, 'EXPORT-README.md'), txt, 'utf8');
 }

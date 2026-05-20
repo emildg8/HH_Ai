@@ -1,6 +1,8 @@
 # HH Ai 2.0 — релиз для нового пользователя
 
-Этот документ для тех, кто получил **публичный архив** (`hh-ai-public-v2.0.0.zip`) или клонировал репозиторий **без** личных данных предыдущего владельца.
+**Репозиторий:** [github.com/emildg8/HH_Ai](https://github.com/emildg8/HH_Ai) · [Вся документация](README.md)
+
+Этот документ для тех, кто получил **публичный архив** ([релиз zip](https://github.com/emildg8/HH_Ai/releases/latest)) или клонировал репозиторий **без** личных данных предыдущего владельца.
 
 ## Что внутри архива
 
@@ -131,4 +133,4 @@ npm run release:public
 
 ## Лицензия
 
-MIT. Upstream: [Steev193/hh-ru-apply](https://github.com/Steev193/hh-ru-apply) — [ATTRIBUTION.md](ATTRIBUTION.md).
+MIT. Основной проект: [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai). Идея-основа — [ATTRIBUTION.md](ATTRIBUTION.md).

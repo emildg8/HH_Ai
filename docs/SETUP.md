@@ -1,8 +1,14 @@
-# Установка
+# Установка HH Ai
 
-**Версия:** 2.0.0 · Публичный релиз без личных данных: [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md).
+**Версия:** 2.0.0 · [Вся документация](README.md) · Публичный zip: [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md)
 
-Основано на [Steev193/hh-ru-apply](https://github.com/Steev193/hh-ru-apply) — см. [ATTRIBUTION.md](ATTRIBUTION.md).
+**Репозиторий:** [github.com/emildg8/HH_Ai](https://github.com/emildg8/HH_Ai) (ветка `HH_Ai`). Идея-основа — [ATTRIBUTION.md](ATTRIBUTION.md).
+
+```bash
+git clone https://github.com/emildg8/HH_Ai.git
+cd HH_Ai
+git checkout HH_Ai
+```
 
 ## 1. Требования
 

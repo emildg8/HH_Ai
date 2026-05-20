@@ -4,7 +4,7 @@
 
 ## [2.0.0] — 2026-05-20
 
-Крупный релиз: батч-отклики с анкетами, понятный журнал пропусков, harvest/фильтры, капча, улучшения LLM и UI дашборда. Публичная копия: `npm run release:public` → `releases/hh-ai-public-v2.0.0.zip`.
+Крупный релиз: батч-отклики с анкетами, понятный журнал пропусков, harvest/фильтры, капча, улучшения LLM и UI дашборда. Публичная копия: `npm run release:public` → `releases/hh-ai-public-v2.0.0.zip`. Документация: [docs/README.md](docs/README.md), репозиторий [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai).
 
 ### Added
 
@@ -61,6 +61,6 @@
 
 - Секреты и сессии вне git; публичный экспорт без cookies и ключей.
 
-[2.0.0]: https://github.com/Steev193/hh-ru-apply/releases/tag/v2.0.0
-[1.0.1]: https://github.com/Steev193/hh-ru-apply/releases/tag/v1.0.1
-[1.0.0]: https://github.com/Steev193/hh-ru-apply/releases/tag/v1.0.0
+[2.0.0]: https://github.com/emildg8/HH_Ai/releases/tag/v2.0.0
+[1.0.1]: https://github.com/emildg8/HH_Ai/releases/tag/v1.0.1
+[1.0.0]: https://github.com/emildg8/HH_Ai/releases/tag/v1.0.0

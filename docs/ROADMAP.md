@@ -1,6 +1,6 @@
 # Roadmap HH Ai (подробный)
 
-**Версия:** 2.0.0 · **База:** [Steev193/hh-ru-apply](https://github.com/Steev193/hh-ru-apply)
+**Версия:** 2.0.0 · **Репозиторий:** [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai) · идея-основа: [Steev193/hh-ru-apply](https://github.com/Steev193/hh-ru-apply)
 
 Исходная цель: меньше ручного труда на hh.ru при контроле качества откликов, с ростом качества LLM и учётом приглашений/отказов.
 

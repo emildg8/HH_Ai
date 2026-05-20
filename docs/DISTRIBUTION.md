@@ -20,7 +20,7 @@
 | Шаг | Действие |
 |-----|----------|
 | 1 | Установить [Node.js LTS](https://nodejs.org/) |
-| 2 | `git clone` → `npm install` → `npx playwright install chromium` |
+| 2 | `git clone https://github.com/emildg8/HH_Ai.git` → `npm install` → `npx playwright install chromium` |
 | 3 | `npm run login` (один раз, вручную на hh.ru) |
 | 4 | `npm run dashboard` |
 
@@ -43,7 +43,7 @@
 - `npm run release:public` → `releases/hh-ai-public-v2.0.0.zip` (для передачи другим)
 - `npm run release:pack` → полный локальный снимок **с вашими data** (не публиковать)
 - `scripts/install-portable.ps1` + `start-dashboard.bat` на рабочий стол
-- Цель: **скачивание с GitHub Releases** (`hh-ru-apply-win-x64-v1.1.0.zip`) без git и без Docker
+- Цель: **скачивание с [GitHub Releases HH_Ai](https://github.com/emildg8/HH_Ai/releases)** (`hh-ai-public-v*.zip`) без git
 - **Плюсы:** без Docker, без git.  
 - **Минусы:** антивирусы, ручное обновление; Node.js всё ещё нужен (или bundled в zip позже)
 

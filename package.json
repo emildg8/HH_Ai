@@ -1,7 +1,16 @@
 {
-  "name": "hh-ru-apply",
+  "name": "hh-ai",
   "version": "2.0.0",
+  "description": "HH Ai — локальная автоматизация откликов на hh.ru (дашборд, LLM, батч, анкеты). https://github.com/emildg8/HH_Ai",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/emildg8/HH_Ai.git"
+  },
+  "homepage": "https://github.com/emildg8/HH_Ai#readme",
+  "bugs": {
+    "url": "https://github.com/emildg8/HH_Ai/issues"
+  },
   "type": "module",
   "scripts": {
     "login": "node scripts/login.mjs",

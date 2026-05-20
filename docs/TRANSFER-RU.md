@@ -1,47 +1,46 @@
-# Передача проекта другому соискателю
+# Передача HH Ai другому человеку
 
-Этот файл нужен, чтобы быстро запустить `hh-ru-apply` на другом ПК/в другом Cursor.
+**Версия:** 2.0.0
 
-## 1) Что настроить новому пользователю
+## Рекомендуемый способ — GitHub Release
 
-1. Скопировать `.env.example` в `.env`.
-2. В `config/search-keywords.txt` записать свои поисковые запросы (по одному на строку).
-3. Положить свои резюме в папку `CV/` (`.pdf`, `.txt`, `.md`).
-4. При необходимости отредактировать:
-   - `config/cover-letter.example.txt` (тон/структура писем),
-   - `config/preferences.json` (фильтры и лимиты).
-5. Добавить ключи в `config/secrets.local.env` (или в `.env`):
-   - `OpenRouter_API_KEY=...`
-   - при локальной модели: `HH_CUSTOM_LLM_BASE_URL=...` и `HH_CUSTOM_LLM_MODEL=...`
+1. Скачать **[hh-ai-public-v2.0.0.zip](https://github.com/emildg8/HH_Ai/releases/latest)** (или актуальный с [Releases](https://github.com/emildg8/HH_Ai/releases)).
+2. Отдать получателю ссылку на **[docs/PUBLIC-RELEASE.md](PUBLIC-RELEASE.md)** (внутри архива).
 
-## 2) Первый запуск
+Сборка у себя:
 
 ```bash
-npm install
-npx playwright install chromium
-npm run login
-npm run dashboard
+npm run release:public
 ```
 
-Дашборд откроется на `http://127.0.0.1:3844` (или порту из `.env`).
+## Что получатель настраивает сам
 
-## 3) Типовой сценарий работы
+| Файл | Действие |
+|------|----------|
+| `.env` | из `.env.example` |
+| `config/secrets.local.env` | OpenRouter / LLM |
+| `config/profiles/*.env` | из `*.example.env`, резюме hh.ru |
+| `config/cover-letter.txt` | шаблон письма |
+| `CV/` | свои резюме |
+| `config/search-keywords*.txt` | свои запросы |
 
-```bash
-npm run harvest
-```
+## Чего нет в публичном архиве
 
-Далее в дашборде:
-- просмотреть вакансии,
-- сгенерировать/утвердить сопроводительное,
-- запустить «Отклик в браузере».
-
-## 4) Что намеренно не передаётся в архиве
-
-- `.env`
-- `config/secrets.local.env`
-- `data/` (сессии, логи, очередь, скриншоты ошибок)
+- Сессия hh.ru (`data/session/`)
+- Очереди вакансий, логи, скриншоты
+- API-ключи, hash резюме
 - `node_modules/`
-- локальный кэш браузеров Playwright (`.playwright-browsers/`)
 
-Это делается, чтобы не передавать личные данные и «грязное» состояние запуска.
+## Альтернатива — git
+
+```bash
+git clone https://github.com/emildg8/HH_Ai.git
+cd HH_Ai
+git checkout HH_Ai
+```
+
+Не используйте старые ссылки на Steev193/hh-ru-apply — это только идея-основа, см. [ATTRIBUTION.md](ATTRIBUTION.md).
+
+## Полная документация
+
+[README.md](README.md) — оглавление всех руководств.
