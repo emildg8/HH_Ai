@@ -123,7 +123,7 @@
 | Метрика | Сейчас | Цель Q3 2026 |
 |---------|--------|----------------|
 | Отклики без правки письма | — | ≥60% |
-| verify-local ok | ручной | ежедневно авто |
+| verify-local ok | CI на push/PR | ежедневно + перед тегом |
 | Время harvest→отклик | — | <5 мин/вакансия |
 | Утечки секретов в git | 0 | 0 |
 
@@ -131,11 +131,111 @@
 
 ## План 2026 H2 (после 2.0.0)
 
-| Версия | Фокус |
-|--------|--------|
-| **2.0.1** | CI smoke/verify, QA-CLEAN-INSTALL, release workflow, setup wizard, Issues/backlog |
-| **2.1.0** | Feedback invited (R2), HH_PROFILE в UI (R4.1) |
-| **2.2.0** | deferUntil, Telegram harvest, метрики батча |
+**Горизонт:** май–декабрь 2026 · **Цель:** доверие новых пользователей (R1) → качество писем (R2) → фон и UX (R3–R4).
+
+```mermaid
+flowchart LR
+  subgraph q2 [Q2 2026]
+    A[2.0.1 доверие]
+    B[Issues backlog]
+  end
+  subgraph q3 [Q3 2026]
+    C[2.1.0 LLM feedback]
+    D[UX профиль в UI]
+  end
+  subgraph q4 [Q4 2026]
+    E[2.2.0 фон]
+    F[portable zip]
+  end
+  q2 --> q3 --> q4
+```
+
+### Версии (кратко)
+
+| Версия | Фокус | Статус |
+|--------|--------|--------|
+| **2.0.1** | CI, QA, release workflow, setup, backlog Issues | [~] в основном сделано |
+| **2.1.0** | Feedback invited/declined, HH_PROFILE в UI, резюме в батче | [ ] |
+| **2.2.0** | deferUntil, Telegram, метрики, portable zip | [ ] |
+| **3.0.0** | *(опционально)* Tauri / portable-only | [ ] backlog |
+
+---
+
+### 2.0.1 — «Можно отдавать и не стыдно» (Q2 2026)
+
+Закрывает хвост **фазы 1** и стабильность для мейнтейнера.
+
+| # | Задача | Roadmap | Статус | Ссылка |
+|---|--------|---------|--------|--------|
+| 1 | CI: `verify:local` + `smoke:release` + UI smoke | R3.2 | [x] | [ci.yml](../.github/workflows/ci.yml) |
+| 2 | Release при теге `v*` → zip на GitHub | R1.4 | [~] | [release.yml](../.github/workflows/release.yml) — проверить на `v2.0.1` |
+| 3 | [QA-CLEAN-INSTALL.md](QA-CLEAN-INSTALL.md) | R1.7 | [~] | прогон на чистой VM |
+| 4 | [MAINTAINER.md](MAINTAINER.md), [UX-FRICTION-LOG.md](UX-FRICTION-LOG.md) | — | [x] | |
+| 5 | `npm run setup`, `secrets:check`, `hooks:install` | R1.6, R3.7 | [x] | |
+| 6 | GitHub Issues backlog | — | [x] | [BACKLOG.md](issues/BACKLOG.md) |
+| 7 | README «Скачать» (zip / clone) | R1.5 | [x] | |
+
+**Критерий выхода 2.0.1:** тег `v2.0.1` + CI green + один прогон QA ≤30 мин + zip на [Releases](https://github.com/emildg8/HH_Ai/releases).
+
+**Команды перед тегом:**
+
+```bash
+npm run smoke:release
+npm run verify:local
+git tag v2.0.1 && git push hh_ai v2.0.1
+```
+
+---
+
+### 2.1.0 — «Меньше ручной возни» (Q3 2026)
+
+Приоритет: качество писем и ежедневный DevOps-поиск.
+
+| # | Задача | Roadmap | Issue |
+|---|--------|---------|-------|
+| 1 | Кнопки «Пригласили» / «Отказ» → `feedback.jsonl` | R2.1–R2.2 | [#5](https://github.com/emildg8/HH_Ai/issues/5) |
+| 2 | Few-shot по `geminiTags` (SRE / platform / …) | R2.3 | — |
+| 3 | Выбор `HH_PROFILE` в дашборде | R4.1 | — |
+| 4 | Батч: стабильный выбор резюме DevOps (hash + лог) | техдолг | [#3](https://github.com/emildg8/HH_Ai/issues/3) |
+| 5 | `npm run apply` без «browser closed» | — | [#4](https://github.com/emildg8/HH_Ai/issues/4) |
+| 6 | Метрики карточки: % правок, дата отклика | R2.6, R4.3 | — |
+| 7 | A/B два варианта письма до утверждения | R2.5 | — |
+
+**Критерий выхода 2.1.0:** ≥50% писем утверждаются без правки (см. метрики ниже); закрыты #3 и #4 или задокументирован workaround.
+
+---
+
+### 2.2.0 — «Умный фон» (Q4 2026)
+
+| # | Задача | Roadmap |
+|---|--------|---------|
+| 1 | `deferUntil` — отложить вакансию | R3.5 |
+| 2 | Ночной `rescore` только pending | R3.6 |
+| 3 | Telegram после harvest (N≥50) | R3.3 |
+| 4 | Батч: явная пауза при капче + resume | R3.4 |
+| 5 | Массовый probe анкет по фильтру | R4.2 |
+| 6 | Portable win-x64 zip в CI | R1.2 |
+| 7 | `install-portable.ps1` в архиве | R1.3 |
+
+---
+
+### Техдолг и селекторы (постоянно)
+
+| Тема | Действие | Issue |
+|------|----------|-------|
+| Вёрстка hh.ru изменилась | `npm run codegen-hh` → `lib/hh-*-selectors.mjs` | [#6](https://github.com/emildg8/HH_Ai/issues/6) |
+| Friction внешнего тестера | Запись в [UX-FRICTION-LOG.md](UX-FRICTION-LOG.md) → Issue «Онбординг» | шаблон в `.github/ISSUE_TEMPLATE/` |
+
+**Не в scope H2:** SaaS с cookies на сервере; обход капчи/ToS hh.ru.
+
+---
+
+### Спринт «следующая сессия» (рекомендуемый порядок)
+
+1. Прогон [QA-CLEAN-INSTALL.md](QA-CLEAN-INSTALL.md) на VM → friction в журнал.
+2. Тег **v2.0.1** (проверка `release.yml`).
+3. Закрыть [#3](https://github.com/emildg8/HH_Ai/issues/3) (резюме в батче).
+4. Старт **2.1.0**: [#5](https://github.com/emildg8/HH_Ai/issues/5) (invited/declined).
 
 ---
 
