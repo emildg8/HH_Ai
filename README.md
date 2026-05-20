@@ -40,9 +40,9 @@ npm run dashboard
 
 → **http://127.0.0.1:3849**
 
-**Без git:** [скачать zip](https://github.com/emildg8/HH_Ai/releases/latest) → распаковать → `install.ps1` / `install.sh`
+После install: `npm run setup:check` — что ещё настроить.
 
-Пошагово: **[docs/QUICKSTART.md](docs/QUICKSTART.md)**
+**Без git:** [скачать zip](https://github.com/emildg8/HH_Ai/releases/latest) → `install.ps1` / `install.sh`
 
 ---
 
@@ -64,6 +64,7 @@ npm run dashboard
 | | |
 |---|---|
 | [**QUICKSTART.md**](docs/QUICKSTART.md) | **5 шагов — с нуля до отклика** |
+| [**CONFIG-GUIDE.md**](docs/CONFIG-GUIDE.md) | **LLM, профиль, обучение модели** |
 | [docs/README.md](docs/README.md) | Оглавление |
 | [USAGE.md](docs/USAGE.md) | Полный рабочий цикл |
 | [DASHBOARD.md](docs/DASHBOARD.md) | Интерфейс |
@@ -81,6 +82,7 @@ npm run dashboard
 | `npm run harvest` | Сбор и оценка |
 | `npm run login` | Сессия hh.ru |
 | `npm run devops:apply-batch` | Массовый отклик |
+| `npm run setup:check` | Что настроить перед первым запуском |
 | `npm run verify:local` | Проверка установки |
 | `npm run release:public` | Zip для передачи |
 

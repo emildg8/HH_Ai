@@ -2,6 +2,10 @@
 
 **Версия:** 2.0.0
 
+> **Простой гид:** [CONFIG-GUIDE.md](CONFIG-GUIDE.md) — режимы LLM, профили, обучение стилю.  
+> **Пресеты:** [config/presets/README.md](../config/presets/README.md)  
+> **Проверка:** `npm run setup:check`
+
 ## Файлы (порядок загрузки)
 
 | Файл | В git | Назначение |

@@ -90,7 +90,7 @@ function writeExportReadme() {
 
 ## Быстрый старт
 
-**Подробно:** docs/QUICKSTART.md
+**Подробно:** docs/QUICKSTART.md · **Настройка LLM:** docs/CONFIG-GUIDE.md
 
 \`\`\`powershell
 # Windows

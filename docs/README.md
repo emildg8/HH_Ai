@@ -13,6 +13,7 @@ HH Ai — локальная автоматизация откликов на [h
 | Вы | Документ |
 |----|----------|
 | **Новый пользователь** | **[QUICKSTART.md](QUICKSTART.md)** ← начните здесь |
+| **Настройка LLM и профиля** | **[CONFIG-GUIDE.md](CONFIG-GUIDE.md)** |
 | Zip без git | [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md) |
 | Установка | [SETUP.md](SETUP.md) |
 | Полный цикл | [USAGE.md](USAGE.md) |

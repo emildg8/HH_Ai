@@ -46,6 +46,7 @@
     "profile:init": "node scripts/profile-init.mjs",
     "profile:list": "node -e \"import('./lib/load-profile.mjs').then(m=>console.log(m.listProfiles()))\"",
     "verify:local": "node scripts/verify-local.mjs",
+    "setup:check": "node scripts/setup-check.mjs",
     "smoke:release": "node scripts/smoke-release.mjs",
     "docs:screenshots": "node scripts/capture-demo-screenshots.mjs",
     "postinstall": "node -e \"console.log('HH Ai: npm run login && npm run dashboard  |  docs/QUICKSTART.md')\""

@@ -38,15 +38,20 @@ bash scripts/install.sh
 
 ---
 
-## Шаг 2. Конфиг (2 минуты)
+## Шаг 2. Настройка (5 минут)
+
+```bash
+npm run setup:check
+```
 
 | Файл | Действие |
 |------|----------|
-| `config/secrets.local.env` | Вставьте `OPENROUTER_API_KEY=...` *(или свой LLM — см. `.env.example`)* |
-| `config/profiles/devops.env` | Укажите `HH_PROFILE_RESUME_TITLE=...` (название резюме на hh.ru) |
-| `config/cover-letter.txt` | Скопируйте из `cover-letter.example.txt` и отредактируйте |
+| `config/secrets.local.env` | Ключ LLM — **один пресет** из [`config/presets/`](../config/presets/README.md) |
+| `config/profiles/devops.env` | `HH_PROFILE_RESUME_TITLE` — название резюме на hh.ru |
+| `CV/` | Положите `resume.pdf` или `.md` — модель «узнает» ваш опыт |
+| `config/cover-letter.txt` | Шаблоны писем (создаётся при install) |
 
-Без LLM-ключа harvest всё равно работает — локальная оценка по ключевым словам.
+**Без LLM-ключа** — harvest работает с локальной оценкой. Подробно: **[CONFIG-GUIDE.md](CONFIG-GUIDE.md)** (режимы LLM, другая роль, обучение стилю).
 
 ---
 
@@ -99,6 +104,7 @@ npm run verify:local
 
 | Документ | Зачем |
 |----------|-------|
+| **[CONFIG-GUIDE.md](CONFIG-GUIDE.md)** | **LLM, профиль, обучение стилю** |
 | [USAGE.md](USAGE.md) | Полный сценарий |
 | [BATCH.md](BATCH.md) | Массовый отклик, код выхода 5 |
 | [CONFIG.md](CONFIG.md) | Все переменные окружения |
