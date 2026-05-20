@@ -2,11 +2,20 @@ import { initFloatingTooltips } from './tooltips.mjs';
 import { initModalLayer, openModalEl, closeModalEl } from './modals.mjs';
 import { initUiScaleControls } from './ui-scale.mjs';
 import { initThemeControls } from './ui-theme.mjs';
+import { initCardTuningControls } from './ui-card-tuning.mjs';
+import { applyLocalDashboardDefaults } from './load-local-defaults.mjs';
 import {
   meaningfulQuestions,
   itemHasMeaningfulQuestionnaire,
   itemQuestionnaireNeedsProbe,
+  itemQuestionnaireShouldAutoProbe,
+  recordNeedsQuestionnaireWork,
 } from './questionnaire-labels.mjs';
+import {
+  isChoiceQuestion,
+  matchAnswerToOption,
+  normalizeChoiceOptionLabel,
+} from './questionnaire-choice.mjs';
 
 const listEl = document.getElementById('list');
 const tpl = document.getElementById('card-tpl');
@@ -19,13 +28,25 @@ const filterMinScoreEl = document.getElementById('filter-min-score');
 const filterSortEl = document.getElementById('filter-sort');
 const filterSalaryEl = document.getElementById('filter-salary');
 const scoreThresholdInputEl = document.getElementById('score-threshold-input');
+const batchLimitEl = document.getElementById('batch-limit');
+const prefMaxHourEl = document.getElementById('pref-max-hour');
+const prefMaxDayEl = document.getElementById('pref-max-day');
+const prefMaxMonthEl = document.getElementById('pref-max-month');
+const settingsSaveHintEl = document.getElementById('settings-save-hint');
+const applyRateMetersEl = document.getElementById('apply-rate-meters');
 
 let currentStatus = 'pending';
 let currentApplyView = 'queue';
 let currentScoreBand = 'high';
 let scoreThreshold = 50;
+let batchSizeCap = 100;
+/** @type {Record<string, { min: number, max: number }>} */
+let prefBounds = {};
+let settingsHydrated = false;
+let preferencesSaveAvailable = null;
 let lastHarvestTickSeq = 0;
 let applyLogPollTimer = null;
+let applyChatWasRunning = false;
 let cachedRawItems = [];
 let cachedCounts = null;
 /** Открыть первую анкету после перехода на вкладку «Анкета». */
@@ -49,8 +70,18 @@ function readFiltersFromUI() {
   };
 }
 
+function filterItemsForApplyView(items, view = currentApplyView) {
+  if (view === 'noQuestionnaire') {
+    return items.filter((x) => !vacancyHasHhApply(x) && !recordNeedsQuestionnaireWork(x));
+  }
+  if (view === 'questionnaire') {
+    return items.filter((x) => !vacancyHasHhApply(x) && recordNeedsQuestionnaireWork(x));
+  }
+  return items;
+}
+
 function applyClientFilters(items, filters) {
-  let out = [...items];
+  let out = filterItemsForApplyView([...items]);
   const q = filters.search.toLowerCase();
   if (q) {
     out = out.filter((it) => {
@@ -86,6 +117,168 @@ function applyClientFilters(items, filters) {
       out.sort((a, b) => scoreOf(b) - scoreOf(a));
   }
   return out;
+}
+
+function renderApplyRateMeters(rates) {
+  if (!applyRateMetersEl || !rates) return;
+  const rows = [
+    { key: 'hour', label: 'ч', used: rates.lastHour, max: rates.maxPerHour },
+    { key: 'day', label: 'сут', used: rates.lastDay, max: rates.maxPerDay },
+    { key: 'month', label: '30д', used: rates.lastMonth, max: rates.maxPerMonth },
+  ];
+  applyRateMetersEl.innerHTML = rows
+    .map(({ label, used, max }) => {
+      const u = Number(used) || 0;
+      const m = Math.max(1, Number(max) || 1);
+      const pct = Math.min(100, Math.round((u / m) * 100));
+      const barClass =
+        pct >= 100 ? 'rate-meter__bar--full' : pct >= 85 ? 'rate-meter__bar--warn' : '';
+      return `<div class="rate-meter" title="${label}: ${u} из ${m}">
+        <span class="rate-meter__label">${label}</span>
+        <span class="rate-meter__track"><span class="rate-meter__bar ${barClass}" style="width:${pct}%"></span></span>
+        <span class="rate-meter__nums">${u}/${m}</span>
+      </div>`;
+    })
+    .join('');
+}
+
+function applyPreferencesToSettingsUI(preferences, bounds) {
+  if (bounds && typeof bounds === 'object') prefBounds = bounds;
+  const p = preferences || {};
+  const setNum = (el, key, fallback) => {
+    if (!el) return;
+    const b = prefBounds[key];
+    if (b) {
+      el.min = String(b.min);
+      el.max = String(b.max);
+    }
+    const n = Number(p[key]);
+    el.value = String(Number.isFinite(n) ? n : fallback);
+  };
+  setNum(scoreThresholdInputEl, 'dashboardMinScoreFilter', 50);
+  setNum(batchLimitEl, 'dashboardBatchSize', 10);
+  setNum(prefMaxHourEl, 'hhApplyChatMaxPerHour', 50);
+  setNum(prefMaxDayEl, 'hhApplyChatMaxPerDay', 1000);
+  setNum(prefMaxMonthEl, 'hhApplyChatMaxPerMonth', 5000);
+  const defMin = Number(p.dashboardMinScoreFilter);
+  if (Number.isFinite(defMin) && defMin >= 0) scoreThreshold = defMin;
+  const batchN = Number(p.dashboardBatchSize);
+  batchSizeCap = Number.isFinite(batchN) && batchN >= 1 ? Math.min(100, batchN) : 100;
+  if (batchLimitEl && prefBounds.dashboardBatchSize) {
+    batchLimitEl.max = String(prefBounds.dashboardBatchSize.max);
+  }
+  updateScoreBandTabLabels();
+  settingsHydrated = true;
+}
+
+function readSettingsPatchFromUI() {
+  /** @type {Record<string, number>} */
+  const patch = {};
+  for (const el of document.querySelectorAll('[data-pref]')) {
+    const key = el.dataset.pref;
+    if (!key) continue;
+    const n = Number(el.value);
+    if (Number.isFinite(n)) patch[key] = n;
+  }
+  return patch;
+}
+
+let settingsHintClearTimer = null;
+
+function setSettingsHint(text, variant = '') {
+  if (!settingsSaveHintEl) return;
+  if (settingsHintClearTimer) {
+    clearTimeout(settingsHintClearTimer);
+    settingsHintClearTimer = null;
+  }
+  const t = String(text || '').trim();
+  settingsSaveHintEl.textContent = t;
+  settingsSaveHintEl.hidden = !t;
+  settingsSaveHintEl.classList.remove('settings-hint--saved', 'settings-hint--err');
+  if (variant) settingsSaveHintEl.classList.add(`settings-hint--${variant}`);
+}
+
+function flashSettingsSaved() {
+  setSettingsHint('Сохранено', 'saved');
+  settingsHintClearTimer = setTimeout(() => {
+    settingsHintClearTimer = null;
+    if (settingsSaveHintEl?.textContent === 'Сохранено') setSettingsHint('');
+  }, 1800);
+}
+
+async function probePreferencesSaveApi() {
+  try {
+    const data = await api('/api/preferences/save');
+    return Boolean(data?.preferencesSave ?? data?.ok);
+  } catch {
+    return false;
+  }
+}
+
+async function patchPreferencesApi(patch) {
+  const body = JSON.stringify({ patch });
+  const tries = [
+    () => api('/api/preferences/save', { method: 'POST', body }),
+    () => api('/api/preferences', { method: 'POST', body }),
+    () => api('/api/preferences', { method: 'PATCH', body }),
+  ];
+  let lastErr;
+  for (const fn of tries) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (e.status !== 404) throw e;
+    }
+  }
+  throw lastErr;
+}
+
+async function saveSettingsFromUI() {
+  if (preferencesSaveAvailable === false) {
+    setSettingsHint('Перезапустите дашборд: npm run devops:dashboard, затем F5', 'err');
+    return;
+  }
+  const patch = readSettingsPatchFromUI();
+  try {
+    const res = await patchPreferencesApi(patch);
+    if (res.preferences) applyPreferencesToSettingsUI(res.preferences, prefBounds);
+    if (res.applyRates) renderApplyRateMeters(res.applyRates);
+    flashSettingsSaved();
+    if (currentScoreBand !== 'all') load({ preserveScroll: true });
+  } catch (e) {
+    const hint =
+      e.status === 404
+        ? 'Сервер без сохранения лимитов — перезапустите: npm run devops:dashboard, затем F5'
+        : e.message || 'Ошибка сохранения';
+    setSettingsHint(hint, 'err');
+  }
+}
+
+const scheduleSaveSettings = debounce(() => {
+  if (!settingsHydrated || preferencesSaveAvailable === false) return;
+  saveSettingsFromUI();
+}, 500);
+
+function getBatchLimitForRun() {
+  const cap = Number(batchLimitEl?.max) || batchSizeCap || 100;
+  return Math.min(cap, Math.max(1, Number(batchLimitEl?.value) || 10));
+}
+
+async function loadDashboardSettings() {
+  try {
+    const data = await api('/api/preferences');
+    const fromGet = data.apiFeatures?.preferencesSave === true;
+    preferencesSaveAvailable = fromGet || (await probePreferencesSaveApi());
+    applyPreferencesToSettingsUI(data.preferences, data.bounds);
+    if (data.applyRates) renderApplyRateMeters(data.applyRates);
+    if (!preferencesSaveAvailable) {
+      setSettingsHint('Сохранение недоступно — перезапустите дашборд (npm run devops:dashboard)', 'err');
+    }
+  } catch {
+    settingsHydrated = true;
+    preferencesSaveAvailable = false;
+  }
 }
 
 function updateScoreBandTabLabels() {
@@ -139,12 +332,17 @@ function itemPassesRoleFilters(item) {
 function vacancyHasHhApply(item) {
   const h = item?.hhApply;
   if (!h) return false;
+  if (Boolean(h.responseSubmitted)) return true;
   if (h.questionnaire?.status === 'pending_manual') return false;
-  return Boolean(h.responseSubmitted);
+  return false;
 }
 
 function vacancyQuestionnairePending(item) {
-  return item?.hhApply?.questionnaire?.status === 'pending_manual';
+  if (item?.hhApply?.responseSubmitted) return false;
+  const q = item?.hhApply?.questionnaire;
+  if (q?.status === 'pending_manual') return true;
+  if (q?.likelyFromVacancyText) return true;
+  return false;
 }
 
 function hhApplyBadgeText(item) {
@@ -304,9 +502,23 @@ let questionnaireModalState = null;
 
 function questionnaireAnswersMap(item) {
   const q = item?.hhApply?.questionnaire;
+  const questions = meaningfulQuestions(q?.questions || []);
   const map = new Map();
-  for (const row of q?.savedAnswers || q?.suggestedAnswers || []) {
-    if (Number.isFinite(row?.index)) map.set(row.index, String(row.answer || ''));
+  const suggested = q?.suggestedAnswers || [];
+  const byPosition = suggested.length === questions.length;
+
+  for (let i = 0; i < questions.length; i++) {
+    const question = questions[i];
+    const row =
+      suggested.find((s) => Number(s.index) === question.index) ||
+      (byPosition ? suggested[i] : null);
+    if (row?.answer) map.set(question.index, String(row.answer));
+  }
+
+  for (const row of q?.savedAnswers || []) {
+    if (Number.isFinite(row?.index) && String(row.answer || '').trim()) {
+      map.set(row.index, String(row.answer));
+    }
   }
   return map;
 }
@@ -328,34 +540,65 @@ function formatMatchCv(v) {
   return map[v] || (v ? `CV: ${v}` : '');
 }
 
+function readCardDensityMode() {
+  return document.documentElement.dataset.cardDensity || 'medium';
+}
+
+/** Разбивка длинного текста на абзацы для карточки (полный/средний режим). */
+function splitCardParagraphs(text, max = 4) {
+  const t = String(text || '').trim();
+  if (!t) return [];
+  const byNewline = t.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean);
+  if (byNewline.length > 1) return byNewline.slice(0, max);
+  const sentences = t.match(/[^.!?…]+[.!?…]+|[^.!?…]+$/g) || [t];
+  const out = [];
+  let buf = '';
+  for (const s of sentences) {
+    if (out.length >= max) break;
+    const next = (buf + s).trim();
+    if (!buf || next.length <= 200) buf = next;
+    else {
+      out.push(buf);
+      buf = s.trim();
+    }
+  }
+  if (buf && out.length < max) out.push(buf);
+  return out.length ? out.slice(0, max) : [t.slice(0, 600)];
+}
+
+function fillDescBlock(container, text, maxParas) {
+  if (!container) return;
+  const parts = splitCardParagraphs(text, maxParas);
+  if (!parts.length) {
+    container.hidden = true;
+    container.replaceChildren();
+    return;
+  }
+  container.hidden = false;
+  container.replaceChildren(
+    ...parts.map((chunk) => {
+      const p = document.createElement('p');
+      p.className = 'card-para card-para--desc';
+      p.textContent = chunk;
+      return p;
+    })
+  );
+  if (text.length > 400) container.title = text;
+}
+
 function buildCardFacts(item) {
+  const density = readCardDensityMode();
   const lines = [];
   if (item.remoteNote) lines.push(item.remoteNote);
   if (item.salaryNote && !item.salaryEstimate?.ok) lines.push(item.salaryNote);
   const mc = formatMatchCv(item.geminiMatchCv);
   if (mc) lines.push(mc);
-  const sv = item.scoreVacancy;
-  const scm = item.scoreCvMatch;
-  if (Number.isFinite(Number(sv)) && Number.isFinite(Number(scm))) {
-    lines.push(`Оценка: вакансия ${sv}, CV ${scm}`);
-  }
-  if (item.createdAt) {
-    lines.push(
-      `Добавлено: ${new Date(item.createdAt).toLocaleString('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      })}`
-    );
-  }
-  if (itemQuestionnaireNeedsProbe(item)) {
-    lines.push('Анкета на hh.ru — нажмите «Вопросы» → «Загрузить с hh.ru»');
-  } else if (itemHasMeaningfulQuestionnaire(item)) {
-    const n = meaningfulQuestions(item.hhApply.questionnaire.questions).length;
-    lines.push(`Анкета: ${n} вопрос(ов)`);
-  }
-  return lines;
+  const cl = item.coverLetter;
+  if (cl?.status === 'approved') lines.push('Сопроводительное: утверждено');
+  else if (cl?.status === 'pending' && (cl.variants || []).length) lines.push('Сопроводительное: черновик');
+  else if (cl?.status === 'declined') lines.push('Сопроводительное: отклонено');
+  const factLimit = { compact: 3, medium: 5, full: 8 };
+  return lines.slice(0, factLimit[density] ?? 5);
 }
 
 function renderQuestionnaireModalBody(modal, item) {
@@ -372,8 +615,8 @@ function renderQuestionnaireModalBody(modal, item) {
   if (!questions.length) {
     const needsProbe = itemQuestionnaireNeedsProbe(item) || raw.length > 0;
     body.innerHTML = needsProbe
-      ? '<p class="questionnaire-warn">Текст вопросов не сохранён (в JSON только «Текстовое поле N» или пусто). Нажмите <strong>«Загрузить с hh.ru»</strong> — скрипт пройдёт шаги «Далее» и запишет реальные формулировки.</p>'
-      : '<p class="questionnaire-empty">Вопросов пока нет. Нажмите «Загрузить с hh.ru» — откроется форма отклика в Chromium (нужна сессия login).</p>';
+      ? '<p class="questionnaire-warn">В JSON нет текста вопросов (заглушка «Писать тут», «Текстовое поле N» или текст мастера отклика). Загрузка с hh.ru запускается автоматически; при необходимости нажмите <strong>«Загрузить с hh.ru»</strong> ещё раз.</p>'
+      : '<p class="questionnaire-empty">Вопросов пока нет. Откроется Chromium и форма отклика (нужна сессия <code>npm run login</code>).</p>';
     if (meta) meta.textContent = '';
     return;
   }
@@ -385,40 +628,149 @@ function renderQuestionnaireModalBody(modal, item) {
   if (q.probedAt) parts.push(`с hh.ru: ${new Date(q.probedAt).toLocaleString('ru-RU')}`);
   if (meta) meta.textContent = parts.join(' · ');
 
-  for (const question of questions) {
+  questions.forEach((question, pos) => {
     const field = document.createElement('fieldset');
     field.className = 'questionnaire-q';
     const legend = document.createElement('legend');
-    legend.textContent = `${question.index}. ${question.label}`;
+    legend.textContent = `${pos + 1}. ${question.label}`;
     field.appendChild(legend);
-    const ta = document.createElement('textarea');
-    ta.className = 'field-input questionnaire-a';
-    ta.rows = question.type === 'textarea' ? 4 : 2;
-    ta.dataset.index = String(question.index);
-    ta.value = answers.get(question.index) || '';
-    ta.placeholder =
-      question.type === 'radio' || question.type === 'checkbox'
-        ? 'Короткий ответ (Да / Нет / число…) — как на hh.ru'
-        : 'Черновик ответа';
-    field.appendChild(ta);
+
+    if (isChoiceQuestion(question)) {
+      const savedRaw = answers.get(question.index) || '';
+      const matched = matchAnswerToOption(savedRaw, question.options);
+      const want = normalizeChoiceOptionLabel(matched?.label || savedRaw);
+      const optsWrap = document.createElement('div');
+      optsWrap.className = 'questionnaire-choice';
+      const groupName = `questionnaire-q-${question.index}`;
+      const inputType = question.type === 'checkbox' ? 'checkbox' : 'radio';
+
+      (question.options || []).forEach((opt, oi) => {
+        const optLabel = normalizeChoiceOptionLabel(opt.label);
+        const id = `q-${question.index}-opt-${oi}`;
+        const lbl = document.createElement('label');
+        lbl.className = 'questionnaire-choice-opt';
+        lbl.htmlFor = id;
+        const inp = document.createElement('input');
+        inp.type = inputType;
+        inp.name = groupName;
+        inp.id = id;
+        inp.className = 'questionnaire-a questionnaire-a--choice';
+        inp.dataset.index = String(question.index);
+        inp.value = optLabel;
+        if (want && (optLabel === want || optLabel.toLowerCase() === want.toLowerCase())) {
+          inp.checked = true;
+        }
+        const span = document.createElement('span');
+        span.textContent = opt.label;
+        lbl.appendChild(inp);
+        lbl.appendChild(span);
+        optsWrap.appendChild(lbl);
+      });
+      field.appendChild(optsWrap);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.className = 'field-input questionnaire-a';
+      ta.rows = question.type === 'textarea' ? 4 : 2;
+      ta.dataset.index = String(question.index);
+      ta.value = answers.get(question.index) || '';
+      ta.placeholder = 'Черновик ответа';
+      field.appendChild(ta);
+    }
+
     body.appendChild(field);
-  }
+  });
 }
 
 function collectQuestionnaireAnswersFromModal(modal) {
-  return [...modal.querySelectorAll('.questionnaire-a')].map((ta) => ({
-    index: Number(ta.dataset.index),
-    answer: ta.value.trim(),
-  }));
+  const byIndex = new Map();
+  for (const el of modal.querySelectorAll('.questionnaire-a')) {
+    const index = Number(el.dataset.index);
+    if (!index) continue;
+    if (el.type === 'radio' || el.type === 'checkbox') {
+      if (el.checked) byIndex.set(index, String(el.value || '').trim());
+    } else {
+      byIndex.set(index, String(el.value || '').trim());
+    }
+  }
+  return [...byIndex.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([index, answer]) => ({ index, answer }));
 }
 
-function openQuestionnaireModal(item) {
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function setQuestionnaireModalBusy(modal, busy, message) {
+  const body = modal.querySelector('.modal-questionnaire-body');
+  if (busy && body) {
+    body.innerHTML = `<p class="questionnaire-loading">${message || 'Загружаю вопросы с hh.ru…'}</p>`;
+  }
+  modal.querySelectorAll('.questionnaire-actions .btn').forEach((btn) => {
+    btn.disabled = busy;
+  });
+}
+
+async function runQuestionnaireProbe(opts = {}) {
+  const modal = questionnaireModalEl;
+  if (!modal || !questionnaireModalState?.id) return null;
+  if (questionnaireModalState.probeInFlight) return null;
+
+  questionnaireModalState.probeInFlight = true;
+  const probeBtn = modal.querySelector('.btn-questionnaire-probe');
+  if (probeBtn) probeBtn.disabled = true;
+  setQuestionnaireModalBusy(modal, true, 'Открываю hh.ru и читаю анкету… (до ~1 мин)');
+  if (!opts.silentToast) {
+    showToast('Открываю hh.ru и читаю анкету… (до ~1 мин)', 'neutral');
+  }
+
+  try {
+    const res = await api('/api/questionnaire/probe', {
+      method: 'POST',
+      body: JSON.stringify({ id: questionnaireModalState.id }),
+    });
+    if (!opts.silentToast) {
+      showToast(`Загружено вопросов: ${res.questionCount || 0}`, 'good');
+    }
+    await load();
+    const fresh = cachedRawItems.find((x) => x.id === questionnaireModalState.id);
+    if (fresh) {
+      questionnaireModalState.item = fresh;
+      setQuestionnaireModalBusy(modal, false);
+      renderQuestionnaireModalBody(modal, fresh);
+    }
+    return res;
+  } catch (e) {
+    setQuestionnaireModalBusy(modal, false);
+    const body = modal.querySelector('.modal-questionnaire-body');
+    const msg = String(e.message || 'Ошибка загрузки').trim();
+    if (body) {
+      body.innerHTML = `<p class="questionnaire-warn">${escapeHtml(msg)}</p><p class="questionnaire-empty">Проверьте <code>npm run login</code>, закройте другие окна Chromium и нажмите «Загрузить с hh.ru» снова.</p>`;
+    }
+    showToast(msg, 'bad');
+    return null;
+  } finally {
+    questionnaireModalState.probeInFlight = false;
+    const probeBtnDone = modal.querySelector('.btn-questionnaire-probe');
+    if (probeBtnDone) probeBtnDone.disabled = false;
+  }
+}
+
+async function openQuestionnaireModal(item, options = {}) {
+  const { autoProbe = true } = options;
   const modal = document.getElementById('questionnaire-modal');
   if (!modal) return;
-  questionnaireModalState = { id: item.id, item };
+  questionnaireModalState = { id: item.id, item, probeInFlight: false };
   modal.querySelector('.modal-vacancy-questionnaire').textContent = item.title || item.url || '';
   renderQuestionnaireModalBody(modal, item);
   openModalEl(modal);
+  if (autoProbe && itemQuestionnaireShouldAutoProbe(item)) {
+    await runQuestionnaireProbe({ silentToast: false });
+  }
 }
 
 function getApplyLogSource() {
@@ -426,10 +778,57 @@ function getApplyLogSource() {
   return checked?.value === 'harvest' ? 'harvest' : 'apply';
 }
 
-async function refreshApplyLogModal() {
+const APPLY_LOG_PIN_PX = 48;
+let applyLogFollowTail = true;
+let applyLogScrollBound = false;
+
+function applyLogPreEl() {
+  return applyLogModalEl?.querySelector('.apply-log-pre') || null;
+}
+
+function isApplyLogAtBottom(pre) {
+  if (!pre) return true;
+  return pre.scrollHeight - pre.scrollTop - pre.clientHeight <= APPLY_LOG_PIN_PX;
+}
+
+function setApplyLogFollowTail(on) {
+  applyLogFollowTail = Boolean(on);
+  const cb = document.getElementById('apply-log-follow-tail');
+  if (cb) cb.checked = applyLogFollowTail;
+}
+
+function scrollApplyLogToEnd(pre = applyLogPreEl()) {
+  if (!pre) return;
+  pre.scrollTop = pre.scrollHeight;
+  setApplyLogFollowTail(true);
+}
+
+function bindApplyLogScrollGuard() {
+  if (applyLogScrollBound) return;
+  const pre = applyLogPreEl();
+  if (!pre) return;
+  applyLogScrollBound = true;
+  pre.addEventListener(
+    'scroll',
+    () => {
+      const atBottom = isApplyLogAtBottom(pre);
+      if (atBottom !== applyLogFollowTail) setApplyLogFollowTail(atBottom);
+    },
+    { passive: true }
+  );
+}
+
+/**
+ * @param {{ silent?: boolean, showLoading?: boolean, scrollToEnd?: boolean }} [opts]
+ * silent — фоновое обновление: без «Загрузка…», сохраняем позицию прокрутки
+ */
+async function refreshApplyLogModal(opts = {}) {
   const modal = document.getElementById('apply-log-modal');
   if (!modal) return;
-  const pre = modal.querySelector('.apply-log-pre');
+  const pre = applyLogPreEl();
+  if (!pre) return;
+  bindApplyLogScrollGuard();
+
   const pathEl = modal.querySelector('.apply-log-path');
   const metaEl = document.getElementById('apply-log-meta');
   const source = getApplyLogSource();
@@ -439,8 +838,17 @@ async function refreshApplyLogModal() {
     source === 'harvest'
       ? `/api/harvest-log?lines=${lineCount}&lastRun=${lastRun ? '1' : '0'}`
       : `/api/hh-apply-chat-log?lines=${lineCount}&lastRun=${lastRun ? '1' : '0'}`;
-  pre.textContent = 'Загрузка…';
-  if (metaEl) metaEl.textContent = '';
+
+  const prevScrollTop = pre.scrollTop;
+  const wasAtBottom = isApplyLogAtBottom(pre);
+  const followTail = opts.scrollToEnd ?? applyLogFollowTail;
+  const cacheKey = `${source}|${lastRun ? 1 : 0}`;
+
+  if (opts.showLoading) {
+    pre.textContent = 'Загрузка…';
+    if (metaEl) metaEl.textContent = '';
+  }
+
   try {
     const data = await api(endpoint);
     const rel = data.relativePath || (source === 'harvest' ? 'data/harvest-run.log' : 'data/hh-apply-chat.log');
@@ -460,10 +868,27 @@ async function refreshApplyLogModal() {
         source === 'harvest'
           ? 'Лог сбора пуст. Нажмите «Собрать вакансии».'
           : 'Лог отклика пуст. Нажмите «Авто-отклик» на карточке.';
+      pre.dataset.logCacheKey = '';
+      pre.dataset.logContent = '';
       return;
     }
-    pre.textContent = data.text || '(пусто)';
-    pre.scrollTop = pre.scrollHeight;
+
+    const newText = data.text || '(пусто)';
+    if (opts.silent && pre.dataset.logCacheKey === cacheKey && pre.dataset.logContent === newText) {
+      return;
+    }
+
+    pre.dataset.logCacheKey = cacheKey;
+    pre.dataset.logContent = newText;
+    pre.textContent = newText;
+
+    const pinToEnd =
+      opts.scrollToEnd === true || (opts.scrollToEnd !== false && followTail && wasAtBottom);
+    if (pinToEnd) {
+      scrollApplyLogToEnd(pre);
+    } else {
+      pre.scrollTop = Math.min(prevScrollTop, Math.max(0, pre.scrollHeight - pre.clientHeight));
+    }
   } catch (e) {
     pre.textContent = `Ошибка: ${e.message}`;
   }
@@ -472,8 +897,10 @@ async function refreshApplyLogModal() {
 function openApplyLogModal() {
   const modal = document.getElementById('apply-log-modal');
   if (!modal) return;
+  setApplyLogFollowTail(true);
   openModalEl(modal);
-  refreshApplyLogModal();
+  refreshApplyLogModal({ showLoading: true, scrollToEnd: true });
+  refreshJobStatus();
 }
 
 function openApprovedLetterModal(item) {
@@ -651,50 +1078,68 @@ const approvedModalEl = document.getElementById('approved-letter-modal');
 const applyLogModalEl = document.getElementById('apply-log-modal');
 const questionnaireModalEl = document.getElementById('questionnaire-modal');
 
-questionnaireModalEl?.querySelector('.btn-questionnaire-probe')?.addEventListener('click', async () => {
-  if (!questionnaireModalState?.id) return;
-  const btn = questionnaireModalEl.querySelector('.btn-questionnaire-probe');
-  btn.disabled = true;
-  showToast('Открываю hh.ru и читаю анкету… (до ~1 мин)', 'neutral');
-  try {
-    const res = await api('/api/questionnaire/probe', {
-      method: 'POST',
-      body: JSON.stringify({ id: questionnaireModalState.id }),
-    });
-    showToast(`Загружено вопросов: ${res.questionCount || 0}`, 'good');
-    await load();
-    const fresh = cachedRawItems.find((x) => x.id === questionnaireModalState.id);
-    if (fresh) {
-      questionnaireModalState.item = fresh;
-      renderQuestionnaireModalBody(questionnaireModalEl, fresh);
-    }
-  } catch (e) {
-    showToast(e.message || 'Ошибка загрузки', 'bad');
-  } finally {
-    btn.disabled = false;
-  }
+questionnaireModalEl?.querySelector('.btn-questionnaire-probe')?.addEventListener('click', () => {
+  void runQuestionnaireProbe({ silentToast: false });
 });
 
 questionnaireModalEl?.querySelector('.btn-questionnaire-generate')?.addEventListener('click', async () => {
   if (!questionnaireModalState?.id) return;
-  const btn = questionnaireModalEl.querySelector('.btn-questionnaire-generate');
-  btn.disabled = true;
+  const modal = questionnaireModalEl;
+  const btn = modal.querySelector('.btn-questionnaire-generate');
+  const prevLabel = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Генерация…';
+  }
+  modal.querySelectorAll('.questionnaire-actions .btn').forEach((b) => {
+    b.disabled = true;
+  });
+    showToast('Подставляю ответы из резюме (CV/)…', 'neutral');
   try {
     const res = await api('/api/questionnaire/generate', {
       method: 'POST',
       body: JSON.stringify({ id: questionnaireModalState.id }),
     });
-    showToast(`Ответы сгенерированы (${res.model || 'LLM'})`, 'good');
+    const n = res.answerCount ?? res.questionnaire?.suggestedAnswers?.length ?? 0;
+    if (res.questionnaire && questionnaireModalState.item) {
+      const item = {
+        ...questionnaireModalState.item,
+        hhApply: {
+          ...questionnaireModalState.item.hhApply,
+          questionnaire: res.questionnaire,
+        },
+      };
+      questionnaireModalState.item = item;
+      renderQuestionnaireModalBody(modal, item);
+    }
+    const src =
+      res.model === 'cv-heuristic' || String(res.model || '').startsWith('cv')
+        ? 'из резюме'
+        : res.model || 'LLM';
+    showToast(`Ответы: ${n} шт. (${src})`, 'good');
     await load();
     const fresh = cachedRawItems.find((x) => x.id === questionnaireModalState.id);
     if (fresh) {
       questionnaireModalState.item = fresh;
-      renderQuestionnaireModalBody(questionnaireModalEl, fresh);
+      renderQuestionnaireModalBody(modal, fresh);
     }
   } catch (e) {
-    showToast(e.message || 'Ошибка LLM', 'bad');
+    const body = modal.querySelector('.modal-questionnaire-body');
+    const msg = String(e.message || 'Ошибка LLM').trim();
+    if (body && !body.querySelector('.questionnaire-q')) {
+      body.insertAdjacentHTML(
+        'afterbegin',
+        `<p class="questionnaire-warn">${escapeHtml(msg)}</p>`
+      );
+    }
+    showToast(msg, 'bad');
   } finally {
-    btn.disabled = false;
+    modal.querySelectorAll('.questionnaire-actions .btn').forEach((b) => {
+      b.disabled = false;
+    });
+    if (btn) {
+      btn.textContent = prevLabel || 'Сгенерировать ответы';
+    }
   }
 });
 
@@ -741,6 +1186,19 @@ questionnaireModalEl?.querySelector('.btn-questionnaire-apply')?.addEventListene
   const btn = questionnaireModalEl.querySelector('.btn-questionnaire-apply');
   const approvedLetter = String(item?.coverLetter?.approvedText || '').trim();
   btn.disabled = true;
+  try {
+    const answers = collectQuestionnaireAnswersFromModal(questionnaireModalEl);
+    if (answers.some((a) => a.answer)) {
+      await api('/api/questionnaire/save-answers', {
+        method: 'POST',
+        body: JSON.stringify({ id: state.id, answers }),
+      });
+    }
+  } catch (e) {
+    showToast(`Не удалось сохранить ответы: ${e.message}`, 'bad');
+    btn.disabled = false;
+    return;
+  }
   closeQuestionnaireModal();
   try {
     const res = await api('/api/hh-launch-apply-chat', {
@@ -767,11 +1225,26 @@ questionnaireModalEl?.querySelector('.btn-questionnaire-apply')?.addEventListene
 
 document.querySelector('.btn-log-apply')?.addEventListener('click', () => openApplyLogModal());
 
-applyLogModalEl?.querySelector('.btn-refresh-apply-log')?.addEventListener('click', () => refreshApplyLogModal());
-applyLogModalEl?.querySelectorAll('input[name="log-source"]').forEach((el) => {
-  el.addEventListener('change', () => refreshApplyLogModal());
+applyLogModalEl?.querySelector('.btn-refresh-apply-log')?.addEventListener('click', () =>
+  refreshApplyLogModal({ showLoading: true, scrollToEnd: applyLogFollowTail })
+);
+applyLogModalEl?.querySelector('.btn-apply-log-jump')?.addEventListener('click', () => {
+  scrollApplyLogToEnd();
 });
-document.getElementById('apply-log-last-run')?.addEventListener('change', () => refreshApplyLogModal());
+document.getElementById('apply-log-follow-tail')?.addEventListener('change', (e) => {
+  setApplyLogFollowTail(e.target.checked);
+  if (applyLogFollowTail) scrollApplyLogToEnd();
+});
+applyLogModalEl?.querySelectorAll('input[name="log-source"]').forEach((el) => {
+  el.addEventListener('change', () => {
+    setApplyLogFollowTail(true);
+    refreshApplyLogModal({ showLoading: true, scrollToEnd: true });
+  });
+});
+document.getElementById('apply-log-last-run')?.addEventListener('change', () => {
+  setApplyLogFollowTail(true);
+  refreshApplyLogModal({ showLoading: true, scrollToEnd: true });
+});
 
 approvedModalEl?.querySelector('.btn-copy-approved')?.addEventListener('click', async () => {
   const pre = approvedModalEl.querySelector('.modal-approved-text');
@@ -871,14 +1344,40 @@ function renderCard(item) {
   a.href = item.url;
   a.textContent = item.title || item.url;
 
-  const meta = node.querySelector('.meta');
-  const parts = [
-    item.company,
-    item.salaryRaw,
-    item.salaryEstimate?.ok ? `≈${item.salaryEstimate.minUsd}–${item.salaryEstimate.maxUsd} USD/мес` : '',
-    item.searchQuery ? `запрос: ${item.searchQuery}` : '',
-  ].filter(Boolean);
-  meta.textContent = [...new Set(parts)].join(' · ');
+  const density = readCardDensityMode();
+  const metaCompact = node.querySelector('.meta--compact');
+  const metaDetail = node.querySelector('.card-meta-detail');
+  const salaryLine =
+    item.salaryEstimate?.ok
+      ? `≈${item.salaryEstimate.minUsd}–${item.salaryEstimate.maxUsd} USD/мес`
+      : item.salaryRaw || '';
+  const parts = [item.company, salaryLine, item.searchQuery ? `запрос: ${item.searchQuery}` : '']
+    .filter(Boolean);
+  if (metaCompact) metaCompact.textContent = [...new Set(parts)].join(' · ');
+
+  const setMetaLine = (sel, label, value) => {
+    const el = node.querySelector(sel);
+    if (!el) return;
+    const v = String(value || '').trim();
+    if (!v) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    el.hidden = false;
+    el.textContent = label ? `${label}: ${v}` : v;
+  };
+
+  if (density === 'full') {
+    if (metaCompact) metaCompact.hidden = true;
+    if (metaDetail) metaDetail.hidden = false;
+    setMetaLine('.meta-line--company', 'Компания', item.company);
+    setMetaLine('.meta-line--salary', 'Зарплата', salaryLine);
+    setMetaLine('.meta-line--search', 'Поиск', item.searchQuery);
+  } else {
+    if (metaCompact) metaCompact.hidden = false;
+    if (metaDetail) metaDetail.hidden = true;
+  }
 
   const factsEl = node.querySelector('.card-facts');
   const facts = buildCardFacts(item);
@@ -893,38 +1392,54 @@ function renderCard(item) {
     );
   }
 
-  const descEl = node.querySelector('.card-desc');
+  const descBlock = node.querySelector('.card-desc-block');
   const desc = String(item.descriptionPreview || '').trim();
-  if (descEl && desc) {
-    descEl.hidden = false;
-    descEl.textContent = desc;
-    descEl.title = desc.length > 320 ? desc : '';
+  if (descBlock && desc && density === 'medium') {
+    fillDescBlock(descBlock, desc, 2);
+  } else if (descBlock && desc && density === 'full') {
+    fillDescBlock(descBlock, desc, 8);
+  } else if (descBlock) {
+    descBlock.hidden = true;
+    descBlock.replaceChildren();
   }
 
   const applyBadge = node.querySelector('.hh-apply-badge');
   const qBanner = node.querySelector('.questionnaire-banner');
-  const qHint = node.querySelector('.questionnaire-hint');
+  const qSlot = node.querySelector('.card-slot--questionnaire');
   const meaningfulQs = meaningfulQuestions(item.hhApply?.questionnaire?.questions);
+  const needsProbe = itemQuestionnaireNeedsProbe(item);
+  const showQuestionnaireBlock =
+    qBanner &&
+    currentApplyView !== 'noQuestionnaire' &&
+    recordNeedsQuestionnaireWork(item) &&
+    (meaningfulQs.length > 0 || needsProbe);
 
-  if (qBanner && vacancyQuestionnairePending(item) && meaningfulQs.length > 0) {
-    const hasAnswers =
-      (item.hhApply.questionnaire?.savedAnswers?.length ?? 0) > 0 ||
-      (item.hhApply.questionnaire?.suggestedAnswers?.length ?? 0) > 0;
-    qBanner.hidden = false;
+  if (showQuestionnaireBlock) {
     const textEl = qBanner.querySelector('.questionnaire-banner__text');
-    if (textEl) {
-      textEl.textContent = hasAnswers
-        ? `${meaningfulQs.length} вопросов · ответы в дашборде — открыть`
-        : `${meaningfulQs.length} вопросов работодателя — открыть и сгенерировать ответы`;
+    if (meaningfulQs.length > 0) {
+      const hasAnswers =
+        (item.hhApply.questionnaire?.savedAnswers?.length ?? 0) > 0 ||
+        (item.hhApply.questionnaire?.suggestedAnswers?.length ?? 0) > 0;
+      if (textEl) {
+        textEl.textContent = hasAnswers
+          ? `${meaningfulQs.length} вопросов · ответы в дашборде — открыть`
+          : `${meaningfulQs.length} вопросов работодателя — открыть и сгенерировать ответы`;
+      }
+    } else if (textEl) {
+      textEl.textContent = item.hhApply?.questionnaire?.likelyFromVacancyText
+        ? 'В описании похоже на анкету — «Вопросы» → загрузить с hh.ru'
+        : 'Анкета на hh.ru — открыть «Вопросы» и загрузить с сайта';
     }
+    qBanner.hidden = false;
+    qSlot?.classList.add('card-slot--questionnaire-active');
     qBanner.addEventListener('click', () => openQuestionnaireModal(item));
     if (applyBadge) applyBadge.hidden = true;
     node.classList.add('card--questionnaire');
-  } else if (qHint && vacancyQuestionnairePending(item) && itemQuestionnaireNeedsProbe(item)) {
-    qHint.hidden = false;
-    qHint.textContent = 'Анкета на hh.ru — «Вопросы» → «Загрузить с hh.ru»';
-    node.classList.add('card--questionnaire-pending');
-  } else if (applyBadge && vacancyHasHhApply(item)) {
+  } else if (qBanner) {
+    qBanner.hidden = true;
+  }
+
+  if (!showQuestionnaireBlock && applyBadge && vacancyHasHhApply(item)) {
     applyBadge.hidden = false;
     applyBadge.textContent = hhApplyBadgeText(item);
     node.classList.add('card--applied');
@@ -938,10 +1453,31 @@ function renderCard(item) {
     node.classList.add('card--hidden-role');
   }
 
-  node.querySelector('.summary').textContent = item.geminiSummary || '';
-  const risks = node.querySelector('.risks');
-  risks.textContent = item.geminiRisks ? `Нюансы: ${item.geminiRisks}` : '';
-  risks.hidden = !item.geminiRisks;
+  const summaryText = String(item.geminiSummary || '').trim();
+  const summaryEl = node.querySelector('.summary');
+  const summaryLabel = node.querySelector('.card-label--summary');
+  if (summaryEl) {
+    summaryEl.textContent = summaryText;
+    if (summaryText) summaryEl.title = summaryText;
+  }
+  if (summaryLabel) summaryLabel.hidden = !summaryText;
+
+  const risksText = String(item.geminiRisks || '').trim();
+  const risksEl = node.querySelector('.risks');
+  const risksBox = node.querySelector('.risks-box');
+  const risksLabel = node.querySelector('.card-label--risks');
+  const risksSlot = node.querySelector('.card-slot--risks');
+  if (risksText && risksEl) {
+    risksEl.textContent = risksText;
+    risksEl.title = risksText;
+    if (risksBox) risksBox.hidden = false;
+    if (risksLabel) risksLabel.hidden = false;
+    risksSlot?.classList.add('card-slot--risks-active');
+    node.classList.add('card-has-risks');
+  } else {
+    if (risksBox) risksBox.hidden = true;
+    if (risksLabel) risksLabel.hidden = true;
+  }
 
   const tags = node.querySelector('.tags');
   (item.geminiTags || []).forEach((t) => {
@@ -1058,6 +1594,9 @@ function renderCard(item) {
         usePoolLetter: true,
         tailorResume: true,
         questionnaireAuto: true,
+        questionnaireWait:
+          vacancyQuestionnairePending(item) ||
+          (item.hhApply?.questionnaire?.savedAnswers?.length ?? 0) > 0,
       })
     );
   }
@@ -1213,6 +1752,46 @@ function syncVacancyTabs() {
   });
 }
 
+function batchScopeForCurrentView() {
+  if (currentApplyView === 'hidden') return 'hidden';
+  if (currentApplyView === 'questionnaire') return 'questionnaire';
+  if (currentApplyView === 'noQuestionnaire') return 'noQuestionnaire';
+  if (currentApplyView === 'queue') return 'queue';
+  return null;
+}
+
+function batchScopeUiLabel(scope) {
+  if (scope === 'hidden') return 'Скрытые';
+  if (scope === 'questionnaire') return 'Анкета';
+  if (scope === 'noQuestionnaire') return 'Без анкет';
+  if (scope === 'queue') return 'Очередь';
+  return '';
+}
+
+function updateBatchButtonsForView() {
+  const scope = batchScopeForCurrentView();
+  const autoBtn = document.getElementById('btn-batch-auto');
+  const manualBtn = document.getElementById('btn-batch-manual');
+  const disabled = !scope;
+  for (const btn of [autoBtn, manualBtn]) {
+    if (!btn) continue;
+    btn.disabled = disabled;
+    btn.classList.toggle('btn--disabled', disabled);
+  }
+  if (autoBtn && scope) {
+    autoBtn.dataset.tip =
+      scope === 'hidden'
+        ? `Авто-батч по разделу «Скрытые» (≥${scoreThreshold}) — с предупреждением`
+        : `Авто-батч · раздел «${batchScopeUiLabel(scope)}» · балл ≥${scoreThreshold}`;
+  }
+  if (manualBtn && scope) {
+    manualBtn.dataset.tip =
+      scope === 'hidden'
+        ? `Ручной батч по разделу «Скрытые» (<${scoreThreshold}) — с предупреждением`
+        : `Ручной батч · раздел «${batchScopeUiLabel(scope)}» · балл <${scoreThreshold}`;
+  }
+}
+
 function syncApplyViewTabs() {
   if (!applyViewTabsEl) return;
   applyViewTabsEl.querySelectorAll('.tab').forEach((b) => {
@@ -1222,12 +1801,14 @@ function syncApplyViewTabs() {
   if (vacancyTabsEl) vacancyTabsEl.hidden = hideStatus;
   document.getElementById('panel-vacancy-status')?.toggleAttribute('hidden', hideStatus);
   document.getElementById('panel-score-band')?.toggleAttribute('hidden', hideStatus);
+  updateBatchButtonsForView();
 }
 
 function mergeBatchAndApplyProgress(st) {
   const batch = st.batchProgress;
   const chat = st.applyChatProgress;
-  if (!st.batch?.running || !batch) return batch;
+  const batchActive = Boolean(st.batchActive ?? st.batch?.running ?? st.batchControl?.batchRunning);
+  if (!batchActive || !batch) return batch;
   if (!chat || chat.phase === 'done' || chat.phase === 'error') return batch;
   const floor = Math.max(0, Math.floor(Number(batch.current) || 0));
   const current = Math.min(batch.total || 1, floor + (Number(chat.percent) || 0) / 100);
@@ -1245,29 +1826,50 @@ function startJobLogPoll() {
   if (applyLogPollTimer) clearInterval(applyLogPollTimer);
   applyLogPollTimer = setInterval(() => {
     const modal = document.getElementById('apply-log-modal');
-    if (modal && !modal.hidden) refreshApplyLogModal();
+    if (modal && !modal.hidden) refreshApplyLogModal({ silent: true });
     refreshJobStatus();
   }, 1200);
 }
 
-function renderJobProgress(st) {
-  const box = document.getElementById('job-progress');
+function pickJobProgressPayload(st) {
+  const batchActive = Boolean(st.batchActive ?? st.batch?.running ?? st.batchControl?.batchRunning);
+  const batchMerged = batchActive ? mergeBatchAndApplyProgress(st) : st.batchProgress;
+  if (batchActive && batchMerged) {
+    return { ...batchMerged, title: 'Батч откликов' };
+  }
+  if (st.batchProgress?.phase === 'running' || st.batchProgress?.phase === 'paused') {
+    return { ...st.batchProgress, title: 'Батч откликов' };
+  }
+  if (st.applyChat?.running && st.applyChatProgress) {
+    return { ...st.applyChatProgress, title: 'Отклик в браузере' };
+  }
+  if (st.harvest?.running && st.harvestProgress) {
+    return { ...st.harvestProgress, title: 'Сбор вакансий' };
+  }
+  if (st.applyChatProgress?.phase === 'done' || st.applyChatProgress?.phase === 'error') {
+    return { ...st.applyChatProgress, title: 'Отклик в браузере' };
+  }
+  if (st.harvestProgress?.phase === 'done' || st.harvestProgress?.phase === 'error') {
+    return { ...st.harvestProgress, title: 'Сбор вакансий' };
+  }
+  if (st.batchProgress?.phase === 'done' || st.batchProgress?.phase === 'error') {
+    return { ...st.batchProgress, title: 'Батч откликов' };
+  }
+  return null;
+}
+
+function paintJobProgressBox(box, p, st, { scoped = false } = {}) {
   if (!box) return;
-  const batchMerged = st.batch?.running ? mergeBatchAndApplyProgress(st) : st.batchProgress;
-  const p =
-    st.batch?.running && batchMerged
-      ? { ...batchMerged, title: 'Батч откликов' }
-      : st.applyChat?.running && st.applyChatProgress
-        ? { ...st.applyChatProgress, title: 'Отклик в браузере' }
-        : st.harvest?.running && st.harvestProgress
-          ? { ...st.harvestProgress, title: 'Сбор вакансий' }
-          : st.applyChatProgress?.phase === 'done' || st.applyChatProgress?.phase === 'error'
-            ? { ...st.applyChatProgress, title: 'Отклик в браузере' }
-            : st.harvestProgress?.phase === 'done' || st.harvestProgress?.phase === 'error'
-              ? { ...st.harvestProgress, title: 'Сбор вакансий' }
-              : st.batchProgress?.phase === 'done' || st.batchProgress?.phase === 'error'
-                ? { ...st.batchProgress, title: 'Батч откликов' }
-                : null;
+  const titleEl = scoped
+    ? box.querySelector('.job-progress-title')
+    : document.getElementById('job-progress-title');
+  const pctEl = scoped ? box.querySelector('.job-progress-pct') : document.getElementById('job-progress-pct');
+  const bar = scoped ? box.querySelector('.job-progress-bar') : document.getElementById('job-progress-bar');
+  const labelEl = scoped
+    ? box.querySelector('.job-progress-label')
+    : document.getElementById('job-progress-label');
+  const metaEl = scoped ? box.querySelector('.job-progress-meta') : document.getElementById('job-progress-meta');
+  const track = box.querySelector('.job-progress-track');
 
   if (!p) {
     box.hidden = true;
@@ -1280,12 +1882,6 @@ function renderJobProgress(st) {
   box.classList.toggle('job-progress--paused', p.phase === 'paused');
 
   const pct = Math.min(100, Math.max(0, Number(p.percent) || 0));
-  const titleEl = document.getElementById('job-progress-title');
-  const pctEl = document.getElementById('job-progress-pct');
-  const bar = document.getElementById('job-progress-bar');
-  const labelEl = document.getElementById('job-progress-label');
-  const metaEl = document.getElementById('job-progress-meta');
-  const track = box.querySelector('.job-progress-track');
 
   if (titleEl) titleEl.textContent = p.title || 'Выполнение';
   if (pctEl) pctEl.textContent = `${pct}%`;
@@ -1315,15 +1911,27 @@ function renderJobProgress(st) {
   if (s.failed) parts.push(`ошибок: ${s.failed}`);
   if (metaEl) metaEl.textContent = parts.join(' · ');
 
-  const logEl = document.getElementById('job-progress-log');
-  if (logEl) {
-    const tail = st.applyLog?.tail || '';
-    const showLog = (st.batch?.running || st.applyChat?.running) && tail.trim();
-    logEl.hidden = !showLog;
-    if (showLog) {
-      logEl.textContent = tail;
-      logEl.scrollTop = logEl.scrollHeight;
+  if (!scoped) {
+    const logEl = document.getElementById('job-progress-log');
+    if (logEl) {
+      const tail = st?.applyLog?.tail || '';
+      const batchActive = Boolean(st?.batchActive ?? st?.batch?.running ?? st?.batchControl?.batchRunning);
+      const showLog = (batchActive || st?.applyChat?.running) && tail.trim();
+      logEl.hidden = !showLog;
+      if (showLog) {
+        logEl.textContent = tail;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
     }
+  }
+}
+
+function renderJobProgress(st) {
+  const p = pickJobProgressPayload(st);
+  paintJobProgressBox(document.getElementById('job-progress'), p, st);
+  const logModal = document.getElementById('apply-log-modal');
+  if (logModal && !logModal.hidden) {
+    paintJobProgressBox(document.getElementById('apply-log-progress'), p, st, { scoped: true });
   }
 }
 
@@ -1333,7 +1941,7 @@ function updateBatchControlButtons(st) {
   const stopBtn = document.getElementById('btn-batch-stop');
   const resumeBtn = document.getElementById('btn-batch-resume');
   const bc = st.batchControl || {};
-  const running = Boolean(st.batch?.running);
+  const running = Boolean(st.batchActive ?? st.batch?.running ?? st.batchControl?.batchRunning);
   const paused = running && bc.command === 'paused';
   const show = running || bc.canResume;
   if (row) row.hidden = !show;
@@ -1393,6 +2001,78 @@ async function probeBatchControlApi() {
   }
 }
 
+function formatHumanJobStatus(st) {
+  const bc = st.batchControl || {};
+  const batchAlive = Boolean(st.batchActive ?? st.batch?.running ?? bc.batchRunning);
+  const msgs = [];
+
+  if (st.harvest?.running) {
+    const hp = st.harvestProgress;
+    msgs.push(hp?.label?.trim() || 'Собираем вакансии с hh.ru…');
+  }
+
+  if (batchAlive) {
+    const done = Number(bc.done) || 0;
+    const planned = Number(bc.planned) || 0;
+    const progress = planned ? ` (${done} из ${planned})` : '';
+    if (bc.command === 'paused') {
+      msgs.push(`Батч на паузе${progress}`);
+    } else {
+      const bp = st.batchProgress;
+      const fromProgress = bp?.label?.trim();
+      msgs.push(fromProgress || `Идёт батч откликов${progress}`);
+    }
+  } else if (bc.canResume) {
+    const done = Number(bc.done) || 0;
+    const planned = Number(bc.planned) || 0;
+    msgs.push(
+      planned
+        ? `Батч не закончен (${done} из ${planned}) — «Продолжить» ниже`
+        : 'Есть незавершённый батч — «Продолжить» ниже'
+    );
+  }
+
+  if (st.applyChat?.running && !batchAlive) {
+    const ap = st.applyChatProgress;
+    msgs.push(ap?.label?.trim() || 'Отклик в браузере…');
+  }
+
+  if (st.browserLock?.held && !msgs.length) {
+    const ownerLabels = {
+      harvest: 'сбор вакансий',
+      batch: 'батч откликов',
+      'hh-apply-chat': 'отклик',
+      'hh-apply-batch': 'батч',
+    };
+    const who = ownerLabels[st.browserLock.owner] || String(st.browserLock.owner || 'задача');
+    msgs.push(`Браузер занят (${who})`);
+  }
+
+  let main = msgs.length ? msgs.join(' · ') : 'Готов к работе';
+
+  if (st.harvestLog?.lastError && !st.harvest?.running) {
+    main = 'Последний сбор завершился с ошибкой';
+  }
+
+  return { main, msgs };
+}
+
+function formatJobStatusTooltip(st, { msgs = [] } = {}) {
+  const lines = [];
+  if (st.harvest?.running && st.harvest.pid) lines.push(`Сбор вакансий (процесс ${st.harvest.pid})`);
+  if (st.batch?.running && st.batch.pid) lines.push(`Батч (процесс ${st.batch.pid})`);
+  if (st.applyChat?.running && st.applyChat.pid) lines.push(`Отклик (процесс ${st.applyChat.pid})`);
+  if (st.queuePath) lines.push(`Файл очереди: ${st.queuePath}`);
+  if (st.browserLock?.held) lines.push(`Блокировка браузера: ${st.browserLock.owner}`);
+  if (st.harvestLog?.lastError && !st.harvest?.running) {
+    lines.push(`Ошибка сбора: ${st.harvestLog.lastError}`);
+  }
+  const tail = st.harvestLog?.tail?.trim();
+  if (tail) lines.push('', tail);
+  if (!lines.length && msgs.length) return '';
+  return lines.join('\n');
+}
+
 async function refreshJobStatus() {
   const el = document.getElementById('job-status');
   if (!el) return;
@@ -1400,33 +2080,31 @@ async function refreshJobStatus() {
     const st = await api('/api/job-status');
     renderJobProgress(st);
     updateBatchControlButtons(st);
-    const parts = [];
-    if (st.harvest?.running) parts.push(`сбор pid=${st.harvest.pid}`);
-    if (st.batch?.running) {
-      const bc = st.batchControl || {};
-      parts.push(
-        bc.command === 'paused' ? `батч пауза pid=${st.batch.pid}` : `батч pid=${st.batch.pid}`
-      );
-    } else if (st.batchControl?.canResume) {
-      parts.push('батч можно продолжить');
-    }
-    if (st.applyChat?.running) parts.push(`отклик pid=${st.applyChat.pid}`);
     if (st.harvestTick?.sequence > lastHarvestTickSeq) {
       lastHarvestTickSeq = st.harvestTick.sequence;
       load();
     }
-    const q = st.queuePath || 'data/vacancies-devops.json';
-    let line = parts.length
-      ? `Статус: ${parts.join(' · ')} · очередь ${q}`
-      : `Статус: готов · очередь ${q}`;
-    if (st.browserLock?.held) {
-      line += ` · браузер занят (${st.browserLock.owner})`;
+    const { main, msgs } = formatHumanJobStatus(st);
+    if (st.applyRates) renderApplyRateMeters(st.applyRates);
+    el.textContent = main;
+    el.title = formatJobStatusTooltip(st, { msgs });
+    el.classList.toggle('job-status--busy', msgs.length > 0);
+    el.classList.toggle('job-status--warn', Boolean(st.harvestLog?.lastError && !st.harvest?.running));
+
+    if (applyChatWasRunning && !st.applyChat?.running) {
+      const phase = st.applyChatProgress?.phase;
+      await load();
+      if (phase === 'done') {
+        const msg =
+          currentApplyView === 'applied'
+            ? 'Отклик отправлен, список обновлён'
+            : 'Отклик отправлен — карточка в разделе «Отклики»';
+        showToast(msg, 'good');
+      } else if (phase === 'error') {
+        showToast('Отклик завершился с ошибкой — см. журнал', 'neutral');
+      }
     }
-    if (st.harvestLog?.lastError && !st.harvest?.running) {
-      line += ` · сбор: ${st.harvestLog.lastError.slice(0, 120)}`;
-    }
-    el.textContent = line;
-    el.title = st.harvestLog?.tail || '';
+    applyChatWasRunning = Boolean(st.applyChat?.running);
 
     if (!st.applyChat?.running && !st.batch?.running && applyLogPollTimer) {
       clearInterval(applyLogPollTimer);
@@ -1489,6 +2167,8 @@ function updateListCount(items, counts) {
     countEl.textContent = `Скрытые${filterNote} · Senior/Lead, 1С, разработчик`;
   } else if (currentApplyView === 'questionnaire') {
     countEl.textContent = `С анкетой${filterNote} · ждут заполнения на hh.ru`;
+  } else if (currentApplyView === 'noQuestionnaire') {
+    countEl.textContent = `${bandLabel}${filterNote} · без анкеты · ≥${scoreThreshold}: ${counts.high ?? '—'}, <${scoreThreshold}: ${counts.low ?? '—'}`;
   } else {
     countEl.textContent = `${bandLabel}${filterNote} · ≥${scoreThreshold}: ${counts.high ?? '—'}, <${scoreThreshold}: ${counts.low ?? '—'} · откликов: ${counts.applied ?? 0}`;
   }
@@ -1509,6 +2189,9 @@ function renderListFromCache(scrollState) {
     } else if (currentApplyView === 'questionnaire') {
       listEl.innerHTML =
         '<p class="empty">Нет вакансий с анкетой. На карточке: «Отклик + анкета» или «Загрузить с hh.ru» в модалке «Вопросы».</p>';
+    } else if (currentApplyView === 'noQuestionnaire') {
+      listEl.innerHTML =
+        '<p class="empty">Нет вакансий без анкеты в этом диапазоне. С анкетой — раздел «Анкета», отфильтрованные роли — «Скрытые».</p>';
     } else if (cachedCounts?.hiddenByRole > 0 && !filters.search) {
       listEl.innerHTML = `<p class="empty">Все скрыты фильтрами роли или локальный поиск пуст. <button type="button" class="link-btn" data-goto-hidden>Скрытые (${cachedCounts.hiddenByRole})</button></p>`;
       listEl.querySelector('[data-goto-hidden]')?.addEventListener('click', () => {
@@ -1531,6 +2214,7 @@ async function load(opts = {}) {
     listEl.innerHTML = '<p class="empty">Загрузка…</p>';
   }
   try {
+    if (!settingsHydrated) await loadDashboardSettings();
     try {
       const { preferences } = await api('/api/preferences');
       const w = preferences?.llmScoreWeights;
@@ -1542,25 +2226,17 @@ async function load(opts = {}) {
           scoreWeights = { vacancy: v / sum, cvMatch: c / sum };
         }
       }
-      const defMin = Number(preferences?.dashboardMinScoreFilter);
-      if (Number.isFinite(defMin) && defMin > 0) scoreThreshold = defMin;
     } catch {
       scoreWeights = { vacancy: 0.35, cvMatch: 0.65 };
     }
-    if (scoreThresholdInputEl && !opts.preserveScroll) {
-      scoreThresholdInputEl.value = String(scoreThreshold);
-    }
-    updateScoreBandTabLabels();
 
-    const { items: rawItems, counts, threshold } = await api(
+    const { items: rawItems, counts } = await api(
       `/api/vacancies?status=${encodeURIComponent(currentStatus)}&scoreBand=${encodeURIComponent(currentScoreBand)}&applyView=${encodeURIComponent(currentApplyView)}`
     );
-    cachedRawItems =
-      currentApplyView === 'hidden' ? rawItems : rawItems.filter((x) => itemPassesRoleFilters(x));
+    let items = currentApplyView === 'hidden' ? rawItems : rawItems.filter((x) => itemPassesRoleFilters(x));
+    items = filterItemsForApplyView(items);
+    cachedRawItems = items;
     cachedCounts = counts;
-    if (threshold) scoreThreshold = threshold;
-    if (scoreThresholdInputEl) scoreThresholdInputEl.value = String(scoreThreshold);
-    updateScoreBandTabLabels();
     renderListFromCache(scrollState);
   } catch (e) {
     listEl.innerHTML = `<p class="err">${e.message}</p>`;
@@ -1584,7 +2260,11 @@ applyViewTabsEl?.querySelectorAll('.tab').forEach((btn) => {
   btn.addEventListener('click', () => {
     const view = btn.dataset.applyView;
     currentApplyView =
-      view === 'applied' || view === 'hidden' || view === 'questionnaire' || view === 'queue'
+      view === 'applied' ||
+      view === 'hidden' ||
+      view === 'questionnaire' ||
+      view === 'noQuestionnaire' ||
+      view === 'queue'
         ? view
         : 'queue';
     if (currentApplyView === 'questionnaire') openQuestionnaireOnNextLoad = true;
@@ -1605,11 +2285,29 @@ document.querySelectorAll('.score-band-tabs .tab-band').forEach((btn) => {
 });
 
 async function runBatch({ minScore, maxScore, label }) {
-  const limitRaw = document.getElementById('batch-limit')?.value;
-  const limit = Math.min(50, Math.max(1, Number(limitRaw) || 10));
-  if (!confirm(`${label}: до ${limit} откликов. PDF резюме + письмо из пула. Продолжить?`)) return;
+  const batchScope = batchScopeForCurrentView();
+  if (!batchScope) {
+    showToast('Батч недоступен в разделе «Отклики»', 'neutral');
+    return;
+  }
+  const limit = getBatchLimitForRun();
+  const section = batchScopeUiLabel(batchScope);
+  let confirmMsg = `${label}\nРаздел: «${section}»\nДо ${limit} откликов · PDF резюме + письмо из пула.`;
+  if (batchScope === 'hidden') {
+    confirmMsg =
+      `Внимание: батч по скрытым вакансиям (Senior/Lead, 1С, разработчик и т.п.).\n\n${confirmMsg}`;
+  } else if (batchScope === 'questionnaire') {
+    confirmMsg += '\n\nВакансии с анкетой работодателя — возможна пауза на ручное заполнение (или HH_QUESTIONNAIRE_AUTO).';
+  } else if (batchScope === 'noQuestionnaire') {
+    confirmMsg +=
+      '\n\nЕсли при отклике на hh.ru появится анкета работодателя, отклик не будет отправлен: вопросы сохранятся, карточка перейдёт в раздел «Анкета», батч продолжит следующую вакансию.';
+  } else if (batchScope === 'queue') {
+    confirmMsg += '\n\nВ «Очереди» могут быть вакансии с анкетой — они тоже попадут в батч.';
+  }
+  confirmMsg += '\n\nПродолжить?';
+  if (!confirm(confirmMsg)) return;
   try {
-    const body = { limit };
+    const body = { limit, batchScope };
     if (minScore != null) body.minScore = minScore;
     if (maxScore != null) body.maxScore = maxScore;
     const res = await api('/api/hh-launch-apply-batch', { method: 'POST', body: JSON.stringify(body) });
@@ -1709,17 +2407,34 @@ for (const el of [filterSearchEl, filterCompanyEl, filterMinScoreEl, filterSortE
   el?.addEventListener('change', rerenderListDebounced);
 }
 
-scoreThresholdInputEl?.addEventListener('change', () => {
-  const n = Number(scoreThresholdInputEl.value);
-  if (Number.isFinite(n) && n >= 0 && n <= 100) {
-    scoreThreshold = n;
-    updateScoreBandTabLabels();
-    if (currentScoreBand !== 'all') load();
-  }
-});
+for (const el of document.querySelectorAll('[data-pref]')) {
+  el.addEventListener('input', () => {
+    if (el === scoreThresholdInputEl) {
+      const n = Number(scoreThresholdInputEl.value);
+      if (Number.isFinite(n) && n >= 0 && n <= 100) {
+        scoreThreshold = n;
+        updateScoreBandTabLabels();
+      }
+    }
+    scheduleSaveSettings();
+  });
+  el.addEventListener('change', () => {
+    if (el === scoreThresholdInputEl) {
+      const n = Number(scoreThresholdInputEl.value);
+      if (Number.isFinite(n) && n >= 0 && n <= 100) {
+        scoreThreshold = n;
+        updateScoreBandTabLabels();
+      }
+    }
+    scheduleSaveSettings();
+  });
+}
 
+await applyLocalDashboardDefaults();
 initUiScaleControls();
 initThemeControls();
+initCardTuningControls();
+window.addEventListener('hh-card-density-change', () => renderListFromCache(null));
 initFloatingTooltips();
 initModalLayer({
   onEscape: (modalId) => {
@@ -1730,7 +2445,7 @@ initModalLayer({
 
 syncVacancyTabs();
 syncApplyViewTabs();
-load();
+loadDashboardSettings().then(() => load());
 refreshJobStatus();
 setInterval(refreshJobStatus, 2000);
 probeBatchControlApi();

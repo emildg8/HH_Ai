@@ -54,6 +54,20 @@
     "erp 1с"
   ],
   "excludeDeveloperRoles": true,
+  "excludeIrrelevantTitles": true,
+  "excludeIrrelevantTitlePatterns": [
+    "android",
+    "kotlin",
+    "ml engineer",
+    "machine learning",
+    "data scientist",
+    "тестировщик",
+    "qa engineer",
+    "product manager",
+    "ux designer",
+    "php разработ",
+    "c# разработ"
+  ],
   "excludeDeveloperRolePatterns": [
     "разработчик",
     "developer",
@@ -80,6 +94,8 @@
     "cvMatch": 0.65
   },
   "hhApplyChatMaxPerHour": 50,
-  "hhApplyChatMaxPerDay": 50,
-  "dashboardMinScoreFilter": 50
+  "hhApplyChatMaxPerDay": 1000,
+  "hhApplyChatMaxPerMonth": 5000,
+  "dashboardMinScoreFilter": 50,
+  "dashboardBatchSize": 26
 }

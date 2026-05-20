@@ -1,6 +1,6 @@
 {
   "name": "hh-ru-apply",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,6 +20,9 @@
     "devops:dashboard": "node scripts/dashboard-server.mjs",
     "devops:test-dashboard-ui": "node scripts/test-dashboard-ui.mjs",
     "devops:probe-questionnaire": "node scripts/probe-questionnaire.mjs",
+    "devops:list-resumes": "node scripts/list-profile-resumes.mjs",
+    "devops:audit-letters": "node scripts/run-devops-audit-letters.mjs",
+    "devops:regenerate-letters": "node scripts/run-devops-regenerate-letters.mjs",
     "ollama:pull": "ollama pull llama3.2",
     "rescore-queue": "node scripts/rescore-queue.mjs",
     "score-openrouter-quota": "node scripts/score-openrouter-until-quota.mjs",
@@ -29,9 +32,11 @@
     "codegen-hh": "node scripts/codegen-hh.mjs",
     "backup": "node scripts/backup.mjs",
     "release:pack": "node scripts/release-pack.mjs",
+    "release:public": "node scripts/release-public.mjs",
     "export:public": "node scripts/export-public.mjs",
     "profile:init": "node scripts/profile-init.mjs",
-    "profile:list": "node -e \"import('./lib/load-profile.mjs').then(m=>console.log(m.listProfiles()))\""
+    "profile:list": "node -e \"import('./lib/load-profile.mjs').then(m=>console.log(m.listProfiles()))\"",
+    "verify:local": "node scripts/verify-local.mjs"
   },
   "dependencies": {
     "docx": "^9.6.1",

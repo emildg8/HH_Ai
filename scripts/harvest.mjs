@@ -10,6 +10,7 @@
  * Квота LLM: HH_LLM_MAX_PER_RUN — макс. вызовов OpenRouter за запуск (по умолчанию 30; дальше — без оценки).
  * Лимиты одного прогона (перебивают .env): --session-limit=N, --per-keyword-limit=N
  * Дашборд: каждые HH_DASHBOARD_TICK_EVERY (20) новых записей — сигнал в data/harvest-dashboard-tick.json для обновления UI.
+ * Подсказка анкеты по тексту описания: HH_HARVEST_QUESTIONNAIRE_HINT=0 — отключить.
  */
 
 import fs from 'fs';
@@ -33,10 +34,13 @@ import {
   formatBrowserLaunchError,
 } from '../lib/chromium-session.mjs';
 import { createHarvestProgressTracker, writeHarvestError } from '../lib/job-progress.mjs';
+import { ensureNoCaptchaBlocking } from '../lib/hh-captcha-wait.mjs';
 
 const BROWSER_OWNER = 'harvest';
 import { parseVacancyPage, vacancyIdFromUrl } from '../lib/vacancy-parse.mjs';
-import { runHardFilters } from '../lib/filters.mjs';
+import { runHardFilters, runTitleOnlyFilters } from '../lib/filters.mjs';
+import { collectVacancyCardsFromSearch } from '../lib/harvest-serp.mjs';
+import { detectQuestionnaireHintFromVacancyText } from '../lib/harvest-questionnaire-hint.mjs';
 import { buildHhSearchText } from '../lib/hh-search.mjs';
 import { loadCvBundle } from '../lib/cv-load.mjs';
 import {
@@ -65,6 +69,7 @@ const DEFAULT_KEYWORDS_FILE = path.join(ROOT, 'config', 'search-keywords.txt');
 const headless = process.env.HH_HEADLESS !== '0';
 const skipLlm =
   process.argv.includes('--skip-llm') || process.argv.includes('--skip-gemini');
+const skipQuestionnaireHarvestHint = String(process.env.HH_HARVEST_QUESTIONNAIRE_HINT || '').trim() === '0';
 
 /** Максимум новых записей за один запуск harvest (см. HH_SESSION_LIMIT / HH_PER_KEYWORD_LIMIT). */
 const MAX_RECORDS_PER_HARVEST = 1000;
@@ -123,26 +128,6 @@ function buildSearchUrl(text) {
   return `https://hh.ru/search/vacancy?${params.toString()}`;
 }
 
-async function collectVacancyUrls(page) {
-  await page
-    .waitForSelector('a[href*="/vacancy/"]', { timeout: 15_000 })
-    .catch(() => {});
-  await page.waitForTimeout(800);
-  return page.evaluate(() => {
-    const seen = new Set();
-    const out = [];
-    for (const a of document.querySelectorAll('a[href*="/vacancy/"]')) {
-      const href = a.href || '';
-      const m = href.match(/\/vacancy\/(\d+)/);
-      if (!m) continue;
-      const id = m[1];
-      if (seen.has(id)) continue;
-      seen.add(id);
-      out.push(`https://hh.ru/vacancy/${id}`);
-    }
-    return out;
-  });
-}
 
 function logSkipped(payload) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -228,6 +213,7 @@ async function main() {
   try {
     await page.goto('https://hh.ru/applicant', { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await page.waitForTimeout(1500);
+    await ensureNoCaptchaBlocking(page, { context: 'личный кабинет (harvest)' });
     if (looksLikeLoginUrl(page.url())) {
       console.error('Сессия не активна. Выполните: npm run login');
       process.exit(1);
@@ -249,8 +235,9 @@ async function main() {
         currentKeyword: key,
       });
       await page.goto(buildSearchUrl(key), { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await ensureNoCaptchaBlocking(page, { context: 'поиск (harvest)' });
       await sleepMs(randomIntInclusive(searchJitterMin, searchJitterMax));
-      const found = await collectVacancyUrls(page);
+      const found = await collectVacancyCardsFromSearch(page);
       if (!found.length) {
         const hint = await page
           .evaluate(() => {
@@ -263,16 +250,31 @@ async function main() {
         if (hint) console.warn(`  [harvest] пустая выдача (${hint}) для «${key}»`);
       }
       let n = 0;
-      for (const u of found) {
+      let titleSkipped = 0;
+      for (const card of found) {
         if (urls.length >= sessionLimit) break;
         if (n >= perKeyLimit) break;
-        const id = vacancyIdFromUrl(u);
+        const id = vacancyIdFromUrl(card.url);
         if (!id || globalSeen.has(id) || seenIds.has(id)) continue;
+        const titleFilter = runTitleOnlyFilters(card.title, prefs);
+        if (!titleFilter.pass) {
+          titleSkipped++;
+          logSkipped({
+            vacancyId: id,
+            url: card.url,
+            query: key,
+            stage: titleFilter.stage,
+            reason: titleFilter.reason,
+            title: card.title,
+          });
+          continue;
+        }
         globalSeen.add(id);
-        urls.push({ url: u, query: key });
+        urls.push({ url: card.url, query: key, serpTitle: card.title });
         n++;
       }
-      console.log(`Ключ «${key}»: +${n} URL (в очереди на обход ${urls.length})`);
+      const skipNote = titleSkipped ? `, отсечено по заголовку ${titleSkipped}` : '';
+      console.log(`Ключ «${key}»: +${n} URL (в очереди на обход ${urls.length}${skipNote})`);
       progress.collecting(keywordIndex, keywordsTotal, { urlsFound: urls.length, currentKeyword: key });
     }
 
@@ -328,7 +330,7 @@ async function main() {
         await sleepMs(pause);
       }
 
-      const { url, query } = urls[i];
+      const { url, query, serpTitle } = urls[i];
       const vacancyId = vacancyIdFromUrl(url);
       progress.scoring(
         i + 1,
@@ -339,7 +341,9 @@ async function main() {
       console.log(`Парсинг ${i + 1}/${urls.length}`, url);
 
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await ensureNoCaptchaBlocking(page, { context: 'вакансия (harvest)' });
       const parsed = await parseVacancyPage(page);
+      if (serpTitle && !parsed.title) parsed.title = serpTitle;
 
       const filter = runHardFilters(parsed, prefs);
       if (!filter.pass) {
@@ -354,6 +358,31 @@ async function main() {
         });
         skipped++;
         continue;
+      }
+
+      const localMin = Math.max(0, Number(process.env.HH_LOCAL_SCORE_MIN) || 0);
+      const vacancyPayloadEarly = {
+        title: parsed.title,
+        company: parsed.company,
+        salaryRaw: parsed.salaryRaw,
+        description: parsed.description,
+        url,
+      };
+      if (localMin > 0) {
+        const preview = scoreVacancyLocally(vacancyPayloadEarly, cvBundle);
+        if (preview.scoreOverall < localMin) {
+          console.log(`  SKIP [localScore]: итог ${preview.scoreOverall} < ${localMin}`);
+          logSkipped({
+            vacancyId,
+            url,
+            query,
+            stage: 'localScore',
+            reason: `Локальная оценка ${preview.scoreOverall} ниже порога ${localMin}`,
+            title: parsed.title,
+          });
+          skipped++;
+          continue;
+        }
       }
 
       let llm = {
@@ -405,6 +434,10 @@ async function main() {
         }
       }
 
+      const qTextHint = skipQuestionnaireHarvestHint
+        ? { likely: false, reasons: [] }
+        : detectQuestionnaireHintFromVacancyText(parsed);
+
       const record = {
         id: crypto.randomUUID(),
         vacancyId,
@@ -432,12 +465,33 @@ async function main() {
         geminiSummary: llm.summary,
         geminiRisks: llm.risks,
         geminiMatchCv: llm.matchCv,
-        geminiTags: llm.tags,
+        geminiTags: qTextHint.likely
+          ? [...(Array.isArray(llm.tags) ? llm.tags : []), 'анкета?']
+          : llm.tags,
         status: 'pending',
         feedbackReason: '',
         createdAt: new Date().toISOString(),
         updatedAt: null,
+        ...(qTextHint.likely
+          ? {
+              hhApply: {
+                questionnaire: {
+                  likelyFromVacancyText: true,
+                  likelyReasons: qTextHint.reasons,
+                  likelyDetectedAt: new Date().toISOString(),
+                  needsProbe: true,
+                  questions: [],
+                },
+              },
+            }
+          : {}),
       };
+
+      if (qTextHint.likely) {
+        console.log(
+          `  [анкета] по тексту описания (эвристика): ${qTextHint.reasons.slice(0, 4).join('; ')}`
+        );
+      }
 
       if (addVacancyRecord(record)) {
         added++;

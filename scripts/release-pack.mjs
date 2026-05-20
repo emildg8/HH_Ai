@@ -1,7 +1,7 @@
 /**
- * Релизный архив (полная копия рабочей версии для Emil / DevOps v1.0).
+ * Релизный архив (полная локальная копия: код + data + config).
  *   npm run release:pack
- *   npm run release:pack -- --name=HH_DevOps_Emil_v1.0
+ *   npm run release:pack -- --name=hh-ru-apply-v2.0.0-local
  */
 
 import fs from 'fs';
@@ -9,8 +9,13 @@ import path from 'path';
 import { ROOT } from '../lib/paths.mjs';
 import { createZipFromDir } from '../lib/archive.mjs';
 
+function defaultArchiveName() {
+  const v = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim().replace(/[^\w.-]+/g, '_');
+  return `hh-ru-apply-v${v}-local`;
+}
+
 const nameArg = process.argv.find((a) => a.startsWith('--name='));
-const ARCHIVE_NAME = (nameArg ? nameArg.slice(7) : 'HH_DevOps_Emil_v1.0').replace(/[^\w.-]+/g, '_');
+const ARCHIVE_NAME = (nameArg ? nameArg.slice(7) : defaultArchiveName()).replace(/[^\w.-]+/g, '_');
 const staging = path.join(ROOT, 'releases', '.staging', ARCHIVE_NAME);
 const zipPath = path.join(ROOT, 'releases', `${ARCHIVE_NAME}.zip`);
 
@@ -62,9 +67,8 @@ function main() {
         name: ARCHIVE_NAME,
         version,
         packagedAt: new Date().toISOString(),
-        profile: 'devops',
-        owner: 'Emil',
-        note: 'Полный снимок проекта: код, data, config, CV. Не публиковать — могут быть секреты.',
+        profile: process.env.HH_PROFILE || 'devops',
+        note: 'Локальный снимок: код, data, config, CV. Не публиковать — могут быть секреты.',
       },
       null,
       2

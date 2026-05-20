@@ -1,6 +1,19 @@
 # Как запускать без Docker (и альтернативы)
 
+**Версия:** 2.0.0
+
 Цель: любой соискатель может начать за **15–30 минут** без контейнеров.
+
+## Публичный релиз 2.0 (рекомендуется для передачи)
+
+| Артефакт | Команда | Содержимое |
+|----------|---------|------------|
+| Каталог | `npm run export:public` | `dist/hh-ai-public/` |
+| Zip | `npm run release:public` | `releases/hh-ai-public-v2.0.0.zip` |
+
+Инструкция получателю: [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md). В архиве **нет** сессий, ключей, очередей, CV.
+
+Перед публикацией на GitHub: распакуйте zip локально, проверьте отсутствие `sk-or-v1`, hash резюме, `data/session`.
 
 ## Рекомендуемый путь сегодня: Node + Playwright (как сейчас)
 
@@ -25,11 +38,14 @@
 - **Плюсы:** один .exe/.dmg, не нужен терминал.  
 - **Минусы:** разработка и подпись сборок, обновления.
 
-### B. Portable ZIP (ближайший шаг без Electron)
+### B. Portable ZIP (**в работе, R1.2–R1.4**)
 
-- Релиз `HH_Ai-Setup-win-x64.zip`: Node portable + проект + `install.bat` (уже близко к `release:pack` + скрипт первого запуска).
+- `npm run release:public` → `releases/hh-ai-public-v2.0.0.zip` (для передачи другим)
+- `npm run release:pack` → полный локальный снимок **с вашими data** (не публиковать)
+- `scripts/install-portable.ps1` + `start-dashboard.bat` на рабочий стол
+- Цель: **скачивание с GitHub Releases** (`hh-ru-apply-win-x64-v1.1.0.zip`) без git и без Docker
 - **Плюсы:** без Docker, без git.  
-- **Минусы:** антивирусы, ручное обновление.
+- **Минусы:** антивирусы, ручное обновление; Node.js всё ещё нужен (или bundled в zip позже)
 
 ### C. Облачный сервис (SaaS)
 
@@ -53,8 +69,8 @@
 
 ## Рекомендация по приоритету
 
-1. **Сейчас:** документированный Node-путь + `export:public` + `profile:init` (этот репозиторий).
-2. **v1.1:** `install.ps1` / `install.sh` + portable zip из CI.
+1. **Сейчас (2.0):** Node-путь + `release:public` + `profile:init` + [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md).
+2. **v2.1:** `install.ps1` / portable zip из CI на GitHub Releases.
 3. **v1.2+:** Tauri-дашборд, если нужен «как программа».
 4. **SaaS** — только после явной модели доверия и изоляции сессий.
 

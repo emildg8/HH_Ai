@@ -17,6 +17,10 @@ const SECRET_PATTERNS = [
   [/sk-[a-zA-Z0-9]{20,}/g, 'sk-REDACTED'],
   [/\d{8,}:[A-Za-z0-9_-]{30,}/g, 'TELEGRAM_BOT_REDACTED'],
   [/HH_PROFILE_RESUME_HASH=[a-f0-9]+/gi, 'HH_PROFILE_RESUME_HASH='],
+  [/OPENROUTER_API_KEY=[^\s#]+/gi, 'OPENROUTER_API_KEY='],
+  [/HH_CUSTOM_LLM_API_KEY=[^\s#]+/gi, 'HH_CUSTOM_LLM_API_KEY='],
+  [/TELEGRAM_BOT_TOKEN=[^\s#]+/gi, 'TELEGRAM_BOT_TOKEN='],
+  [/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, 'email@example.com'],
 ];
 
 function scrubText(text) {
@@ -57,10 +61,18 @@ function copyPublic(src, dest, rel = '') {
 }
 
 function writeExportReadme() {
-  const txt = `# HH Ai — публичный экспорт
+  const version = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim();
+  const txt = `# HH Ai — публичный экспорт v${version}
 
 Собрано: ${new Date().toISOString()}
-Версия: ${fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim()}
+
+Эта копия **без** сессии hh.ru, очередей вакансий, CV, API-ключей и личных \`*.env\`.
+
+## С чего начать
+
+1. Прочитайте **docs/PUBLIC-RELEASE.md** (полная инструкция для нового пользователя).
+2. Установите зависимости и Chromium (см. ниже).
+3. Создайте \`config/secrets.local.env\` и профиль из \`*.example.env\`.
 
 ## Быстрый старт
 
@@ -68,13 +80,23 @@ function writeExportReadme() {
 npm install
 npx playwright install chromium
 cp .env.example .env
-cp config/profiles/custom.env.example config/profiles/my-role.env
-# отредактируйте my-role.env, задайте HH_PROFILE=my-role
+cp config/secrets.example.env config/secrets.local.env
+cp config/profiles/devops.env.example config/profiles/devops.env
+# отредактируйте devops.env и secrets.local.env
 npm run login
 npm run dashboard
 \`\`\`
 
-См. docs/SETUP.md и docs/SECURITY.md.
+Откройте http://127.0.0.1:3849
+
+## Документация
+
+- docs/PUBLIC-RELEASE.md — релиз 2.0 для получателя
+- docs/SETUP.md — установка
+- docs/SECURITY.md — что не публиковать
+- CHANGELOG.md — список изменений 2.0
+
+Основано на [Steev193/hh-ru-apply](https://github.com/Steev193/hh-ru-apply) (MIT). См. docs/ATTRIBUTION.md.
 `;
   fs.writeFileSync(path.join(OUT, 'EXPORT-README.md'), txt, 'utf8');
 }

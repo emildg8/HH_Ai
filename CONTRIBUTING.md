@@ -23,7 +23,7 @@ npm run devops:test-dashboard-ui
 
 1. Опишите **зачем** изменение.
 2. Укажите команды проверки (`npm run devops:test-dashboard-ui`, ручной сценарий).
-3. Убедитесь, что `npm run export:public` не тащит личные файлы.
+3. Убедитесь, что `npm run export:public` / `npm run release:public` не тащит личные файлы.
 
 ## Профили вакансий
 

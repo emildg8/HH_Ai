@@ -14,12 +14,36 @@
         if (localStorage.getItem('hh-dashboard-theme') === 'light') {
           document.documentElement.dataset.theme = 'light';
         }
+        const ct = localStorage.getItem('hh-dashboard-card-tuning');
+        if (ct) {
+          const t = JSON.parse(ct);
+          if (t && typeof t === 'object') {
+            const colW = Math.min(72, Math.max(18, Number(t.colW) || 40));
+            document.documentElement.style.setProperty('--card-col-w', colW + 'rem');
+            const minH = Number(t.minH);
+            if (Number.isFinite(minH) && minH > 0) {
+              document.documentElement.style.setProperty('--card-min-h', minH + 'rem');
+            }
+            const fs = Math.min(1.6, Math.max(0.7, (Number(t.fontScale) || 100) / 100));
+            document.documentElement.style.setProperty('--card-font-scale', String(fs));
+            const ta = Math.min(100, Math.max(0, Number(t.textAmount) || 50));
+            const dens = ta <= 33 ? 'compact' : ta <= 66 ? 'medium' : 'full';
+            document.documentElement.dataset.cardDensity = dens;
+          }
+        } else {
+          const cd = localStorage.getItem('hh-dashboard-card-density');
+          if (cd === 'compact' || cd === 'medium' || cd === 'full') {
+            document.documentElement.dataset.cardDensity = cd;
+          }
+        }
       } catch (_) {}
     </script>
-    <link rel="stylesheet" href="/style.css?v=20260521zoom" />
+    <link rel="stylesheet" href="/style.css?v=20260524status1" />
   </head>
-  <body class="app">
+  <body>
+    <div id="app-shell" class="app" aria-label="Дашборд hh.ru">
     <aside class="sidebar" aria-label="Навигация и управление">
+      <div class="sidebar-scroll">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">HH</div>
         <div class="brand-text">
@@ -29,11 +53,14 @@
       </div>
 
       <div class="status-card">
-        <p class="job-status" id="job-status" title="">Статус: —</p>
+        <p class="job-status" id="job-status" title="">Готов</p>
+        <div class="apply-rate-meters" id="apply-rate-meters" aria-label="Лимиты откликов"></div>
       </div>
 
+      <details class="sidebar-panel appearance-details" id="panel-appearance">
+        <summary class="sidebar-label">Оформление</summary>
       <section class="sidebar-panel ui-scale-panel">
-        <h2 class="sidebar-label">Масштаб</h2>
+        <p class="sidebar-sublabel">Масштаб</p>
         <div class="segmented scale-presets" role="group" aria-label="Пресеты масштаба">
           <button type="button" class="seg-btn" data-ui-scale-preset="0.85" data-tip="Компактно — больше колонок">85%</button>
           <button type="button" class="seg-btn active" data-ui-scale-preset="1" data-tip="По умолчанию">100%</button>
@@ -43,24 +70,48 @@
           <input type="range" id="ui-scale-range" min="80" max="125" step="5" value="100" aria-label="Масштаб интерфейса" />
           <span class="ui-scale-value" id="ui-scale-value">100%</span>
         </div>
-        <p class="control-hint">Масштаб увеличивает весь интерфейс целиком (кнопки и сетка не «плывут»). Сохраняется в браузере.</p>
       </section>
 
       <section class="sidebar-panel theme-panel">
-        <h2 class="sidebar-label">Тема</h2>
+        <p class="sidebar-sublabel">Тема</p>
         <div class="segmented theme-presets" role="group" aria-label="Тема интерфейса">
           <button type="button" class="seg-btn active" data-theme-preset="dark" data-tip="Тёмная тема (по умолчанию)">Тёмная</button>
           <button type="button" class="seg-btn" data-theme-preset="light" data-tip="Светлая тема">Светлая</button>
         </div>
-        <p class="control-hint">Выбор сохраняется в браузере. По умолчанию — тёмная.</p>
       </section>
 
-      <section class="sidebar-panel">
+      <section class="sidebar-panel card-tuning-panel">
+        <p class="sidebar-sublabel">Карточки</p>
+        <label class="tuning-label" for="card-col-w-range">Ширина</label>
+        <div class="tuning-row">
+          <input type="range" id="card-col-w-range" min="18" max="72" step="0.5" value="40" aria-label="Ширина колонки карточки" />
+          <span class="tuning-value" id="card-col-w-value">40rem</span>
+        </div>
+        <label class="tuning-label" for="card-min-h-range">Высота</label>
+        <div class="tuning-row">
+          <input type="range" id="card-min-h-range" min="0" max="72" step="0.5" value="0" aria-label="Минимальная высота карточки" />
+          <span class="tuning-value" id="card-min-h-value">авто</span>
+        </div>
+        <label class="tuning-label" for="card-text-range">Текст</label>
+        <div class="tuning-row">
+          <input type="range" id="card-text-range" min="0" max="100" step="1" value="50" aria-label="Объём текста в карточке" />
+          <span class="tuning-value" id="card-text-value">50%</span>
+        </div>
+        <label class="tuning-label" for="card-font-range">Шрифт</label>
+        <div class="tuning-row">
+          <input type="range" id="card-font-range" min="70" max="160" step="1" value="100" aria-label="Размер шрифта в карточке" />
+          <span class="tuning-value" id="card-font-value">100%</span>
+        </div>
+      </section>
+      </details>
+
+      <section class="sidebar-panel sidebar-panel--nav">
         <h2 class="sidebar-label">Раздел</h2>
         <div class="segmented apply-view-tabs" role="tablist" aria-label="Раздел очереди">
-          <button type="button" data-apply-view="queue" class="tab seg-btn active" data-tip="Новые вакансии на проверку">Очередь</button>
+          <button type="button" data-apply-view="queue" class="tab seg-btn active" data-tip="Вся очередь без отклика (включая с анкетой)">Очередь</button>
+          <button type="button" data-apply-view="noQuestionnaire" class="tab tab-no-questionnaire seg-btn" data-tip="Готовы к авто-отклику без ручной анкеты">Без анкет</button>
+          <button type="button" data-apply-view="questionnaire" class="tab tab-questionnaire seg-btn" data-tip="Ручная анкета или подсказка из текста вакансии при сборе">Анкета</button>
           <button type="button" data-apply-view="applied" class="tab tab-applied seg-btn" data-tip="Уже откликнулись через дашборд">Отклики</button>
-          <button type="button" data-apply-view="questionnaire" class="tab tab-questionnaire seg-btn" data-tip="Ждут ручного заполнения анкеты на hh.ru">Анкета</button>
           <button type="button" data-apply-view="hidden" class="tab tab-hidden seg-btn" data-tip="Senior, 1С, разработчик — скрыты фильтрами">Скрытые</button>
         </div>
       </section>
@@ -83,29 +134,58 @@
         </div>
       </section>
 
+      <details class="sidebar-panel settings-details" id="panel-limits" open>
+        <summary class="sidebar-label">Лимиты и пороги</summary>
+        <div class="settings-grid">
+          <label class="field field--row">
+            <span class="field-label">Порог авто</span>
+            <input type="number" id="score-threshold-input" class="field-input field-input--narrow" min="0" max="100" step="1" value="50" data-pref="dashboardMinScoreFilter" data-tip="Балл для вкладки «Авто» и батча ≥ порога (0–100)" />
+          </label>
+          <label class="field field--row">
+            <span class="field-label">Батч, шт.</span>
+            <input type="number" id="batch-limit" class="field-input field-input--narrow" min="1" max="100" step="1" value="10" data-pref="dashboardBatchSize" data-tip="Откликов за один запуск батча" />
+          </label>
+          <label class="field field--row">
+            <span class="field-label">В час</span>
+            <input type="number" id="pref-max-hour" class="field-input field-input--narrow" min="1" max="200" step="1" data-pref="hhApplyChatMaxPerHour" />
+          </label>
+          <label class="field field--row">
+            <span class="field-label">В сутки</span>
+            <input type="number" id="pref-max-day" class="field-input field-input--narrow" min="1" max="1000" step="1" data-pref="hhApplyChatMaxPerDay" />
+          </label>
+          <label class="field field--row settings-field--wide">
+            <span class="field-label">За 30 дней</span>
+            <input type="number" id="pref-max-month" class="field-input field-input--narrow" min="1" max="10000" step="1" data-pref="hhApplyChatMaxPerMonth" />
+          </label>
+        </div>
+        <p class="settings-hint" id="settings-save-hint" hidden></p>
+      </details>
+
       <details class="sidebar-panel filter-details filter-panel" id="panel-filters">
         <summary class="sidebar-label">Фильтры списка</summary>
         <label class="field">
           <span class="field-label">Поиск</span>
-          <input type="search" id="filter-search" class="field-input" placeholder="Название, компания, ключ…" autocomplete="off" />
+          <input type="search" id="filter-search" class="field-input" placeholder="Название, компания…" autocomplete="off" />
         </label>
         <label class="field">
           <span class="field-label">Компания</span>
           <input type="text" id="filter-company" class="field-input" placeholder="Часть названия" autocomplete="off" />
         </label>
-        <label class="field field--row">
-          <span class="field-label">Мин. балл</span>
-          <input type="number" id="filter-min-score" class="field-input field-input--narrow" min="0" max="100" placeholder="—" />
-        </label>
-        <label class="field">
-          <span class="field-label">Сортировка</span>
-          <select id="filter-sort" class="field-input">
-            <option value="score-desc">Балл ↓</option>
-            <option value="score-asc">Балл ↑</option>
-            <option value="date-desc">Сначала новые</option>
-            <option value="title-asc">По названию</option>
-          </select>
-        </label>
+        <div class="filter-fields-duo">
+          <label class="field field--row">
+            <span class="field-label">Мин.</span>
+            <input type="number" id="filter-min-score" class="field-input field-input--narrow" min="0" max="100" placeholder="—" />
+          </label>
+          <label class="field field--row">
+            <span class="field-label">Сорт.</span>
+            <select id="filter-sort" class="field-input">
+              <option value="score-desc">Балл ↓</option>
+              <option value="score-asc">Балл ↑</option>
+              <option value="date-desc">Новые</option>
+              <option value="title-asc">Имя</option>
+            </select>
+          </label>
+        </div>
         <label class="field-check">
           <input type="checkbox" id="filter-salary" />
           <span>Только с указанной ЗП</span>
@@ -114,13 +194,13 @@
           Сбросить фильтры
         </button>
       </details>
+      </div>
 
-      <section class="sidebar-panel sidebar-panel--grow">
-        <details class="actions-details" open>
-          <summary class="sidebar-label actions-summary">Действия</summary>
+      <section class="sidebar-panel sidebar-panel--actions">
+          <h2 class="sidebar-label">Действия</h2>
           <div class="actions-body">
             <label class="field">
-              <span class="field-label">Период сбора на hh.ru</span>
+              <span class="field-label">Период</span>
               <select id="harvest-period" class="field-input" data-tip="search_period: 0 = за всё время. Не перефильтровывает уже загруженный JSON.">
                 <option value="0">За всё время</option>
                 <option value="1">За сутки</option>
@@ -129,33 +209,21 @@
                 <option value="30">30 дней</option>
               </select>
             </label>
-            <label class="field field--row">
-              <span class="field-label">Батч, шт.</span>
-              <input type="number" id="batch-limit" class="field-input field-input--narrow" min="1" max="50" value="10" data-tip="Сколько откликов за один запуск батча (макс. 50)" />
-            </label>
-            <label class="field field--row">
-              <span class="field-label">Порог авто</span>
-              <input type="number" id="score-threshold-input" class="field-input field-input--narrow" min="0" max="100" value="50" data-tip="Порог для вкладки «Авто» и батча ≥50 (из preferences.json при загрузке)" />
-            </label>
             <button type="button" class="btn btn-primary btn-block" id="btn-run-harvest" data-tip="Playwright: поиск по ключам, парсинг, оценка LLM. Один профиль Chromium — не параллельно с откликом.">
               Собрать вакансии
             </button>
-            <button type="button" class="btn btn-secondary btn-block" id="btn-batch-auto" data-tip="До N откликов с баллом ≥ порога: письмо из пула + PDF резюме под вакансию.">
-              Батч: авто (≥ порога)
+            <button type="button" class="btn btn-secondary btn-block" id="btn-batch-auto" data-tip="Батч по текущему разделу: письмо из пула + PDF резюме (балл ≥ порога).">
+              Батч авто
             </button>
-            <button type="button" class="btn btn-secondary btn-block btn-batch-manual" id="btn-batch-manual" data-tip="Отклики с баллом ниже порога — вручную проверяли.">
-              Батч: ручной (&lt; порога)
+            <button type="button" class="btn btn-secondary btn-block btn-batch-manual" id="btn-batch-manual" data-tip="Батч по текущему разделу: балл ниже порога.">
+              Батч ручной
             </button>
             <div class="batch-control-row" id="batch-control-row" hidden>
               <button type="button" class="btn btn-ghost btn-batch-pause" id="btn-batch-pause" data-tip="После текущей вакансии">Пауза</button>
               <button type="button" class="btn btn-ghost btn-batch-stop" id="btn-batch-stop" data-tip="Стоп с сохранением прогресса">Стоп</button>
               <button type="button" class="btn btn-ghost btn-batch-resume" id="btn-batch-resume" data-tip="Продолжить паузу или прерванный батч">Продолжить</button>
             </div>
-            <p class="control-hint">
-              Один профиль браузера: не запускайте сбор и отклик одновременно. При «профиль занят» — закройте окна Chromium и повторите.
-            </p>
           </div>
-        </details>
         <div id="job-progress" class="job-progress" hidden aria-live="polite">
           <div class="job-progress-head">
             <span class="job-progress-title" id="job-progress-title">Выполнение</span>
@@ -180,14 +248,14 @@
       </header>
       <main id="list" class="vacancy-grid" aria-live="polite"></main>
     </div>
+    </div>
 
     <template id="card-tpl">
       <article class="card">
         <button type="button" class="card-dismiss" aria-label="Удалить" data-tip="Убрать из очереди без «подходит / не подходит»">×</button>
         <div class="card-head">
-          <div class="score-block">
-            <div class="score-row">
-              <div class="score-hover-wrap">
+          <div class="card-head-top">
+            <div class="score-hover-wrap">
                 <span class="score" tabindex="0"></span>
                 <div class="score-tooltip" role="tooltip"></div>
               </div>
@@ -195,26 +263,43 @@
                 <button type="button" class="model-info-btn" hidden aria-label="Модель оценки" data-tip="Какая модель выставила баллы">i</button>
                 <div class="model-info-panel" hidden></div>
               </div>
-            </div>
           </div>
           <a class="title-link" target="_blank" rel="noopener"></a>
         </div>
         <div class="card-body">
-          <div class="meta"></div>
-          <ul class="card-facts" hidden></ul>
-          <p class="card-desc" hidden></p>
-          <p class="questionnaire-hint" hidden></p>
-          <button type="button" class="questionnaire-banner" hidden>
-            <span class="questionnaire-banner__icon" aria-hidden="true">?</span>
-            <span class="questionnaire-banner__text"></span>
-          </button>
-          <p class="hh-apply-badge" hidden></p>
-          <p class="hidden-role-badge" hidden></p>
-          <p class="summary"></p>
-          <p class="risks"></p>
-          <div class="tags"></div>
+          <div class="card-scroll">
+            <p class="meta meta--compact"></p>
+            <div class="card-meta-detail" hidden>
+              <p class="meta-line meta-line--company" hidden></p>
+              <p class="meta-line meta-line--salary" hidden></p>
+              <p class="meta-line meta-line--search" hidden></p>
+            </div>
+            <ul class="card-facts" hidden></ul>
+            <div class="card-desc-block" hidden></div>
+            <div class="card-tail-rest">
+              <p class="hh-apply-badge" hidden></p>
+              <p class="hidden-role-badge" hidden></p>
+              <p class="card-label card-label--summary" hidden>Суть</p>
+              <p class="summary"></p>
+              <div class="tags"></div>
+            </div>
+          </div>
+          <div class="card-tail-align">
+            <div class="card-slot card-slot--questionnaire">
+              <button type="button" class="questionnaire-banner" hidden>
+                <span class="questionnaire-banner__icon" aria-hidden="true">?</span>
+                <span class="questionnaire-banner__text"></span>
+              </button>
+            </div>
+            <div class="card-slot card-slot--risks">
+              <p class="card-label card-label--risks" hidden>Нюансы</p>
+              <div class="risks-box" hidden>
+                <p class="risks"></p>
+              </div>
+            </div>
+          </div>
         </div>
-
+        <div class="card-foot">
         <div class="card-section card-section--apply">
           <p class="card-section-title">Отклик</p>
           <div class="btn-row apply-chat-row">
@@ -266,6 +351,7 @@
             </button>
           </div>
         </div>
+        </div>
         <p class="done-reason"></p>
       </article>
     </template>
@@ -295,6 +381,17 @@
           <code class="apply-log-path"></code>
           <span class="apply-log-meta" id="apply-log-meta"></span>
         </p>
+        <div id="apply-log-progress" class="job-progress job-progress--inline" hidden aria-live="polite">
+          <div class="job-progress-head">
+            <span class="job-progress-title" id="apply-log-progress-title">Выполнение</span>
+            <span class="job-progress-pct" id="apply-log-progress-pct">0%</span>
+          </div>
+          <div class="job-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+            <div class="job-progress-bar" id="apply-log-progress-bar" style="width: 0%"></div>
+          </div>
+          <p class="job-progress-label" id="apply-log-progress-label"></p>
+          <p class="job-progress-meta" id="apply-log-progress-meta"></p>
+        </div>
         <div class="apply-log-toolbar">
           <label class="apply-log-tab-label">
             <input type="radio" name="log-source" value="apply" checked /> Отклик
@@ -305,6 +402,10 @@
           <label class="apply-log-filter">
             <input type="checkbox" id="apply-log-last-run" checked /> Последний запуск
           </label>
+          <label class="apply-log-filter" data-tip="При включении новые строки видны сразу; выключите, чтобы читать выше без прыжка">
+            <input type="checkbox" id="apply-log-follow-tail" checked /> К концу
+          </label>
+          <button type="button" class="btn btn-ghost btn-apply-log-jump" data-tip="Прокрутить в конец и снова следить за новыми строками">↓</button>
           <button type="button" class="btn btn-secondary btn-refresh-apply-log" data-tip="Перечитать лог с диска">Обновить</button>
         </div>
         <pre class="apply-log-pre"></pre>
@@ -312,7 +413,7 @@
     </div>
 
     <div id="questionnaire-modal" class="modal" hidden>
-      <div class="modal-backdrop"></div>
+      <div class="modal-backdrop" data-close-modal></div>
       <div class="modal-dialog modal-dialog--wide" role="dialog" aria-modal="true" aria-labelledby="questionnaire-modal-title" tabindex="-1">
         <div class="modal-head">
           <h2 id="questionnaire-modal-title" class="modal-title">Анкета работодателя</h2>
@@ -356,6 +457,6 @@
       </div>
     </div>
 
-    <script type="module" src="/app.js?v=20260521zoom"></script>
+    <script type="module" src="/app.js?v=20260524status1"></script>
   </body>
 </html>

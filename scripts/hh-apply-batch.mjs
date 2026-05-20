@@ -20,8 +20,10 @@ import {
   applyRateLimitsSnapshot,
   countApplyLaunchesLastDay,
   countApplyLaunchesLastHour,
+  countApplyLaunchesLastMonth,
   getMaxApplyChatPerDay,
   getMaxApplyChatPerHour,
+  getMaxApplyChatPerMonth,
   recordApplyLaunch,
 } from '../lib/hh-apply-rate.mjs';
 import { loadCoverLetterPool, pickCoverLetterFromPool } from '../lib/cover-letter-pool.mjs';
@@ -29,14 +31,10 @@ import { ROOT } from '../lib/paths.mjs';
 import { createBatchProgressTracker, readJobProgress } from '../lib/job-progress.mjs';
 import { APPLY_CHAT_PROGRESS_FILE } from '../lib/paths.mjs';
 import { appendApplyChatLog, appendApplyChatRunHeader } from '../lib/apply-chat-log.mjs';
-import { vacancyHasHhApply } from '../lib/vacancy-hh-apply.mjs';
 import { formatLogLine } from '../lib/log-line.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
-import {
-  recordPassesNot1C,
-  recordPassesNotSenior,
-  recordPassesNotDeveloper,
-} from '../lib/filters.mjs';
+import { getDashboardBatchSizeCap } from '../lib/dashboard-preferences.mjs';
+import { normalizeBatchScope, filterForBatchScope } from '../lib/batch-scope.mjs';
 import { setBatchPid } from '../lib/job-pids.mjs';
 import {
   initBatchControl,
@@ -50,6 +48,11 @@ import {
   finishBatchControl,
   getBatchCommand,
 } from '../lib/batch-control.mjs';
+import { HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED } from '../lib/hh-apply-exit-codes.mjs';
+import {
+  findBatchSkipReasonInLines,
+  formatApplySkipReasonFromText,
+} from '../lib/batch-skip-reason.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -62,6 +65,7 @@ function parseArgs() {
   let tailorResume = false;
   let status = 'pending';
   let resume = false;
+  let batchScope = 'noQuestionnaire';
   for (const a of process.argv.slice(2)) {
     if (a.startsWith('--min-score=')) minScore = Math.max(0, Number(a.slice(12)) || 0);
     if (a.startsWith('--max-score=')) maxScore = Math.max(0, Number(a.slice(12)) || 0);
@@ -71,8 +75,9 @@ function parseArgs() {
     if (a === '--tailor-resume') tailorResume = true;
     if (a.startsWith('--status=')) status = a.slice(9).trim() || 'pending';
     if (a === '--resume') resume = true;
+    if (a.startsWith('--batch-scope=')) batchScope = normalizeBatchScope(a.slice(14));
   }
-  return { minScore, maxScore, limit, dryRun, usePoolLetters, tailorResume, status, resume };
+  return { minScore, maxScore, limit, dryRun, usePoolLetters, tailorResume, status, resume, batchScope };
 }
 
 function scoreOf(rec) {
@@ -85,6 +90,21 @@ function logBatch(msg) {
   appendApplyChatLog(line, { withTime: false });
 }
 
+/** Ошибки отклика, при которых батч переходит к следующей вакансии. */
+function isBatchRecoverableApplyError(message) {
+  const m = String(message || '');
+  if (/редирект на логин|выполните:\s*npm run login/i.test(m)) return false;
+  return (
+    /отклик недоступен|в архиве|снята с публикации/i.test(m) ||
+    /не удалось открыть форму отклика/i.test(m) ||
+    /кнопка «откликнуться»/i.test(m) ||
+    /не найдена кнопка «откликнуться»/i.test(m) ||
+    /мастер не дошёл до кнопки/i.test(m) ||
+    /не выбрано резюме|резюме не переключилось/i.test(m) ||
+    /hh-apply-chat exit 1/i.test(m)
+  );
+}
+
 function runApplyForId(id, { tailorResume, dryRun }) {
   return new Promise((resolve, reject) => {
     const args = ['scripts/hh-apply-chat-letter.mjs', `--id=${id}`];
@@ -94,17 +114,24 @@ function runApplyForId(id, { tailorResume, dryRun }) {
     const child = spawn(process.execPath, args, {
       cwd: ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, HH_BATCH: '1' },
+      env: {
+        ...process.env,
+        HH_BATCH: '1',
+        /** Батч: быстрый fill и короткие паузы (как одиночный отклик из дашборда). HH_FAST=0 — «человечный» режим. */
+        HH_FAST: String(process.env.HH_FAST ?? '1'),
+      },
     });
     setActiveChildPid(child.pid);
 
+    const outputLines = [];
     const forward = (chunk, isErr) => {
       const lines = String(chunk).split(/\r?\n/).filter((l) => l.trim());
       for (const raw of lines) {
         const line = raw.trim();
+        outputLines.push(line);
         if (isErr) console.error(line);
         else console.log(line);
-        appendApplyChatLog(line.startsWith('[') ? line : `[stdout] ${line}`, { withTime: false });
+        // hh-apply-chat-letter уже пишет в hh-apply-chat.log через appendApplyChatLog
       }
     };
     child.stdout?.on('data', (c) => forward(c, false));
@@ -126,8 +153,11 @@ function runApplyForId(id, { tailorResume, dryRun }) {
         reject(new Error('BATCH_STOPPED'));
         return;
       }
-      if (code === 0) resolve();
-      else reject(new Error(`hh-apply-chat exit ${code}`));
+      const exitCode = code ?? 1;
+      const skipReason =
+        findBatchSkipReasonInLines(outputLines) ||
+        (exitCode !== 0 ? formatApplySkipReasonFromText(outputLines.join('\n'), exitCode) : '');
+      resolve({ exitCode, skipReason });
     });
   });
 }
@@ -151,7 +181,10 @@ function startApplyProgressSync(batchProgress, stepIndex, planned, rec, baseStat
 }
 
 async function main() {
-  let { minScore, maxScore, limit, dryRun, usePoolLetters, tailorResume, status, resume } = parseArgs();
+  let { minScore, maxScore, limit, dryRun, usePoolLetters, tailorResume, status, resume, batchScope } =
+    parseArgs();
+  const batchSizeCap = getDashboardBatchSizeCap();
+  limit = Math.min(batchSizeCap, Math.max(1, limit));
 
   if (!resume) clearBatchResumeState();
 
@@ -169,6 +202,7 @@ async function main() {
     usePoolLetters = p.usePoolLetters ?? usePoolLetters;
     tailorResume = p.tailorResume ?? tailorResume;
     status = p.status ?? status;
+    batchScope = normalizeBatchScope(p.batchScope ?? batchScope);
     logBatch(`Продолжение батча (уже: ok=${saved.done}, ошибок=${saved.failed})`);
   }
 
@@ -191,14 +225,14 @@ async function main() {
   let skipped = Number(saved?.skipped) || 0;
   let letterIdx = Number(saved?.letterIdx) || 0;
 
-  const candidates = loadQueue()
-    .filter((x) => x.status === status)
-    .filter((x) => x.url)
-    .filter((x) => !vacancyHasHhApply(x))
-    .filter((x) => recordPassesNot1C(x, prefs))
-    .filter((x) => recordPassesNotSenior(x, prefs))
-    .filter((x) => recordPassesNotDeveloper(x, prefs))
-    .filter((x) => !processedIds.has(x.id))
+  const candidates = filterForBatchScope(
+    loadQueue()
+      .filter((x) => x.status === status)
+      .filter((x) => x.url)
+      .filter((x) => !processedIds.has(x.id)),
+    batchScope,
+    prefs
+  )
     .filter((x) => {
       const s = scoreOf(x);
       if (minScore && s < minScore) return false;
@@ -221,6 +255,7 @@ async function main() {
     usePoolLetters,
     tailorResume,
     status,
+    batchScope,
   };
 
   setBatchPid(process.pid);
@@ -233,10 +268,10 @@ async function main() {
 
   const rates = applyRateLimitsSnapshot();
   console.log(
-    `Батч: кандидатов ${candidates.length}, лимит ${limit}, min=${minScore || '-'}, max=${maxScore || '-'}, dry-run=${dryRun}`
+    `Батч: scope=${batchScope}, кандидатов ${candidates.length}, лимит ${limit}, min=${minScore || '-'}, max=${maxScore || '-'}, dry-run=${dryRun}`
   );
   console.log(
-    `Отклики сегодня: ${rates.lastDay}/${rates.maxPerDay}, за час: ${rates.lastHour}/${rates.maxPerHour}`
+    `Отклики: час ${rates.lastHour}/${rates.maxPerHour}, сутки ${rates.lastDay}/${rates.maxPerDay}, 30д ${rates.lastMonth}/${rates.maxPerMonth}`
   );
 
   const batchProgress = createBatchProgressTracker({
@@ -247,7 +282,7 @@ async function main() {
 
   appendApplyChatRunHeader(
     'BATCH',
-    `planned=${planned} min=${minScore || '-'} max=${maxScore || '-'} dry=${dryRun} resume=${resume}`
+    `scope=${batchScope} planned=${planned} min=${minScore || '-'} max=${maxScore || '-'} dry=${dryRun} resume=${resume}`
   );
   batchProgress.start(resume ? `Продолжение батча: ${planned} откликов` : `Подготовка батча: ${planned} откликов`);
   logBatch(`Старт: цель ${limit} успешных, в очереди ${candidates.length} новых`);
@@ -268,6 +303,10 @@ async function main() {
         break;
       }
 
+      if (countApplyLaunchesLastMonth() >= getMaxApplyChatPerMonth()) {
+        logBatch('Достигнут лимит откликов за 30 дней.');
+        break;
+      }
       if (countApplyLaunchesLastDay() >= getMaxApplyChatPerDay()) {
         logBatch('Достигнут дневной лимит откликов.');
         break;
@@ -324,7 +363,19 @@ async function main() {
           failed,
           skipped,
         });
-        await runApplyForId(rec.id, { tailorResume, dryRun });
+        const exitCode = await runApplyForId(rec.id, { tailorResume, dryRun });
+        if (exitCode === HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED) {
+          skipped++;
+          logBatch(
+            `Анкета ${stepNum}/${planned}: «${stepTitle}» — отклик не отправлен, карточка в разделе «Анкета»`
+          );
+          processedIds.add(rec.id);
+          batchProgress.step(done, `Анкета (пропуск) ${stepNum}/${planned}`, { done, failed, skipped });
+          continue;
+        }
+        if (exitCode !== 0) {
+          throw new Error(`hh-apply-chat exit ${exitCode}`);
+        }
         recordApplyLaunch();
         done++;
         processedIds.add(rec.id);
@@ -336,6 +387,12 @@ async function main() {
           stopReason = 'stop';
           logBatch('Прервано пользователем во время отклика');
           break;
+        }
+        if (isBatchRecoverableApplyError(e.message)) {
+          skipped++;
+          logBatch(`Пропуск ${stepNum}/${planned}: ${e.message}`);
+          batchProgress.step(done, `Пропуск ${stepNum}/${planned}`, { done, failed, skipped });
+          continue;
         }
         failed++;
         logBatch(`ОШИБКА ${stepNum}/${planned}: ${e.message}`);

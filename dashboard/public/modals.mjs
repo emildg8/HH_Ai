@@ -21,7 +21,8 @@ export function initModalLayer({ onEscape } = {}) {
     const modal = document.getElementById(id);
     if (!modal) continue;
     modal.addEventListener('click', (e) => {
-      if (e.target.classList.contains('modal-backdrop')) {
+      const t = e.target;
+      if (t.classList?.contains('modal-backdrop') || t.hasAttribute?.('data-close-modal')) {
         e.preventDefault();
         onEscape?.(id);
       }

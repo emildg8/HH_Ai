@@ -25,10 +25,18 @@ import { readApplyChatLogTail, readHarvestRunLogTail } from '../lib/apply-chat-l
 import {
   countApplyLaunchesLastHour,
   countApplyLaunchesLastDay,
+  countApplyLaunchesLastMonth,
   getMaxApplyChatPerHour,
   getMaxApplyChatPerDay,
+  getMaxApplyChatPerMonth,
+  applyRateLimitsSnapshot,
   recordApplyLaunch,
 } from '../lib/hh-apply-rate.mjs';
+import {
+  patchDashboardPreferences,
+  getDashboardBatchSizeCap,
+  DASHBOARD_PREF_BOUNDS,
+} from '../lib/dashboard-preferences.mjs';
 import {
   loadQueue,
   updateVacancyRecord,
@@ -36,6 +44,8 @@ import {
   removeVacancyRecord,
 } from '../lib/store.mjs';
 import { vacancyHasHhApply, vacancyQuestionnairePending } from '../lib/vacancy-hh-apply.mjs';
+import { recordNeedsQuestionnaireWork } from '../lib/questionnaire-labels.mjs';
+import { normalizeBatchScope } from '../lib/batch-scope.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
 import {
   recordPassesMinSalary,
@@ -61,8 +71,12 @@ import {
 } from '../lib/cover-letter-openrouter.mjs';
 import { appendCoverLetterUserEditSnippet } from '../lib/cover-letter-user-edits.mjs';
 import { fetchVacancyTextFromHh } from '../lib/refresh-vacancy-from-hh.mjs';
-import { generateQuestionnaireAnswers } from '../lib/hh-questionnaire-answers.mjs';
+import {
+  generateQuestionnaireAnswers,
+  isQuestionnaireLlmEnabled,
+} from '../lib/hh-questionnaire-answers.mjs';
 import { meaningfulQuestions } from '../lib/questionnaire-labels.mjs';
+import { remapQuestionnaireAnswers } from '../lib/questionnaire-merge.mjs';
 import { getJobStatus, setHarvestPid, setBatchPid, isProcessAlive } from '../lib/job-pids.mjs';
 import {
   getBatchControlSummary,
@@ -84,6 +98,22 @@ let activeApplyChatPid = null;
 function scoreThreshold(prefs) {
   const n = Number(prefs?.dashboardMinScoreFilter ?? prefs?.dashboardHighScoreThreshold);
   return Number.isFinite(n) && n > 0 ? n : 50;
+}
+
+function checkApplyRateLimits() {
+  const maxApplyHour = getMaxApplyChatPerHour();
+  const maxApplyDay = getMaxApplyChatPerDay();
+  const maxApplyMonth = getMaxApplyChatPerMonth();
+  if (countApplyLaunchesLastHour() >= maxApplyHour) {
+    return `Слишком частые отклики: максимум ${maxApplyHour} в час (hhApplyChatMaxPerHour).`;
+  }
+  if (countApplyLaunchesLastDay() >= maxApplyDay) {
+    return `Дневной лимит откликов: ${maxApplyDay} (hhApplyChatMaxPerDay). Продолжите завтра.`;
+  }
+  if (countApplyLaunchesLastMonth() >= maxApplyMonth) {
+    return `Лимит за 30 дней: ${maxApplyMonth} (hhApplyChatMaxPerMonth).`;
+  }
+  return null;
 }
 
 function filterByScoreBand(items, band, threshold) {
@@ -216,10 +246,13 @@ const server = http.createServer(async (req, res) => {
     const harvestProgressRaw = readJobProgress(HARVEST_PROGRESS_FILE);
     const batchProgressRaw = readJobProgress(BATCH_PROGRESS_FILE);
     const applyChatProgressRaw = readJobProgress(APPLY_CHAT_PROGRESS_FILE);
-    const uiProgress = (p, running) => {
+    const batchControlSummary = getBatchControlSummary();
+    const batchAlive = st.batch.running || batchControlSummary.batchRunning;
+    const uiProgress = (p, running, { allowStaleRunningMs = 0 } = {}) => {
       if (!p) return null;
-      if (running || p.phase === 'paused') return p;
       const age = Date.now() - new Date(p.updatedAt || 0).getTime();
+      if (running || p.phase === 'paused') return p;
+      if (p.phase === 'running' && allowStaleRunningMs > 0 && age < allowStaleRunningMs) return p;
       if ((p.phase === 'done' || p.phase === 'error') && age < 90_000) return p;
       return null;
     };
@@ -229,9 +262,11 @@ const server = http.createServer(async (req, res) => {
       harvestTick,
       queuePath,
       browserLock,
-      harvestProgress: uiProgress(harvestProgressRaw, st.harvest.running),
-      batchProgress: uiProgress(batchProgressRaw, st.batch.running),
-      applyChatProgress: uiProgress(applyChatProgressRaw, st.applyChat.running || st.batch.running),
+      harvestProgress: uiProgress(harvestProgressRaw, st.harvest.running, { allowStaleRunningMs: 120_000 }),
+      batchProgress: uiProgress(batchProgressRaw, batchAlive, { allowStaleRunningMs: 300_000 }),
+      applyChatProgress: uiProgress(applyChatProgressRaw, st.applyChat.running || batchAlive, {
+        allowStaleRunningMs: 120_000,
+      }),
       harvestLog: {
         lastError: harvestLog.lastError,
         tail: harvestLog.lines.slice(-6).join('\n'),
@@ -241,7 +276,9 @@ const server = http.createServer(async (req, res) => {
         modifiedAt: applyLogTail.modifiedAt,
         lastRunHeader: applyLogTail.lastRunHeader,
       },
-      batchControl: getBatchControlSummary(),
+      batchControl: batchControlSummary,
+      batchActive: batchAlive,
+      applyRates: applyRateLimitsSnapshot(),
     });
   }
 
@@ -274,7 +311,9 @@ const server = http.createServer(async (req, res) => {
           ? 'hidden'
           : applyViewRaw === 'questionnaire'
             ? 'questionnaire'
-            : 'queue';
+            : applyViewRaw === 'noQuestionnaire'
+              ? 'noQuestionnaire'
+              : 'queue';
     let prefs = {};
     try {
       prefs = loadPreferences();
@@ -296,7 +335,15 @@ const server = http.createServer(async (req, res) => {
       q = q.filter((x) => recordIsHiddenByRoleFilters(x, prefs));
     } else if (applyView === 'questionnaire') {
       q = q.filter((x) => !vacancyHasHhApply(x));
-      q = q.filter((x) => vacancyQuestionnairePending(x));
+      q = q.filter((x) => recordNeedsQuestionnaireWork(x));
+    } else if (applyView === 'noQuestionnaire') {
+      q = q
+        .filter((x) => recordPassesNotFirstLine(x))
+        .filter((x) => recordPassesNotDeveloper(x, prefs))
+        .filter((x) => recordPassesNotSenior(x, prefs))
+        .filter((x) => recordPassesNot1C(x, prefs));
+      q = q.filter((x) => !vacancyHasHhApply(x));
+      q = q.filter((x) => !recordNeedsQuestionnaireWork(x));
     } else {
       q = q
         .filter((x) => recordPassesNotFirstLine(x))
@@ -334,8 +381,12 @@ const server = http.createServer(async (req, res) => {
       .filter((x) => recordPassesNot1C(x, prefs))
       .filter((x) => recordPassesLlmList(x))
       .filter((x) => recordPassesMinSalary(x, prefs));
-    const queueBase = baseForCounts.filter((x) => !vacancyHasHhApply(x) && !vacancyQuestionnairePending(x));
-    const questionnaireBase = baseForCounts.filter((x) => vacancyQuestionnairePending(x));
+    const queueBase = baseForCounts.filter(
+      (x) => !vacancyHasHhApply(x) && !recordNeedsQuestionnaireWork(x)
+    );
+    const questionnaireBase = baseForCounts.filter(
+      (x) => !vacancyHasHhApply(x) && recordNeedsQuestionnaireWork(x)
+    );
     const appliedBase = baseForCounts.filter((x) => vacancyHasHhApply(x));
     const high = filterByScoreBand(queueBase, 'high', threshold).length;
     const low = filterByScoreBand(queueBase, 'low', threshold).length;
@@ -385,6 +436,7 @@ const server = http.createServer(async (req, res) => {
         appliedLow,
         queue: queueBase.length,
         questionnaire: questionnaireBase.length,
+        noQuestionnaire: queueBase.length,
         rawInBand,
         hiddenByRole,
         totalPending: loadQueue().filter((x) => x.status === status).length,
@@ -436,9 +488,70 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/api/preferences') {
     try {
       const p = loadPreferences();
-      return sendJson(res, 200, { preferences: p });
+      return sendJson(res, 200, {
+        preferences: p,
+        bounds: DASHBOARD_PREF_BOUNDS,
+        applyRates: applyRateLimitsSnapshot(),
+        apiFeatures: { preferencesSave: true },
+      });
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  if (req.method === 'GET' && pathname === '/api/preferences/save') {
+    return sendJson(res, 200, { ok: true, preferencesSave: true });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/preferences/save') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const patch = body?.patch && typeof body.patch === 'object' ? body.patch : body;
+    if (!patch || typeof patch !== 'object') {
+      return sendJson(res, 400, { error: 'Нужен объект настроек (patch)' });
+    }
+    try {
+      const { preferences, updated } = patchDashboardPreferences(patch);
+      return sendJson(res, 200, {
+        ok: true,
+        preferences,
+        updated,
+        applyRates: applyRateLimitsSnapshot(),
+        apiFeatures: { preferencesSave: true },
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (
+    (req.method === 'PATCH' || req.method === 'POST') &&
+    pathname === '/api/preferences'
+  ) {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const patch = body?.patch && typeof body.patch === 'object' ? body.patch : body;
+    if (!patch || typeof patch !== 'object') {
+      return sendJson(res, 400, { error: 'Нужен объект настроек (patch)' });
+    }
+    try {
+      const { preferences, updated } = patchDashboardPreferences(patch);
+      return sendJson(res, 200, {
+        ok: true,
+        preferences,
+        updated,
+        applyRates: applyRateLimitsSnapshot(),
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
     }
   }
 
@@ -675,9 +788,10 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    if (!hasScoreProviderCredentials()) {
+    if (isQuestionnaireLlmEnabled() && !hasScoreProviderCredentials()) {
       return sendJson(res, 503, {
-        error: 'Нужен OpenRouter_API_KEY или HH_CUSTOM_LLM_*',
+        error:
+          'HH_QUESTIONNAIRE_LLM=1: нужен OpenRouter_API_KEY или HH_CUSTOM_LLM_*. Без LLM достаточно папки CV/.',
       });
     }
 
@@ -704,11 +818,15 @@ const server = http.createServer(async (req, res) => {
 
     const now = new Date().toISOString();
     const prevQ = rec.hhApply?.questionnaire || {};
+    const savedAnswers = prevQ.savedAnswers?.length
+      ? remapQuestionnaireAnswers(prevQ.questions, questions, prevQ.savedAnswers)
+      : prevQ.savedAnswers;
     const questionnaire = {
       ...prevQ,
       status: prevQ.status || 'pending_manual',
       questions,
       suggestedAnswers: result.answers,
+      savedAnswers,
       answersModel: result.model,
       answersGeneratedAt: now,
     };
@@ -720,6 +838,7 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       questionnaire,
       model: result.model,
+      answerCount: result.answers?.length ?? 0,
     });
   }
 
@@ -955,18 +1074,8 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 500, { error: 'Скрипт hh-apply-chat-letter.mjs не найден' });
     }
 
-    const maxApplyHour = getMaxApplyChatPerHour();
-    const maxApplyDay = getMaxApplyChatPerDay();
-    if (countApplyLaunchesLastHour() >= maxApplyHour) {
-      return sendJson(res, 429, {
-        error: `Слишком частые отклики: максимум ${maxApplyHour} в час (hhApplyChatMaxPerHour).`,
-      });
-    }
-    if (countApplyLaunchesLastDay() >= maxApplyDay) {
-      return sendJson(res, 429, {
-        error: `Дневной лимит откликов: ${maxApplyDay} (hhApplyChatMaxPerDay). Продолжите завтра.`,
-      });
-    }
+    const rateErr = checkApplyRateLimits();
+    if (rateErr) return sendJson(res, 429, { error: rateErr });
     recordApplyLaunch();
 
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -1150,16 +1259,15 @@ const server = http.createServer(async (req, res) => {
     }
     const minScore = body.minScore != null ? Math.max(0, Number(body.minScore) || 0) : 50;
     const maxScore = body.maxScore != null ? Math.max(0, Number(body.maxScore) || 0) : 0;
-    const limit = Math.min(50, Math.max(1, Number(body.limit) || 10));
+    const batchCap = getDashboardBatchSizeCap();
+    const limit = Math.min(batchCap, Math.max(1, Number(body.limit) || batchCap));
+    const batchScope = normalizeBatchScope(body.batchScope || body.applyView || 'noQuestionnaire');
     const batchScript = path.join(ROOT, 'scripts', 'hh-apply-batch.mjs');
     if (!fs.existsSync(batchScript)) {
       return sendJson(res, 500, { error: 'hh-apply-batch.mjs не найден' });
     }
-    if (countApplyLaunchesLastDay() >= getMaxApplyChatPerDay()) {
-      return sendJson(res, 429, {
-        error: `Дневной лимит откликов (${getMaxApplyChatPerDay()}) исчерпан.`,
-      });
-    }
+    const batchRateErr = checkApplyRateLimits();
+    if (batchRateErr) return sendJson(res, 429, { error: batchRateErr });
     const resume = Boolean(body.resume);
     const batchSt = getJobStatus();
     if (batchSt.batch.running) {
@@ -1173,7 +1281,7 @@ const server = http.createServer(async (req, res) => {
       clearBatchResumeState();
     }
     const logFd = fs.openSync(HH_APPLY_CHAT_LOG_FILE, 'a');
-    const header = `\n======== BATCH ${new Date().toISOString()} minScore=${minScore} limit=${limit} resume=${resume} ========\n`;
+    const header = `\n======== BATCH ${new Date().toISOString()} scope=${batchScope} minScore=${minScore} limit=${limit} resume=${resume} ========\n`;
     fs.writeSync(logFd, header);
     const args = [batchScript, '--use-pool-letters', '--tailor-resume'];
     if (resume) {
@@ -1182,15 +1290,17 @@ const server = http.createServer(async (req, res) => {
       args.push(`--limit=${limit}`);
       if (minScore > 0) args.push(`--min-score=${minScore}`);
       if (maxScore > 0) args.push(`--max-score=${maxScore}`);
+      args.push(`--batch-scope=${batchScope}`);
     }
     loadDevOpsEnv();
     const child = spawn(process.execPath, args, {
       cwd: ROOT,
       detached: true,
-      stdio: ['ignore', logFd, logFd],
+      stdio: ['ignore', 'ignore', 'ignore'],
       env: {
         ...process.env,
         PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(ROOT, '.playwright-browsers'),
+        HH_FAST: String(process.env.HH_FAST ?? '1'),
       },
     });
     fs.closeSync(logFd);
@@ -1200,7 +1310,8 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, {
       ok: true,
       pid: child.pid,
-      message: `Батч запущен (до ${limit} откликов${minScore ? `, ≥${minScore}` : ''}${maxScore ? `, ≤${maxScore}` : ''}). Смотрите лог.`,
+      message: `Батч «${batchScope}» запущен (до ${limit} откликов${minScore ? `, ≥${minScore}` : ''}${maxScore ? `, ≤${maxScore}` : ''}). Смотрите лог.`,
+      batchScope,
     });
   }
 
@@ -1244,5 +1355,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Дашборд: http://127.0.0.1:${PORT} (batch-control: pause/stop/resume)`);
+  console.log(`Дашборд: http://127.0.0.1:${PORT}`);
+  console.log('  API: batch-control, POST /api/preferences/save (лимиты из UI)');
 });

@@ -13,46 +13,19 @@ import { sessionProfilePath } from '../lib/paths.mjs';
 import { getVacancyRecord, updateVacancyRecord } from '../lib/store.mjs';
 import {
   openVacancyResponseFlow,
-  waitForVacancyResponseForm,
   resolvePageAfterResponseClick,
-  advanceResponseWizardOneStep,
 } from '../lib/hh-response-modal.mjs';
-import { detectEmployerQuestionnaire } from '../lib/hh-employer-questionnaire.mjs';
+import {
+  collectBestQuestionnaire,
+  prepareResponseWizardForQuestionnaire,
+} from '../lib/hh-questionnaire-probe.mjs';
 import { meaningfulQuestions } from '../lib/questionnaire-labels.mjs';
+import { mergeQuestionnaire, prepareStoredQuestions } from '../lib/questionnaire-merge.mjs';
 import { assertHhLoggedIn, isLoggedInOnHh } from '../lib/hh-session-check.mjs';
 import { launchPersistentContextSafe, closeContextSafe } from '../lib/chromium-session.mjs';
 
 const idArg = process.argv.find((a) => a.startsWith('--id='));
 const recordId = idArg ? idArg.slice(5).trim() : '';
-
-async function collectBestQuestionnaire(page) {
-  let best = { questions: [], reasons: [] };
-
-  for (let step = 0; step < 14; step++) {
-    const q = await detectEmployerQuestionnaire(page);
-    const meaningful = meaningfulQuestions(q.questions);
-    if (meaningful.length > best.questions.length) {
-      best = { questions: meaningful, reasons: q.reasons || [] };
-    }
-    if (meaningful.length > 0) {
-      const hasSubmit = await page
-        .getByRole('button', { name: /отправить|откликнуться/i })
-        .first()
-        .isVisible({ timeout: 300 })
-        .catch(() => false);
-      if (hasSubmit && meaningful.length >= 1) break;
-    }
-    const moved = await advanceResponseWizardOneStep(page);
-    if (!moved) break;
-    await page.waitForTimeout(450);
-  }
-
-  return {
-    detected: best.questions.length > 0,
-    questions: best.questions,
-    reasons: best.reasons,
-  };
-}
 
 async function main() {
   if (!recordId) {
@@ -82,6 +55,7 @@ async function main() {
 
   const ctx = await launchPersistentContextSafe(profile, launchOpts, { owner: 'probe-questionnaire' });
   let page = ctx.pages()[0] || (await ctx.newPage());
+  const log = (msg) => console.log(msg);
 
   try {
     console.log('[probe-questionnaire]', rec.title || rec.url);
@@ -97,38 +71,35 @@ async function main() {
     await openVacancyResponseFlow(page, { humanClicks: false });
     page = (await resolvePageAfterResponseClick(ctx, page)) || page;
 
-    const open = await waitForVacancyResponseForm(page, 22_000);
-    if (!open) {
-      console.error('Форма отклика не открылась');
-      process.exit(1);
-    }
+    await prepareResponseWizardForQuestionnaire(page, log);
+    const q = await collectBestQuestionnaire(page, { log });
 
-    const q = await collectBestQuestionnaire(page);
     if (!q.detected || !q.questions?.length) {
       console.error(
-        'Не удалось прочитать текст вопросов. Пройдите шаги «Далее» на hh.ru вручную или откройте анкету после отклика.'
+        'Не удалось прочитать текст вопросов. На hh.ru пройдите шаги «Далее» до экрана с формулировками или откройте анкету вручную.'
       );
       process.exit(2);
     }
 
     const now = new Date().toISOString();
     const prev = rec.hhApply || {};
+    const storedQuestions = prepareStoredQuestions(meaningfulQuestions(q.questions));
+    const questionnaire = mergeQuestionnaire(prev.questionnaire || {}, {
+      status: 'pending_manual',
+      questions: storedQuestions,
+      reasons: q.reasons,
+      detectedAt: now,
+      label: 'probe-questionnaire',
+      probedAt: now,
+      autoAttempted: false,
+      needsProbe: false,
+    });
     updateVacancyRecord(recordId, {
       hhApply: {
         ...prev,
         lastAt: now,
         responseSubmitted: prev.responseSubmitted ?? false,
-        questionnaire: {
-          status: 'pending_manual',
-          questions: q.questions,
-          reasons: q.reasons,
-          detectedAt: now,
-          label: 'probe-questionnaire',
-          probedAt: now,
-          autoAttempted: false,
-          suggestedAnswers: prev.questionnaire?.suggestedAnswers,
-          savedAnswers: prev.questionnaire?.savedAnswers,
-        },
+        questionnaire,
       },
     });
 

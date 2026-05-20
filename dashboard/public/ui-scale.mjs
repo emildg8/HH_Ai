@@ -4,6 +4,11 @@ const STORAGE_KEY = 'hh-dashboard-ui-scale';
 const MIN = 0.8;
 const MAX = 1.25;
 const DEFAULT = 1;
+let activeDefault = DEFAULT;
+
+export function setUiScaleDefault(scale) {
+  activeDefault = clampUiScale(scale);
+}
 
 export function clampUiScale(n) {
   const v = Number(n);
@@ -14,10 +19,10 @@ export function clampUiScale(n) {
 export function readUiScale() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw == null || raw === '') return DEFAULT;
+    if (raw == null || raw === '') return activeDefault;
     return clampUiScale(parseFloat(raw, 10));
   } catch {
-    return DEFAULT;
+    return activeDefault;
   }
 }
 

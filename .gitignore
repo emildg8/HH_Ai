@@ -30,6 +30,25 @@ data/batch-progress.json
 data/harvest-progress.json
 data/harvest-dashboard-tick.json
 data/apply-chat-progress.json
+data/batch-control.json
+data/verify-last.json
+data/autopilot-log.jsonl
+data/autopilot-state.json
+data/.nightly-rescore.lock
+data/nightly-rescore.log
+data/probe-*.png
+data/resume-*.png
+data/tailored-resumes/
+data/.settings-backup-pull/
+
+# Локальные пресеты UI дашборда
+dashboard/public/local-dashboard-defaults.mjs
+
+# Локальная автоматизация и персональные заметки (не в git)
+docs/SCHEDULE.md
+docs/GITHUB.md
+scripts/autopilot-tick.mjs
+scripts/nightly-rescore-window.ps1
 
 CV/
 *.pdf
