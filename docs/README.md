@@ -12,10 +12,10 @@ HH Ai — локальная автоматизация откликов на [h
 
 | Вы | Документ |
 |----|----------|
-| Новый пользователь (zip или git) | [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md) |
-| Установка на свой ПК | [SETUP.md](SETUP.md) |
-| Полный сценарий работы | [USAGE.md](USAGE.md) |
-| Скачать / передать без секретов | [DISTRIBUTION.md](DISTRIBUTION.md) |
+| **Новый пользователь** | **[QUICKSTART.md](QUICKSTART.md)** ← начните здесь |
+| Zip без git | [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md) |
+| Установка | [SETUP.md](SETUP.md) |
+| Полный цикл | [USAGE.md](USAGE.md) |
 
 ```bash
 git clone https://github.com/emildg8/HH_Ai.git
@@ -69,6 +69,8 @@ npx playwright install chromium
 | [ATTRIBUTION.md](ATTRIBUTION.md) | Идея-основа и лицензия |
 | [TRANSFER-RU.md](TRANSFER-RU.md) | Кратко: передача другому человеку |
 | [CONTINUATION.md](CONTINUATION.md) | Чекпоинт сессии разработки (локально) |
+| [demo/vacancies-demo.json](demo/vacancies-demo.json) | Демо-очередь для скриншотов |
+| [screenshots/](screenshots/) | Скриншоты интерфейса |
 
 ---
 

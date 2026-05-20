@@ -14,6 +14,11 @@ import { getBrowserLockInfo, clearStaleBrowserLock } from '../lib/chromium-sessi
 loadEnv();
 loadDevOpsEnv();
 
+const cliPort = process.argv.find((a) => a.startsWith('--port='));
+if (cliPort) process.env.DASHBOARD_PORT = cliPort.slice('--port='.length);
+const cliQueue = process.argv.find((a) => a.startsWith('--queue-file='));
+if (cliQueue) process.env.HH_VACANCIES_QUEUE_FILE = cliQueue.slice('--queue-file='.length);
+
 import {
   ROOT,
   HH_APPLY_CHAT_LOG_FILE,

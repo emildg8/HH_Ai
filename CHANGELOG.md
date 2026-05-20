@@ -19,6 +19,8 @@
 - **UI дашборда:** плотность карточек (compact / medium / full), тонкая настройка карточек (`ui-card-tuning`), локальные пресеты (`local-dashboard-defaults.example.mjs`), выбор вариантов в анкете (`questionnaire-choice.mjs`).
 - **Анкета:** расширенный сбор вопросов в батче (`collectBestQuestionnaire`), улучшенные подписи полей, probe + `needsProbe`.
 - **Релиз для передачи:** `npm run release:public`, `docs/PUBLIC-RELEASE.md`, `EXPORT-README.md` в архиве.
+- **Документация HH Ai:** `docs/README.md`, `QUICKSTART`, `USAGE`, `BATCH`, `DASHBOARD`, `CONFIG`, `TROUBLESHOOTING`, скриншоты в `docs/screenshots/`.
+- **Установка под ключ:** `scripts/install.ps1`, `scripts/install.sh`, `npm run smoke:release`.
 
 ### Changed
 

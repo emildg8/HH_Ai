@@ -21,6 +21,11 @@ const SECRET_PATTERNS = [
   [/HH_CUSTOM_LLM_API_KEY=[^\s#]+/gi, 'HH_CUSTOM_LLM_API_KEY='],
   [/TELEGRAM_BOT_TOKEN=[^\s#]+/gi, 'TELEGRAM_BOT_TOKEN='],
   [/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, 'email@example.com'],
+  [/\+7\s*\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/g, '+7 (900) 000-00-00'],
+  [/@emildg8\b/gi, '@your_telegram'],
+  [/emilianjob@[a-z.]+/gi, 'email@example.com'],
+  [/emil-shahvaladov/gi, 'candidate'],
+  [/D:\\Dev\\HH[^\s"']+/gi, 'C:\\Tools\\hh-ai'],
 ];
 
 function scrubText(text) {
@@ -50,7 +55,16 @@ function copyPublic(src, dest, rel = '') {
     } else {
       fs.mkdirSync(path.dirname(destPath), { recursive: true });
       const ext = path.extname(ent.name).toLowerCase();
-      if (['.mjs', '.js', '.json', '.md', '.txt', '.html', '.css', '.yml', '.yaml', '.env', '.example'].some((e) => ent.name.endsWith(e) || ext === e)) {
+      const skipScrub =
+        /^scripts\/(export-public|release-public|release-pack|smoke-release|capture-demo-screenshots)\.mjs$/.test(
+          relPath.replace(/\\/g, '/')
+        );
+      if (
+        !skipScrub &&
+        ['.mjs', '.js', '.json', '.md', '.txt', '.html', '.css', '.yml', '.yaml', '.env', '.example'].some(
+          (e) => ent.name.endsWith(e) || ext === e
+        )
+      ) {
         const raw = fs.readFileSync(srcPath, 'utf8');
         fs.writeFileSync(destPath, scrubText(raw), 'utf8');
       } else {
@@ -76,13 +90,18 @@ function writeExportReadme() {
 
 ## Быстрый старт
 
+**Подробно:** docs/QUICKSTART.md
+
+\`\`\`powershell
+# Windows
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+npm run login
+npm run dashboard
+\`\`\`
+
 \`\`\`bash
-npm install
-npx playwright install chromium
-cp .env.example .env
-cp config/secrets.example.env config/secrets.local.env
-cp config/profiles/devops.env.example config/profiles/devops.env
-# отредактируйте devops.env и secrets.local.env
+# macOS / Linux
+bash scripts/install.sh
 npm run login
 npm run dashboard
 \`\`\`
@@ -139,11 +158,13 @@ function main() {
   }
 
   fs.mkdirSync(path.join(OUT, 'data'), { recursive: true });
-  fs.writeFileSync(
-    path.join(OUT, 'data', 'vacancies-queue.example.json'),
-    '[]\n',
-    'utf8'
-  );
+  const demoQueue = path.join(ROOT, 'docs', 'demo', 'vacancies-demo.json');
+  const exampleDest = path.join(OUT, 'data', 'vacancies-queue.example.json');
+  if (fs.existsSync(demoQueue)) {
+    fs.copyFileSync(demoQueue, exampleDest);
+  } else {
+    fs.writeFileSync(exampleDest, '[]\n', 'utf8');
+  }
 
   writeExportReadme();
   console.log(`[export-public] OK: ${OUT}`);

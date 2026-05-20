@@ -1,6 +1,6 @@
 # Чекпоинт для продолжения работы
 
-**Обновлено:** 2026-05-20 (перед перезагрузкой ПК)  
+**Обновлено:** 2026-05-20 (после перезагрузки ПК)  
 **Версия проекта:** 2.0.0 · ветка `HH_Ai` · тег `v2.0.0`
 
 > Этот файл — сжатая память сессии. Документация проекта: [docs/README.md](README.md). В новом чате: «продолжи по docs/CONTINUATION.md».
@@ -14,8 +14,9 @@
 | Релиз **2.0.0** | [github.com/emildg8/HH_Ai/releases/tag/v2.0.0](https://github.com/emildg8/HH_Ai/releases/tag/v2.0.0) |
 | Публичный zip | [hh-ai-public-v2.0.0.zip](https://github.com/emildg8/HH_Ai/releases/download/v2.0.0/hh-ai-public-v2.0.0.zip) |
 | Репозиторий | `https://github.com/emildg8/HH_Ai` · ветка **`HH_Ai`** |
-| Коммиты | `0e72219` (Release 2.0.0), `f7dffd0` (fix zip Windows в `lib/archive.mjs`) |
-| Документация | `CHANGELOG.md`, `README.md`, `docs/PUBLIC-RELEASE.md`, `npm run release:public` |
+| Коммиты | `0e72219` (Release 2.0.0), `f7dffd0` (fix zip Windows), `43a6e1a` (полная документация HH Ai) |
+| Документация | [docs/README.md](README.md) — оглавление; BATCH, DASHBOARD, CONFIG, TROUBLESHOOTING |
+| Zip на Release | обновлён 2026-05-20 (с новой документацией внутри архива) |
 
 **Канонический git:** только [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai). В `Steev193/hh-ru-apply` **не публикуем** — это лишь идея-основа (см. `docs/ATTRIBUTION.md`).
 
@@ -36,7 +37,7 @@
 ## Локальная среда (после перезагрузки)
 
 ```powershell
-cd D:\Dev\HH\hh-ru-apply
+cd <папка-проекта>
 
 # Дашборд (отдельный терминал, не закрывается сам)
 npm run dashboard
@@ -67,6 +68,7 @@ npm run release:public
 | Тема | Статус | Действие при продолжении |
 |------|--------|---------------------------|
 | Резюме DevOps не всегда выбирается в батче | частично | Проверить `HH_PROFILE_RESUME_HASH`, лог `[batch] Пропуск … резюме`, скрины `data/hh-apply-chat-error-*.png` |
+| Сессия hh.ru после перезагрузки ПК | проверить | `npm run apply` или `npm run login` если редирект на вход |
 | Батч из «Очередь» ловит анкеты | ожидаемо | Для массового отклика — вкладка **«Без анкет»** |
 | `npm run release:public` на Windows | исправлено в `f7dffd0` | Был баг `Compress-Archive -LiteralPath` → `-Path` |
 | Steev193/hh-ru-apply | не наш репо | Только упоминание в ATTRIBUTION, без push |

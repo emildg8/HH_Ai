@@ -39,20 +39,40 @@ function checkSyntax() {
   if (!failures.some((f) => f.startsWith('syntax'))) pass('syntax scripts/lib');
 }
 
-function walkExport(relDir, base = ROOT) {
-  const full = path.join(base, relDir);
-  if (!fs.existsSync(full)) return;
-  for (const ent of fs.readdirSync(full, { withFileTypes: true })) {
-    const rel = relDir ? `${relDir}/${ent.name}` : ent.name;
-    if (shouldIgnoreExport(rel)) continue;
-    const p = path.join(full, ent.name);
-    if (ent.isDirectory()) {
-      walkExport(rel, base);
-    } else {
-      const text = fs.readFileSync(p, 'utf8');
-      if (/sk-or-v1-[a-zA-Z0-9._-]{20,}/.test(text)) fail(`secret pattern in export path ${rel}`);
+const PII_PATTERNS = [
+  [/sk-or-v1-[a-zA-Z0-9._-]{20,}/, 'openrouter key'],
+  [/emilianjob@ya\.ru/i, 'email'],
+  [/emilianjob@yandex\.ru/i, 'email'],
+  [/\+7\s*\(985\)\s*421-59-98/, 'phone'],
+  [/@emildg8\b/i, 'telegram'],
+  [/emil-shahvaladov/i, 'name in path'],
+  [/D:\\Dev\\HH\\hh-ru-apply/i, 'local path'],
+];
+
+function checkPiiInExport(exportRoot) {
+  function walk(relDir) {
+    const full = path.join(exportRoot, relDir);
+    if (!fs.existsSync(full)) return;
+    for (const ent of fs.readdirSync(full, { withFileTypes: true })) {
+      const rel = relDir ? `${relDir}/${ent.name}` : ent.name;
+      if (shouldIgnoreExport(rel)) continue;
+      const p = path.join(full, ent.name);
+      if (ent.isDirectory()) walk(rel);
+      else {
+        const ext = path.extname(ent.name).toLowerCase();
+        const textLike = ['.mjs', '.js', '.json', '.md', '.txt', '.html', '.css', '.env', '.example'].some(
+          (e) => ent.name.endsWith(e) || ext === e
+        );
+        if (!textLike) continue;
+        const text = fs.readFileSync(p, 'utf8');
+        for (const [re, label] of PII_PATTERNS) {
+          if (re.test(text)) fail(`PII (${label}) in export: ${rel}`);
+        }
+      }
     }
   }
+  walk('');
+  if (!failures.some((f) => f.includes('PII'))) pass('export без PII и секретов');
 }
 
 function checkExport() {
@@ -65,7 +85,7 @@ function checkExport() {
     fail('export:public');
     return;
   }
-  walkExport('', path.join(ROOT, 'dist', 'hh-ai-public'));
+  checkPiiInExport(path.join(ROOT, 'dist', 'hh-ai-public'));
   if (fs.existsSync(path.join(ROOT, 'dist', 'hh-ai-public', 'data', 'session'))) {
     fail('session in public export');
   } else pass('export:public без session');
