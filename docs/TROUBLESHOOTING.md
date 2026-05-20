@@ -19,11 +19,24 @@
 
 Модуль: `lib/hh-captcha-wait.mjs`.
 
+### Ложная «анкета» из капчи (2 поля «Текст с картинки»)
+
+При капче hh.ru Playwright видит поля ввода картинки — они **не** анкета работодателя.
+
+| Действие | Команда / UI |
+|----------|----------------|
+| Отчёт по очереди | `npm run devops:audit-captcha-questionnaires` |
+| Сбросить все ложные | `npm run devops:fix-captcha-questionnaires -- --apply` |
+| Одна карточка | дашборд → «Вопросы» → **«Это капча, не анкета»** |
+| Все разом в UI | `POST /api/questionnaire/clear-captcha` с `{ "fixAll": true }` |
+
+После сброса карточки снова в **«Без анкет»** / **«Очередь»**. Решите капчу и повторите отклик.
+
 ## Батч и отклик
 
 | Симптом | Решение |
 |---------|---------|
-| `не выбрано резюме «DevOps»` | `npm run devops:list-resumes` → `HH_PROFILE_RESUME_HASH` в профиле |
+| `не выбрано резюме «DevOps»` / остаётся Data Engineer | `npm run devops:list-resumes` → **и** `HH_PROFILE_RESUME_TITLE`, **и** `HH_PROFILE_RESUME_HASH` в `config/devops.env` (hash нужен в URL отклика) |
 | `анкета: N вопр.` | Норма для «Без анкет»; дозаполнить в разделе «Анкета» |
 | `exit 1` в старых логах | Обновите до 2.0 — должны быть текстовые причины |
 | Батч «завис» | Проверить Chromium, капчу; стоп в дашборде → `data/batch-control.json` |
