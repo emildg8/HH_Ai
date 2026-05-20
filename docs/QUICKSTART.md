@@ -41,6 +41,7 @@ bash scripts/install.sh
 ## Шаг 2. Настройка (5 минут)
 
 ```bash
+npm run setup
 npm run setup:check
 ```
 

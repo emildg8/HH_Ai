@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: QUICKSTART (5 шагов)
+    url: https://github.com/emildg8/HH_Ai/blob/main/docs/QUICKSTART.md
+  - name: Roadmap
+    url: https://github.com/emildg8/HH_Ai/blob/main/docs/ROADMAP.md
+  - name: Чеклист мейнтейнера
+    url: https://github.com/emildg8/HH_Ai/blob/main/docs/MAINTAINER.md

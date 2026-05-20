@@ -1,0 +1,34 @@
+name: Онбординг / friction
+description: Боль при QUICKSTART или чистой установке (внешний тестер)
+labels: [documentation, onboarding]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Заполните после [QUICKSTART.md](../../docs/QUICKSTART.md) или [QA-CLEAN-INSTALL.md](../../docs/QA-CLEAN-INSTALL.md).
+        Журнал: [UX-FRICTION-LOG.md](../../docs/UX-FRICTION-LOG.md).
+  - type: input
+    id: step
+    attributes:
+      label: Шаг (номер из QUICKSTART)
+    validations:
+      required: true
+  - type: textarea
+    id: friction
+    attributes:
+      label: Что мешало
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Как должно быть
+  - type: dropdown
+    id: os
+    attributes:
+      label: ОС
+      options:
+        - Windows 10/11
+        - macOS
+        - Linux
+        - Другое

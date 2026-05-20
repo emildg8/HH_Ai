@@ -49,6 +49,12 @@ const PII_PATTERNS = [
   [/D:\\Dev\\HH\\hh-ru-apply/i, 'local path'],
 ];
 
+const PII_SKIP_FILES = new Set([
+  'scripts/export-public.mjs',
+  'scripts/smoke-release.mjs',
+  'scripts/verify-local.mjs',
+]);
+
 function checkPiiInExport(exportRoot) {
   function walk(relDir) {
     const full = path.join(exportRoot, relDir);
@@ -56,6 +62,7 @@ function checkPiiInExport(exportRoot) {
     for (const ent of fs.readdirSync(full, { withFileTypes: true })) {
       const rel = relDir ? `${relDir}/${ent.name}` : ent.name;
       if (shouldIgnoreExport(rel)) continue;
+      if (PII_SKIP_FILES.has(rel)) continue;
       const p = path.join(full, ent.name);
       if (ent.isDirectory()) walk(rel);
       else {

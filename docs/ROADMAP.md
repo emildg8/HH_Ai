@@ -45,10 +45,10 @@
 | R1.1 | `scripts/install.ps1` / `install.sh` | Установка Node deps + Playwright + .env | [x] |
 | R1.2 | **Portable ZIP** из CI | `hh-ru-apply-win-x64-vX.zip` на GitHub Releases | [ ] |
 | R1.3 | `install-portable.ps1` внутри zip | Распаковал → install → ярлык дашборда | [~] |
-| R1.4 | **Release assets** | `npm run release:pack` → attach к GitHub Release | [ ] |
-| R1.5 | Страница «Скачать» в README | Таблица: zip, git clone, требования | [ ] |
-| R1.6 | `npm run setup` интерактив | Профиль, ключи, первый login | [ ] |
-| R1.7 | Проверка на чистой VM Win10/11 | Чеклист в docs/QA-CLEAN-INSTALL.md | [ ] |
+| R1.4 | **Release assets** | Тег `v*` → CI [release.yml](../.github/workflows/release.yml) + zip | [~] |
+| R1.5 | Страница «Скачать» в README | Таблица: zip, git clone, требования | [x] |
+| R1.6 | `npm run setup` интерактив | Профиль, пресет LLM (`scripts/setup-wizard.mjs`) | [x] |
+| R1.7 | Проверка на чистой VM Win10/11 | Чеклист [QA-CLEAN-INSTALL.md](QA-CLEAN-INSTALL.md) | [~] |
 
 ### Критерии готовности R1
 
@@ -76,12 +76,12 @@
 | ID | Задача | Детали | Статус |
 |----|--------|--------|--------|
 | R3.1 | Фоновые задачи (бэкап, verify) | Локальный планировщик ОС, вне git | [ ] |
-| R3.2 | `verify-local` в CI + локально | Повтор до ok | [~] |
+| R3.2 | `verify-local` + `smoke:release` в CI | [.github/workflows/ci.yml](../.github/workflows/ci.yml) | [x] |
 | R3.3 | Telegram: «harvest готов N≥50» | Bot token в .env | [ ] |
 | R3.4 | Умный batch: стоп при капче | Детект + пауза (2.0: wait в Chromium) | [~] |
 | R3.5 | Очередь «отложить до завтра» | Поле `deferUntil` | [ ] |
 | R3.6 | Ночной rescore только pending | `npm run rescore-queue` | [ ] |
-| R3.7 | Pre-push hook секретов | gitleaks / свой grep | [ ] |
+| R3.7 | Pre-push hook секретов | `npm run secrets:check` + `hooks:install` | [x] |
 
 ---
 
@@ -129,13 +129,27 @@
 
 ---
 
+## План 2026 H2 (после 2.0.0)
+
+| Версия | Фокус |
+|--------|--------|
+| **2.0.1** | CI smoke/verify, QA-CLEAN-INSTALL, release workflow, setup wizard, Issues/backlog |
+| **2.1.0** | Feedback invited (R2), HH_PROFILE в UI (R4.1) |
+| **2.2.0** | deferUntil, Telegram harvest, метрики батча |
+
+---
+
 ## Версионирование
 
 | Версия | Содержание |
 |--------|------------|
 | 1.0.0 | DevOps-профиль, дашборд, batch |
 | 1.0.1 | UI scale/modals, verify, плотность карточек |
-| 1.1.0 | Portable zip + Releases (R1) |
-| 1.2.0 | Feedback invited (R2) |
+| 2.0.0 | Батч+анкета, публичный релиз, CONFIG-GUIDE, пресеты |
+| 2.0.1 | Maintainer/QA, CI, `npm run setup`, secrets hook |
+| 2.1.0 | Feedback invited (R2) |
+| 2.2.0 | Фон, defer, portable zip (R1.2) |
 
-Команды: `npm run release:public` · `npm run release:pack` · `npm run backup` · `npm run export:public`
+Команды: `npm run release:public` · `npm run smoke:release` · `npm run setup` · `npm run backup` · `npm run export:public`
+
+Для мейнтейнера: [MAINTAINER.md](MAINTAINER.md)

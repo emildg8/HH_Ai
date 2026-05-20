@@ -42,7 +42,7 @@ $checkExit = $LASTEXITCODE
 
 Write-Host ""
 Write-Host "Дальше:" -ForegroundColor Green
-Write-Host "  1. docs/CONFIG-GUIDE.md — LLM, профиль, обучение стилю"
+Write-Host "  1. npm run setup  (или docs/CONFIG-GUIDE.md — LLM, профиль)"
 Write-Host "  2. config/secrets.local.env — ключ OpenRouter или Ollama (или без LLM)"
 Write-Host "  3. config/profiles/devops.env — HH_PROFILE_RESUME_TITLE"
 Write-Host "  4. CV/ — положите resume.pdf или .md"

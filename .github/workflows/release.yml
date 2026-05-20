@@ -1,0 +1,44 @@
+# Публичный zip на GitHub Release при теге v*.*.*
+# Локально перед тегом: npm run smoke:release && npm run release:public
+
+name: Release assets
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  public-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: smoke:release
+        run: npm run smoke:release
+
+      - name: release:public
+        run: npm run release:public
+
+      - name: Verify VERSION matches tag
+        run: |
+          VER=$(cat VERSION | tr -d '\r\n')
+          TAG="${GITHUB_REF_NAME#v}"
+          test "$VER" = "$TAG" || (echo "VERSION=$VER != tag v$TAG" && exit 1)
+
+      - name: Upload zip to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: releases/hh-ai-public-v*.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true

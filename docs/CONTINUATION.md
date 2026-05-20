@@ -72,7 +72,9 @@ npm run release:public
 | Батч из «Очередь» ловит анкеты | ожидаемо | Для массового отклика — вкладка **«Без анкет»** |
 | `npm run release:public` на Windows | исправлено в `f7dffd0` | Был баг `Compress-Archive -LiteralPath` → `-Path` |
 | Steev193/hh-ru-apply | не наш репо | Только упоминание в ATTRIBUTION, без push |
-| Roadmap R1.2–R1.4 | [ ] | Portable zip в CI, GitHub Releases автоматом |
+| Roadmap R1.2–R1.4 | [~] | Portable zip [ ]; CI release при теге [release.yml] |
+| GitHub Issues backlog | [x] | [#3](https://github.com/emildg8/HH_Ai/issues/3) резюме · [#4](https://github.com/emildg8/HH_Ai/issues/4) apply · [#6](https://github.com/emildg8/HH_Ai/issues/6) селекторы · [#5](https://github.com/emildg8/HH_Ai/issues/5) R2 |
+| QA / maintainer | [x] | docs/QA-CLEAN-INSTALL.md, MAINTAINER.md, UX-FRICTION-LOG.md |
 
 ---
 

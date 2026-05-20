@@ -14,7 +14,10 @@ HH Ai — локальная автоматизация откликов на [h
 |----|----------|
 | **Новый пользователь** | **[QUICKSTART.md](QUICKSTART.md)** ← начните здесь |
 | **Настройка LLM и профиля** | **[CONFIG-GUIDE.md](CONFIG-GUIDE.md)** |
+| **Мастер первого запуска** | `npm run setup` |
 | Zip без git | [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md) |
+| QA чистой установки | [QA-CLEAN-INSTALL.md](QA-CLEAN-INSTALL.md) |
+| Мейнтейнер (релиз, Issues) | [MAINTAINER.md](MAINTAINER.md) |
 | Установка | [SETUP.md](SETUP.md) |
 | Полный цикл | [USAGE.md](USAGE.md) |
 

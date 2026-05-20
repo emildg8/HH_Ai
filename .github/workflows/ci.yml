@@ -26,11 +26,11 @@ jobs:
             node --check "$f"
           done
 
-      - name: Public export (no secrets)
-        run: npm run export:public
+      - name: verify:local (export + PII, без дашборда)
+        run: npm run verify:local
 
-      - name: Verify export has no session dir
-        run: test ! -d dist/hh-ai-public/data/session
+      - name: smoke:release (export zip-срез + npm install)
+        run: npm run smoke:release
 
       - name: Dashboard UI smoke
         run: npm run devops:test-dashboard-ui

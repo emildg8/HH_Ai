@@ -82,6 +82,7 @@ npm run dashboard
 | `npm run harvest` | Сбор и оценка |
 | `npm run login` | Сессия hh.ru |
 | `npm run devops:apply-batch` | Массовый отклик |
+| `npm run setup` | Мастер: пресет LLM + профиль |
 | `npm run setup:check` | Что настроить перед первым запуском |
 | `npm run verify:local` | Проверка установки |
 | `npm run release:public` | Zip для передачи |
