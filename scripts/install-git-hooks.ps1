@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $HookDir = Join-Path (Join-Path $Root ".git") "hooks"
 $HookPath = Join-Path $HookDir "pre-push"
-$SrcHook = Join-Path $Root "scripts" "pre-push-hook.sh"
+$SrcHook = Join-Path (Join-Path $Root "scripts") "pre-push-hook.sh"
 
 if (-not (Test-Path (Join-Path $Root ".git"))) {
   Write-Error "Не git-репозиторий: $Root"
