@@ -55,8 +55,8 @@
     "postinstall": "node -e \"console.log('HH Ai: npm run login && npm run dashboard  |  docs/QUICKSTART.md')\""
   },
   "dependencies": {
-    "docx": "^9.6.1",
-    "dotenv": "^16.4.5",
+    "docx": "^9.7.0",
+    "dotenv": "^17.4.2",
     "pdf-parse": "^2.4.5",
     "playwright": "^1.49.0"
   }
