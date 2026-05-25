@@ -58,6 +58,6 @@
     "docx": "^9.6.1",
     "dotenv": "^16.4.5",
     "pdf-parse": "^2.4.5",
-    "playwright": "^1.49.0"
+    "playwright": "^1.60.0"
   }
 }
