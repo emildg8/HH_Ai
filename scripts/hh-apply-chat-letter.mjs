@@ -18,7 +18,11 @@ import os from 'os';
 import path from 'path';
 import readline from 'readline';
 import { loadEnv } from '../lib/load-env.mjs';
-import { meaningfulQuestions } from '../lib/questionnaire-labels.mjs';
+import {
+  meaningfulQuestions,
+  questionsLookLikeCaptchaMisdetect,
+  dedupeQuestionnaireQuestions,
+} from '../lib/questionnaire-labels.mjs';
 import { mergeQuestionnaire } from '../lib/questionnaire-merge.mjs';
 import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
 loadEnv();
@@ -38,12 +42,13 @@ import { logCoverLetterPrepared, logCoverLetterOutcome } from '../lib/cover-lett
 import { verifyCoverLetterInForm } from '../lib/hh-response-selectors.mjs';
 import {
   completeVacancyResponseForm,
+  focusVacancyResponsePage,
   openVacancyResponseFlow,
-  resolvePageAfterResponseClick,
 } from '../lib/hh-response-modal.mjs';
-import { assertHhLoggedIn } from '../lib/hh-session-check.mjs';
+import { assertHhLoggedIn, looksLikeLoginUrl } from '../lib/hh-session-check.mjs';
 import { ensureNoCaptchaBlocking } from '../lib/hh-captcha-wait.mjs';
 import { ensureTailoredResumePdf } from '../lib/tailor-resume.mjs';
+import { resolveResumeForVacancy } from '../lib/resume-routing.mjs';
 import { loadCoverLetterPool, pickCoverLetterFromPool } from '../lib/cover-letter-pool.mjs';
 import {
   launchPersistentContextSafe,
@@ -57,12 +62,28 @@ import { formatLogLine } from '../lib/log-line.mjs';
 import { loadCvBundle } from '../lib/cv-load.mjs';
 import { isQuestionnaireAutoEnabled } from '../lib/hh-questionnaire-answers.mjs';
 import {
-  tryAutoFillEmployerQuestionnaire,
+  tryAutoFillEmployerQuestionnaireWithWizard,
   recordHasDashboardQuestionnaireAnswers,
 } from '../lib/hh-questionnaire-auto.mjs';
+import {
+  generateAndPersistSuggestedAnswers,
+  isBatchQuestionnaireAutoEnabled,
+} from '../lib/questionnaire-pipeline.mjs';
 import { buildHhApplyAfterSuccess } from '../lib/vacancy-hh-apply.mjs';
-import { collectBestQuestionnaire } from '../lib/hh-questionnaire-probe.mjs';
-import { HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED } from '../lib/hh-apply-exit-codes.mjs';
+import {
+  buildHhApplySiteStatePatch,
+  detectHhVacancySiteState,
+  hhSiteStateSkipReason,
+} from '../lib/hh-vacancy-response-state.mjs';
+import { pruneVacancyFromActiveQueue } from '../lib/queue-prune.mjs';
+import {
+  collectBestQuestionnaire,
+  prepareResponseWizardForQuestionnaire,
+} from '../lib/hh-questionnaire-probe.mjs';
+import {
+  HH_APPLY_EXIT_ALREADY_RESPONDED,
+  HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED,
+} from '../lib/hh-apply-exit-codes.mjs';
 import { logBatchSkipReason, formatApplySkipReasonFromText } from '../lib/batch-skip-reason.mjs';
 
 const BROWSER_OWNER = 'apply-chat';
@@ -85,9 +106,41 @@ const STEP_LABELS = {
 };
 
 function logLine(msg) {
-  const line = formatLogLine(msg);
-  console.log(line);
-  appendApplyChatLog(line, { withTime: false });
+  const body = String(msg ?? '').trimEnd();
+  if (!body) return;
+  console.log(formatLogLine(body));
+  appendApplyChatLog(body, { withTime: true });
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {object} rec
+ * @param {ReturnType<typeof createApplyChatProgressTracker>} progress
+ */
+async function syncHhSiteStateFromPage(page, rec) {
+  const det = await detectHhVacancySiteState(page);
+  const prev = getVacancyRecord(rec.id)?.hhApply || rec.hhApply || {};
+  const hhApply = buildHhApplySiteStatePatch(prev, det);
+  updateVacancyRecord(rec.id, { hhApply });
+  return det;
+}
+
+/**
+ * @param {ReturnType<typeof createApplyChatProgressTracker>} progress
+ * @param {string} reason
+ * @param {{ state?: string }} [det]
+ */
+function finishAlreadyResponded(progress, reason, det = {}, rec = null) {
+  logLine(`[hh-apply-chat] ${reason}`);
+  const skip = det.state ? hhSiteStateSkipReason(det.state) : 'уже отклик или приглашение на hh.ru';
+  if (rec?.id) pruneVacancyFromActiveQueue(rec.id);
+  if (isBatchApply) {
+    logBatchSkipReason(skip);
+    progress.done('Пропуск: статус hh.ru');
+    return HH_APPLY_EXIT_ALREADY_RESPONDED;
+  }
+  progress.done('Уже отклик');
+  return 0;
 }
 
 const headless = process.env.HH_HEADLESS === '1';
@@ -95,7 +148,9 @@ const stayOpen = process.argv.includes('--stay-open');
 const questionnaireWait =
   process.argv.includes('--questionnaire-wait') ||
   process.env.HH_QUESTIONNAIRE_WAIT === '1';
-const questionnaireAuto = isQuestionnaireAutoEnabled();
+/** Включается в main() после загрузки записи (см. savedAnswers). */
+let questionnaireAuto =
+  isQuestionnaireAutoEnabled() || (isBatchApply && isBatchQuestionnaireAutoEnabled());
 const dryRun = process.argv.includes('--dry-run');
 const noSubmit = process.argv.includes('--no-submit');
 const tailorResume =
@@ -131,12 +186,14 @@ async function persistEmployerQuestionnaireFromApply({
   letter,
   letterFilledInFormQ,
   questionnaireAuto,
+  cvText = '',
 }) {
   let qNow = formResult.questionnaire;
   let mq = meaningfulQuestions(qNow.questions || []);
   if (isBatchApply && mq.length === 0) {
-    logLine('[hh-apply-chat] BATCH: сбор текста вопросов анкеты (шаги мастера)…');
+    logLine('[hh-apply-chat] BATCH: подготовка мастера и сбор текста вопросов…');
     try {
+      await prepareResponseWizardForQuestionnaire(page, logLine);
       const collected = await collectBestQuestionnaire(page, { log: logLine, maxSteps: 18 });
       const mq2 = meaningfulQuestions(collected.questions || []);
       if (mq2.length > mq.length) {
@@ -152,13 +209,21 @@ async function persistEmployerQuestionnaireFromApply({
       logLine(`[hh-apply-chat] BATCH: collectBestQuestionnaire: ${e.message}`);
     }
   }
+  if (mq.length === 0 && questionsLookLikeCaptchaMisdetect(qNow?.questions || [])) {
+    logLine(
+      '[hh-apply-chat] Похоже на капчу hh.ru («Текст с картинки»), не анкета — не сохраняем в очередь. Решите капчу и повторите.'
+    );
+    return 0;
+  }
   for (const item of mq) {
     logLine(`[hh-apply-chat] Вопрос ${item.index}: ${item.label.slice(0, 200)}`);
   }
   const prevQ = rec.hhApply?.questionnaire || {};
+  const storedQuestions =
+    mq.length > 0 ? mq : dedupeQuestionnaireQuestions(qNow.questions || []);
   const questionnaire = mergeQuestionnaire(prevQ, {
     status: 'pending_manual',
-    questions: mq,
+    questions: storedQuestions,
     reasons: qNow.reasons,
     detectedAt: new Date().toISOString(),
     label: formResult.label,
@@ -184,6 +249,16 @@ async function persistEmployerQuestionnaireFromApply({
       questionnaire,
     },
   });
+  if (mq.length > 0 && (questionnaireAuto || isBatchApply)) {
+    try {
+      await generateAndPersistSuggestedAnswers(getVacancyRecord(rec.id) || rec, {
+        cvText,
+        log: logLine,
+      });
+    } catch (e) {
+      logLine(`[hh-apply-chat] Генерация ответов анкеты: ${e.message}`);
+    }
+  }
   return mq.length;
 }
 
@@ -211,6 +286,16 @@ async function main() {
     console.error('Запись не найдена:', id);
     process.exit(1);
   }
+
+  if (
+    !questionnaireAuto &&
+    recordHasDashboardQuestionnaireAnswers(rec) &&
+    (rec.hhApply?.questionnaire?.questions?.length || 0) > 0
+  ) {
+    questionnaireAuto = true;
+  }
+
+  const resumePick = resolveResumeForVacancy(rec);
 
   const progress = createApplyChatProgressTracker(rec.id, rec.title || '');
   progress.update('prepare', 'Подготовка отклика…', 5);
@@ -314,7 +399,11 @@ async function main() {
   const ch = String(process.env.HH_PLAYWRIGHT_CHANNEL || '').trim();
   if (ch) launchOpts.channel = ch;
   const ctx = await launchPersistentContextSafe(profile, launchOpts, { owner: BROWSER_OWNER });
-  let page = ctx.pages()[0] || (await ctx.newPage());
+  const openPages = ctx.pages();
+  for (let i = 1; i < openPages.length; i++) {
+    await openPages[i].close().catch(() => {});
+  }
+  let page = openPages[0] && !openPages[0].isClosed() ? openPages[0] : await ctx.newPage();
 
   const ensureActivePage = async (stage) => {
     if (!page.isClosed()) return page;
@@ -332,32 +421,84 @@ async function main() {
     const humanClicks = process.env.HH_FAST !== '1';
 
     step('start', `Старт: ${rec.title || rec.url}`, 15);
-    logLine(`[hh-apply-chat] Открываю вакансию: ${rec.url}`);
-    await withStepHeartbeat(logLine, 'загрузка страницы вакансии', async () => {
-      await page.goto(rec.url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
-      if (!isFastMode()) {
-        await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
-      }
-    });
+    logLine(
+      `[hh-apply-chat] Резюме (${resumePick.reason}): ${resumePick.label} → «${resumePick.title}»` +
+        (resumePick.hash ? ` [hash ${resumePick.hash.slice(0, 8)}…]` : '') +
+        ' — на форме выберется только из списка hh.ru'
+    );
+    page = await focusVacancyResponsePage(ctx, page, { log: logLine, closeOtherTabs: true });
+    const curOnResponse =
+      /applicant\/vacancy_response/i.test(page.url()) &&
+      !looksLikeLoginUrl(page.url()) &&
+      (!vacancyId || vacancyIdFromUrl(page.url()) === vacancyId);
+    if (curOnResponse) {
+      logLine('[hh-apply-chat] Уже на форме отклика/анкеты — карточку вакансии не перезагружаю');
+    } else {
+      logLine(`[hh-apply-chat] Открываю вакансию: ${rec.url}`);
+      await withStepHeartbeat(logLine, 'загрузка страницы вакансии', async () => {
+        await page.goto(rec.url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+        if (!isFastMode()) {
+          await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
+        }
+      });
+    }
     await betweenMajorSteps(page);
     step('open_vacancy', 'Страница вакансии открыта', 22);
 
     await assertHhLoggedIn(page, { log: logLine, captchaContext: 'страница вакансии' });
 
+    const siteDet = await syncHhSiteStateFromPage(page, rec);
+    if (!siteDet.canApply) {
+      logLine(`[hh-apply-chat] Статус на hh.ru: ${siteDet.label || siteDet.state}`);
+      return finishAlreadyResponded(
+        progress,
+        siteDet.label || 'Повторный отклик на hh.ru не нужен.',
+        siteDet,
+        rec
+      );
+    }
+
     await ensureActivePage('before_click_response');
-    const btn = await withStepHeartbeat(logLine, 'открытие формы отклика', () =>
-      openVacancyResponseFlow(page, {
+    const btn = await withStepHeartbeat(logLine, 'открытие формы отклика', async () => {
+      const flow = openVacancyResponseFlow(page, {
         humanClicks,
-        timeoutMs: 35_000,
+        timeoutMs: 20_000,
         vacancyUrl: rec.url,
         vacancyId,
-      })
-    );
+        resumeHash: resumePick.hash,
+        preferredResumeTitle: resumePick.title,
+        log: logLine,
+      });
+      const timeout = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Таймаут открытия формы отклика (55 с)')), 55_000);
+      });
+      return Promise.race([flow, timeout]);
+    });
     logLine(`[hh-apply-chat] Отклик: ${btn}`);
+    if (btn === 'already-submitted') {
+      const det2 = await syncHhSiteStateFromPage(page, rec);
+      return finishAlreadyResponded(
+        progress,
+        det2.label || 'Уже откликнулись или приглашение на hh.ru — повторный отклик не нужен.',
+        det2,
+        rec
+      );
+    }
     step('click_response', 'Форма отклика', 32);
-    page = (await resolvePageAfterResponseClick(ctx, page)) || page;
+    page = await focusVacancyResponsePage(ctx, page, { log: logLine, closeOtherTabs: true });
     await page.waitForTimeout(600);
     await ensureNoCaptchaBlocking(page, { log: logLine, context: 'форма отклика' });
+
+    const siteAfterOpen = await syncHhSiteStateFromPage(page, rec);
+    if (!siteAfterOpen.canApply) {
+      logLine(`[hh-apply-chat] После открытия формы: ${siteAfterOpen.label || siteAfterOpen.state}`);
+      return finishAlreadyResponded(
+        progress,
+        siteAfterOpen.label || 'Уже откликнулись на hh.ru — повторный отклик не нужен.',
+        siteAfterOpen,
+        rec
+      );
+    }
 
     if (noSubmit) {
       logLine('[hh-apply-chat] --no-submit: форма открыта, отправку и чат не трогаем.');
@@ -368,8 +509,11 @@ async function main() {
     page = await ensureActivePage('before_complete_response');
     step('modal_prepare', 'Мастер отклика', 40);
 
-    const formResult = await withStepHeartbeat(logLine, 'мастер отклика (резюме, письмо, отправка)', () =>
-      completeVacancyResponseForm(page, {
+    const modalWallMs = rec?.hhApply?.questionnaire?.questions?.length ? 180_000 : 120_000;
+    let formResult = await withStepHeartbeat(logLine, 'мастер отклика (резюме, письмо, отправка)', async () => {
+      const flow = completeVacancyResponseForm(page, {
+        context: ctx,
+        maxWallMs: modalWallMs,
         resumePdfPath: resumePdfPath && fs.existsSync(resumePdfPath) ? resumePdfPath : undefined,
         letter: letter || undefined,
         humanTyping,
@@ -379,21 +523,41 @@ async function main() {
         record: rec,
         cvText,
         log: logLine,
-      })
-    );
+        vacancyId,
+        resumeTarget: resumePick,
+        preferredResumeTitle: resumePick.title,
+        resumeHash: resumePick.hash,
+      });
+      const timeout = new Promise((_, reject) => {
+        setTimeout(
+          () =>
+            reject(
+              new Error(`Таймаут мастера отклика (${Math.round(modalWallMs / 1000)} с)`)
+            ),
+          modalWallMs
+        );
+      });
+      return Promise.race([flow, timeout]);
+    });
+    if (formResult.page && !formResult.page.isClosed()) {
+      page = formResult.page;
+    }
 
     if (formResult.questionnaire?.detected) {
       const letterFilledInFormQ = Boolean(formResult.letterInForm);
 
       if (questionnaireAuto && (cvText || recordHasDashboardQuestionnaireAnswers(rec))) {
-        const auto = await tryAutoFillEmployerQuestionnaire(page, {
+        page = await focusVacancyResponsePage(ctx, page, { log: logLine, closeOtherTabs: true });
+        const auto = await tryAutoFillEmployerQuestionnaireWithWizard(page, {
           record: getVacancyRecord(rec.id) || rec,
           cvText,
           log: logLine,
         });
         if (auto.ok) {
           logLine('[hh-apply-chat] Повторная отправка после авто-анкеты…');
-          const retry = await completeVacancyResponseForm(page, {
+          page = await focusVacancyResponsePage(ctx, page, { log: logLine, closeOtherTabs: true });
+          let retry = await completeVacancyResponseForm(page, {
+            context: ctx,
             resumePdfPath: resumePdfPath && fs.existsSync(resumePdfPath) ? resumePdfPath : undefined,
             letter: letter || undefined,
             humanTyping,
@@ -403,7 +567,12 @@ async function main() {
             record: rec,
             cvText,
             log: logLine,
+            vacancyId,
+            resumeTarget: resumePick,
+            preferredResumeTitle: resumePick.title,
+            resumeHash: resumePick.hash,
           });
+          if (retry.page && !retry.page.isClosed()) page = retry.page;
           if (retry.submitted) {
             Object.assign(formResult, retry);
             delete formResult.questionnaire;
@@ -421,14 +590,57 @@ async function main() {
           letter,
           letterFilledInFormQ,
           questionnaireAuto,
+          cvText,
         });
+        const freshRec = getVacancyRecord(rec.id) || rec;
+        if (
+          isBatchApply &&
+          questionnaireAuto &&
+          questionCount > 0 &&
+          recordHasDashboardQuestionnaireAnswers(freshRec)
+        ) {
+          try {
+            const auto = await tryAutoFillEmployerQuestionnaireWithWizard(page, {
+              record: freshRec,
+              cvText,
+              log: logLine,
+            });
+            if (auto.ok) {
+              logLine('[hh-apply-chat] BATCH: повторная отправка после авто-анкеты…');
+              page = await focusVacancyResponsePage(ctx, page, { log: logLine, closeOtherTabs: true });
+              const retry = await completeVacancyResponseForm(page, {
+                context: ctx,
+                resumePdfPath: resumePdfPath && fs.existsSync(resumePdfPath) ? resumePdfPath : undefined,
+                letter: letter || undefined,
+                humanTyping,
+                humanClicks,
+                alreadyClicked: true,
+                questionnaireAuto,
+                record: rec,
+                cvText,
+                log: logLine,
+                vacancyId,
+                resumeTarget: resumePick,
+                preferredResumeTitle: resumePick.title,
+                resumeHash: resumePick.hash,
+              });
+              if (retry.submitted) {
+                logLine('[hh-apply-chat] BATCH: отклик с анкетой отправлен');
+                progress.done('Отклик с анкетой');
+                return 0;
+              }
+            }
+          } catch (e) {
+            logLine(`[hh-apply-chat] BATCH: авто-анкета не завершила отклик: ${e.message}`);
+          }
+        }
         step('questionnaire_wait', 'Анкета работодателя — заполните вручную', 75);
-        const hadDashboardAnswers = recordHasDashboardQuestionnaireAnswers(rec);
+        const hadDashboardAnswers = recordHasDashboardQuestionnaireAnswers(getVacancyRecord(rec.id) || rec);
         logLine(
           '[hh-apply-chat] Обнаружена анкета работодателя. ' +
             (hadDashboardAnswers
-              ? 'Ответы из дашборда подставлены (если DOM совпал). Проверьте поля и нажмите «Отправить отклик» на hh.ru.'
-              : 'Заполните ответы в дашборде (Сохранить) или в браузере, затем отправьте отклик на hh.ru.')
+              ? 'Ответы в карточке — «Отклик + анкета» или батч по вкладке «Анкета». Проверьте поля на hh.ru.'
+              : 'В дашборде: «Загрузить с hh.ru» → «Сгенерировать» → «Сохранить», затем отклик.')
         );
         if (isBatchApply) {
           const skipLabel =
@@ -456,6 +668,16 @@ async function main() {
       }
     }
 
+    if (formResult.submitted && formResult.label === 'already-submitted') {
+      const det3 = await syncHhSiteStateFromPage(page, rec);
+      return finishAlreadyResponded(
+        progress,
+        'Отклик на вакансию уже был отправлен ранее.',
+        det3,
+        rec
+      );
+    }
+
     if (!formResult.submitted) {
       const ambiguousForm =
         /form-still-open|questionnaire/i.test(String(formResult.label || '')) ||
@@ -472,6 +694,7 @@ async function main() {
             letter,
             letterFilledInFormQ: Boolean(formResult.letterInForm),
             questionnaireAuto,
+            cvText,
           });
         }
         progress.done('Ждём завершения отклика вручную');
@@ -488,6 +711,7 @@ async function main() {
           letter,
           letterFilledInFormQ: Boolean(formResult.letterInForm),
           questionnaireAuto,
+          cvText,
         });
         const skipLabel =
           questionCount > 0
@@ -500,19 +724,46 @@ async function main() {
         progress.done('Анкета (батч)');
         return HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED;
       }
-      const needResume = String(process.env.HH_PROFILE_RESUME_TITLE || '').trim();
+      const needResume = resumePick.title;
+      if (formResult.resumeMismatch) {
+        if (formResult.resumeNotInEmployerList) {
+          const detResume = await syncHhSiteStateFromPage(page, rec);
+          if (!detResume.canApply) {
+            return finishAlreadyResponded(
+              progress,
+              detResume.label || 'Отклик уже был — нужное резюме недоступно для повторного отклика.',
+              detResume,
+              rec
+            );
+          }
+          if (isBatchApply) logBatchSkipReason('нужное резюме не в списке работодателя на hh.ru');
+          pruneVacancyFromActiveQueue(rec.id);
+          throw new Error(
+            `Резюме «${needResume}» не предлагает hh.ru для этой вакансии (сейчас: ${formResult.profileResume || '—'}). ` +
+              'Батч пропустит вакансию — откликнитесь вручную другим резюме или отклоните карточку.'
+          );
+        }
+        throw new Error(
+          `Не удалось выбрать резюме «${needResume}» (сейчас: ${formResult.profileResume || '—'}). ` +
+            'Проверьте config/resume-routing.json (npm run devops:preview-resume-routing) и hash: npm run devops:list-resumes.'
+        );
+      }
       const hint = needResume
-        ? ` Не выбрано резюме «${needResume}» — откройте список резюме на странице отклика или задайте HH_PROFILE_RESUME_HASH в config/devops.env.`
+        ? ` Не выбрано резюме «${needResume}» (${resumePick.label}) — config/resume-routing.json`
         : '';
       throw new Error(
         `Не удалось отправить отклик: мастер не дошёл до кнопки «Отправить».${hint}`
       );
     }
 
-    const needResumeTitle = String(process.env.HH_PROFILE_RESUME_TITLE || '').trim();
-    const needResumeHash = String(process.env.HH_PROFILE_RESUME_HASH || '').trim();
+    const needResumeTitle = resumePick.title;
+    const needResumeHash = resumePick.hash;
     if (formResult.profileResume && needResumeTitle) {
-      const titleOk = formResult.profileResume.toLowerCase().includes(needResumeTitle.toLowerCase());
+      const titleOk =
+        formResult.profileResume.toLowerCase().includes(needResumeTitle.toLowerCase()) ||
+        (resumePick.role === 'devops' && /\bdevops\b/i.test(formResult.profileResume)) ||
+        (resumePick.role === 'data' && /data engineer/i.test(formResult.profileResume)) ||
+        (resumePick.role === 'support' && /поддержк/i.test(formResult.profileResume));
       if (!titleOk && !needResumeHash) {
         throw new Error(
           `Отклик не отправлен: в форме резюме «${formResult.profileResume}», нужно «${needResumeTitle}».`
@@ -543,7 +794,7 @@ async function main() {
 
     logLine(`[hh-apply-chat] Отправка отклика: ${formResult.label}`);
     step('submit_response', 'Отклик отправлен', 72);
-    let responseSubmitted = true;
+    let responseSubmitted = Boolean(formResult.submitted);
     page = (await waitForActivePage(ctx, page, 5000)) || page;
     await betweenMajorSteps(page).catch(() => {});
 
@@ -656,6 +907,8 @@ async function main() {
           chatSent: chatStepOk,
           letterDelivered: letterFilledInForm || chatStepOk || verifiedInChat,
           letterPreview: letter ? String(letter).replace(/\s+/g, ' ').trim().slice(0, 120) : undefined,
+          resumeRole: resumePick.role,
+          resumeTitleSelected: formResult.profileResume || resumePick.title,
         }),
       });
       logCoverLetterOutcome(logLine, {
@@ -682,7 +935,7 @@ async function main() {
       logBatchSkipReason(formatApplySkipReasonFromText(e?.message || e));
     }
     progress.error(e?.message || e);
-    appendApplyChatLog(`Error: ${e?.message || e}\n`);
+    appendApplyChatLog(`Error: ${e?.message || e}`, { withTime: true });
     await saveErrorScreenshot(page, e);
     throw e;
   } finally {
@@ -698,7 +951,6 @@ async function main() {
 }
 
 main().then((code) => process.exit(code ?? 0)).catch((e) => {
-  appendApplyChatLog(`Error: ${e?.message || e}\n`);
   console.error(e);
   process.exit(1);
 });

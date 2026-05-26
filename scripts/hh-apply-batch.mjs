@@ -9,6 +9,7 @@
  * Управление во время работы: data/batch-control.json (пауза / стоп / продолжить из дашборда).
  */
 
+import fs from 'fs';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -35,7 +36,9 @@ import { formatLogLine } from '../lib/log-line.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
 import { getDashboardBatchSizeCap } from '../lib/dashboard-preferences.mjs';
 import { normalizeBatchScope, filterForBatchScope } from '../lib/batch-scope.mjs';
-import { setBatchPid } from '../lib/job-pids.mjs';
+import { setBatchPid, isProcessAlive } from '../lib/job-pids.mjs';
+import { HH_APPLY_EXIT_ALREADY_RESPONDED, HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED } from '../lib/hh-apply-exit-codes.mjs';
+import { DATA_DIR } from '../lib/paths.mjs';
 import {
   initBatchControl,
   readBatchResumeState,
@@ -48,13 +51,40 @@ import {
   finishBatchControl,
   getBatchCommand,
 } from '../lib/batch-control.mjs';
-import { HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED } from '../lib/hh-apply-exit-codes.mjs';
 import {
   findBatchSkipReasonInLines,
   formatApplySkipReasonFromText,
 } from '../lib/batch-skip-reason.mjs';
+import { pruneRespondedFromActiveQueue, pruneVacancyFromActiveQueue } from '../lib/queue-prune.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const BATCH_LOCK_FILE = path.join(DATA_DIR, 'apply-batch.lock');
+
+function tryAcquireBatchLock() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (fs.existsSync(BATCH_LOCK_FILE)) {
+    const oldPid = Number(fs.readFileSync(BATCH_LOCK_FILE, 'utf8').trim());
+    if (isProcessAlive(oldPid)) {
+      console.error(`Батч уже запущен (pid=${oldPid}). Дождитесь завершения или остановите процесс.`);
+      process.exit(1);
+    }
+    try {
+      fs.unlinkSync(BATCH_LOCK_FILE);
+    } catch {
+      /* ignore */
+    }
+  }
+  fs.writeFileSync(BATCH_LOCK_FILE, String(process.pid), 'utf8');
+}
+
+function releaseBatchLock() {
+  try {
+    const cur = Number(fs.readFileSync(BATCH_LOCK_FILE, 'utf8').trim());
+    if (cur === process.pid) fs.unlinkSync(BATCH_LOCK_FILE);
+  } catch {
+    /* ignore */
+  }
+}
 
 function parseArgs() {
   let minScore = 50;
@@ -85,9 +115,9 @@ function scoreOf(rec) {
 }
 
 function logBatch(msg) {
-  const line = formatLogLine(`[batch] ${msg}`);
-  console.log(line);
-  appendApplyChatLog(line, { withTime: false });
+  const body = `[batch] ${msg}`;
+  console.log(formatLogLine(body));
+  appendApplyChatLog(body, { withTime: true });
 }
 
 /** Ошибки отклика, при которых батч переходит к следующей вакансии. */
@@ -101,6 +131,8 @@ function isBatchRecoverableApplyError(message) {
     /не найдена кнопка «откликнуться»/i.test(m) ||
     /мастер не дошёл до кнопки/i.test(m) ||
     /не выбрано резюме|резюме не переключилось/i.test(m) ||
+    /уже отклик|приглашение на hh/i.test(m) ||
+    /не в списке работодателя|нет в списке hh\.ru/i.test(m) ||
     /hh-apply-chat exit 1/i.test(m)
   );
 }
@@ -110,7 +142,8 @@ function runApplyForId(id, { tailorResume, dryRun }) {
     const args = ['scripts/hh-apply-chat-letter.mjs', `--id=${id}`];
     if (dryRun) args.push('--dry-run');
     if (tailorResume) args.push('--tailor-resume');
-    if (process.env.HH_QUESTIONNAIRE_AUTO === '1') args.push('--questionnaire-auto');
+    const batchQAuto = String(process.env.HH_BATCH_QUESTIONNAIRE_AUTO ?? '1').trim() !== '0';
+    if (process.env.HH_QUESTIONNAIRE_AUTO === '1' || batchQAuto) args.push('--questionnaire-auto');
     const child = spawn(process.execPath, args, {
       cwd: ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -181,6 +214,7 @@ function startApplyProgressSync(batchProgress, stepIndex, planned, rec, baseStat
 }
 
 async function main() {
+  tryAcquireBatchLock();
   let { minScore, maxScore, limit, dryRun, usePoolLetters, tailorResume, status, resume, batchScope } =
     parseArgs();
   const batchSizeCap = getDashboardBatchSizeCap();
@@ -224,6 +258,13 @@ async function main() {
   let failed = Number(saved?.failed) || 0;
   let skipped = Number(saved?.skipped) || 0;
   let letterIdx = Number(saved?.letterIdx) || 0;
+
+  const prunedAtStart = pruneRespondedFromActiveQueue();
+  if (prunedAtStart.changed > 0) {
+    logBatch(
+      `Из очереди убрано ${prunedAtStart.changed} вакансий с откликом (статус responded) — не пойдут в этот батч`
+    );
+  }
 
   const candidates = filterForBatchScope(
     loadQueue()
@@ -363,7 +404,17 @@ async function main() {
           failed,
           skipped,
         });
-        const exitCode = await runApplyForId(rec.id, { tailorResume, dryRun });
+        const { exitCode, skipReason } = await runApplyForId(rec.id, { tailorResume, dryRun });
+        if (exitCode === HH_APPLY_EXIT_ALREADY_RESPONDED) {
+          skipped++;
+          pruneVacancyFromActiveQueue(rec.id);
+          logBatch(
+            `Пропуск ${stepNum}/${planned}: ${skipReason || 'уже отклик или приглашение на hh.ru'}`
+          );
+          processedIds.add(rec.id);
+          batchProgress.step(done, `Пропуск ${stepNum}/${planned}`, { done, failed, skipped });
+          continue;
+        }
         if (exitCode === HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED) {
           skipped++;
           logBatch(
@@ -390,6 +441,9 @@ async function main() {
         }
         if (isBatchRecoverableApplyError(e.message)) {
           skipped++;
+          if (/уже отклик|не в списке|недоступно для этой вакансии/i.test(e.message)) {
+            pruneVacancyFromActiveQueue(rec.id);
+          }
           logBatch(`Пропуск ${stepNum}/${planned}: ${e.message}`);
           batchProgress.step(done, `Пропуск ${stepNum}/${planned}`, { done, failed, skipped });
           continue;
@@ -418,6 +472,7 @@ async function main() {
     }
   } finally {
     setBatchPid(null);
+    releaseBatchLock();
     if (!stopReason && getBatchCommand() === 'stop') stopReason = 'stop';
 
     if (stopReason === 'stop') {
@@ -443,11 +498,16 @@ async function main() {
       batchProgress.done({ done, failed, skipped, planned });
       logBatch(`Завершено: успешно ${done}, ошибок ${failed}, пропуск ${skipped}.`);
     }
+    const prunedEnd = pruneRespondedFromActiveQueue();
+    if (prunedEnd.changed > 0) {
+      logBatch(`После батча убрано из очереди ещё ${prunedEnd.changed} карточек с откликом (responded)`);
+    }
   }
 }
 
 main().catch((e) => {
-  console.error(e);
+  releaseBatchLock();
   setBatchPid(null);
+  console.error(e);
   process.exit(1);
 });

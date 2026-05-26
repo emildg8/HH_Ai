@@ -66,6 +66,15 @@ async function capture() {
 
     await page.screenshot({ path: path.join(OUT_DIR, 'dashboard-queue.png'), fullPage: false });
 
+    const funnelBtn = page.locator('#btn-open-funnel');
+    if (await funnelBtn.count()) {
+      await funnelBtn.click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(2000);
+      await page.screenshot({ path: path.join(OUT_DIR, 'dashboard-analytics.png'), fullPage: false });
+      await page.locator('[data-close-funnel]').first().click({ timeout: 2000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+
     const batchBtn = page.locator('button, [role="button"]').filter({ hasText: /батч|Батч|отклик/i }).first();
     if (await batchBtn.count()) {
       await batchBtn.click({ timeout: 3000 }).catch(() => {});

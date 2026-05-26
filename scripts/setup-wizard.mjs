@@ -62,6 +62,11 @@ async function run() {
     path.join(ROOT, 'config', 'cover-letter.txt'),
     'config/cover-letter.txt'
   );
+  copyIfMissing(
+    path.join(ROOT, 'config', 'resume-routing.example.json'),
+    path.join(ROOT, 'config', 'resume-routing.json'),
+    'config/resume-routing.json'
+  );
 
   console.log('Режим LLM (config/secrets.local.env):');
   for (const p of PRESETS) console.log(`  ${p.id}) ${p.label}`);
@@ -96,13 +101,15 @@ async function run() {
   rl.close();
 
   console.log('\n[setup] Дальше:\n');
-  console.log('  1. Отредактируйте config/secrets.local.env (ключ OpenRouter, если выбрали 2/4)');
-  console.log('  2. CV/ — resume.pdf или .md');
-  console.log('  3. npm run devops:list-resumes  →  HH_PROFILE_RESUME_HASH в профиле');
-  console.log('  4. npm run login');
-  console.log('  5. npm run setup:check');
-  console.log('  6. npm run dashboard\n');
-  console.log('  Документация: docs/QUICKSTART.md · docs/CONFIG-GUIDE.md\n');
+  console.log('  1. config/profiles/devops.env — HH_PROFILE_RESUME_TITLE (как на hh.ru)');
+  if (preset.id === '2' || preset.id === '4') {
+    console.log('  2. config/secrets.local.env — ключ OpenRouter');
+  } else {
+    console.log('  2. (опционально) CV/ — resume.pdf для LLM');
+  }
+  console.log('  3. npm run login');
+  console.log('  4. npm run setup:check && npm run dashboard\n');
+  console.log('  docs/FIRST-RUN.md · docs/QUICKSTART.md\n');
 }
 
 main().catch((e) => {

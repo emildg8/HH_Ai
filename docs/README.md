@@ -1,6 +1,6 @@
 # Документация HH Ai
 
-**Версия:** 2.0.0 · **Репозиторий:** [github.com/emildg8/HH_Ai](https://github.com/emildg8/HH_Ai)
+**Версия:** 2.0.1 · **Репозиторий:** [github.com/emildg8/HH_Ai](https://github.com/emildg8/HH_Ai)
 
 HH Ai — локальная автоматизация откликов на [hh.ru](https://hh.ru): сбор вакансий, LLM-оценка, сопроводительные письма, дашборд, батч-отклики, анкеты работодателя (Playwright + Node.js).
 
@@ -12,7 +12,7 @@ HH Ai — локальная автоматизация откликов на [h
 
 | Вы | Документ |
 |----|----------|
-| **Новый пользователь** | **[QUICKSTART.md](QUICKSTART.md)** ← начните здесь |
+| **Новый пользователь** | **[QUICKSTART.md](QUICKSTART.md)** · минимум настроек: **[FIRST-RUN.md](FIRST-RUN.md)** |
 | **Настройка LLM и профиля** | **[CONFIG-GUIDE.md](CONFIG-GUIDE.md)** |
 | **Мастер первого запуска** | `npm run setup` |
 | Zip без git | [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md) |
@@ -37,11 +37,14 @@ npx playwright install chromium
 
 | Документ | Содержание |
 |----------|------------|
-| [DASHBOARD.md](DASHBOARD.md) | Вкладки, анкета, письма, UI, батч из UI |
+| [DASHBOARD.md](DASHBOARD.md) | CRM-вкладки, воронка, поиск, настройки, батч из UI |
 | [BATCH.md](BATCH.md) | Массовый отклик, области, пропуски, лимиты |
-| [CONFIG.md](CONFIG.md) | `.env`, профили, `preferences.json`, секреты |
+| [QUEUE-AND-APPLY.md](QUEUE-AND-APPLY.md) | Очередь, статусы отклика, prune, sync |
+| [QUESTIONNAIRE-AUTOMATION.md](QUESTIONNAIRE-AUTOMATION.md) | Probe, prep, автозаполнение анкеты |
+| [CONFIG.md](CONFIG.md) | `.env`, профили, `preferences.json`, `resume-routing.json` |
 | [USAGE.md](USAGE.md) | Сбор → оценка → письма → отклик (полный цикл) |
-| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Капча, резюме, селекторы, логи |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Капча, резюме, URL поиска, селекторы, логи |
+| [HIRING-ROADMAP.md](HIRING-ROADMAP.md) | Конверсия, статусы hh, чат, интервью |
 
 ---
 

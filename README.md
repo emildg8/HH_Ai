@@ -1,15 +1,19 @@
 # HH Ai — локальный помощник откликов на hh.ru
 
-[![Release](https://img.shields.io/github/v/release/emildg8/HH_Ai?label=2.0)](https://github.com/emildg8/HH_Ai/releases)
+[![Release](https://img.shields.io/github/v/release/emildg8/HH_Ai?label=2.0.1)](https://github.com/emildg8/HH_Ai/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Версия:** 2.0.0 · [**Быстрый старт**](docs/QUICKSTART.md) · [Документация](docs/README.md) · [Скачать zip](https://github.com/emildg8/HH_Ai/releases/latest)
+**Версия:** 2.0.1 · [**Быстрый старт**](docs/QUICKSTART.md) · [Документация](docs/README.md) · [Скачать zip](https://github.com/emildg8/HH_Ai/releases/latest) · [Changelog](CHANGELOG.md)
 
 Автоматизация [hh.ru](https://hh.ru): сбор вакансий, LLM-оценка, сопроводительные, отклик через Playwright, дашборд с анкетой и батч-откликами.
 
-| Очередь вакансий | Батч-отклик | Анкета работодателя |
+| Очередь | Аналитика | Батч |
 |:---:|:---:|:---:|
-| ![Дашборд — очередь](docs/screenshots/dashboard-queue.png) | ![Батч](docs/screenshots/dashboard-batch.png) | ![Анкета](docs/screenshots/dashboard-questionnaire.png) |
+| ![Дашборд — очередь](docs/screenshots/dashboard-queue.png) | ![Воронка](docs/screenshots/dashboard-analytics.png) | ![Батч](docs/screenshots/dashboard-batch.png) |
+
+| Анкета |
+|:---:|
+| ![Анкета](docs/screenshots/dashboard-questionnaire.png) |
 
 > **Репозиторий:** [github.com/emildg8/HH_Ai](https://github.com/emildg8/HH_Ai)  
 > Автоотклики могут противоречить правилам hh.ru — используйте умеренно. [SECURITY.md](SECURITY.md)
@@ -52,7 +56,7 @@ npm run dashboard
 |---------|----------|
 | **Дашборд** | Очередь, LLM-письма, анкета, светлая/тёмная тема |
 | **Harvest** | Сбор с hh.ru + оценка (LLM или локально) |
-| **Батч** | Массовый отклик; анкеты откладываются ([BATCH.md](docs/BATCH.md)) |
+| **Батч** | Массовый отклик; анкеты — авто-ответы и подстановка ([QUESTIONNAIRE-AUTOMATION.md](docs/QUESTIONNAIRE-AUTOMATION.md), [BATCH.md](docs/BATCH.md)) |
 | **Профили** | `HH_PROFILE` — DevOps и свои роли |
 | **Капча** | Ожидание ручного решения в Chromium |
 | **Релиз** | `npm run release:public` — zip без секретов |
@@ -70,6 +74,7 @@ npm run dashboard
 | [DASHBOARD.md](docs/DASHBOARD.md) | Интерфейс |
 | [CONFIG.md](docs/CONFIG.md) | Переменные и конфиги |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Решение проблем |
+| [QUEUE-AND-APPLY.md](docs/QUEUE-AND-APPLY.md) | Очередь, батч, «уже отклик», статус responded |
 | [PUBLIC-RELEASE.md](docs/PUBLIC-RELEASE.md) | Для получателя zip |
 
 ---
@@ -82,6 +87,10 @@ npm run dashboard
 | `npm run harvest` | Сбор и оценка |
 | `npm run login` | Сессия hh.ru |
 | `npm run devops:apply-batch` | Массовый отклик |
+| `npm run devops:prune-responded-queue` | Убрать из очереди вакансии, где отклик уже на hh.ru |
+| `npm run devops:sync-responses` | Статусы откликов с hh.ru → карточки и конверсия |
+| `npm run devops:sync-chats` | Переписки: вопросы / автоответы |
+| `npm run devops:sync-resume-variants` | «О себе» и опыт на до 5 резюме hh.ru |
 | `npm run setup` | Мастер: пресет LLM + профиль |
 | `npm run setup:check` | Что настроить перед первым запуском |
 | `npm run verify:local` | Проверка установки |

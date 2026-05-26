@@ -39,7 +39,7 @@ async function main() {
     viewport: { width: 1280, height: 800 },
     locale: 'ru-RU',
   };
-  const ch = String(process.env.HH_PLAYWRIGHT_CHANNEL || 'chrome').trim();
+  const ch = String(process.env.HH_PLAYWRIGHT_CHANNEL || '').trim();
   if (ch) launchOpts.channel = ch;
 
   const ctx = await launchPersistentContextSafe(profile, launchOpts, {

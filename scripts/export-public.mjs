@@ -84,7 +84,7 @@ function writeExportReadme() {
 
 ## С чего начать
 
-1. Прочитайте **docs/PUBLIC-RELEASE.md** (полная инструкция для нового пользователя).
+1. Прочитайте **docs/FIRST-RUN.md** (минимум ручной настройки) и **docs/PUBLIC-RELEASE.md**.
 2. Установите зависимости и Chromium (см. ниже).
 3. Создайте \`config/secrets.local.env\` и профиль из \`*.example.env\`.
 
@@ -111,6 +111,7 @@ npm run dashboard
 ## Документация
 
 - docs/README.md — оглавление всей документации HH Ai
+- docs/FIRST-RUN.md — что обязательно заполнить (2 минуты)
 - docs/PUBLIC-RELEASE.md — релиз для получателя
 - docs/SETUP.md, docs/USAGE.md, docs/BATCH.md, docs/DASHBOARD.md
 - docs/SECURITY.md — что не публиковать

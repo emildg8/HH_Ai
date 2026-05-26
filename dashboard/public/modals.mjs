@@ -1,6 +1,13 @@
 /** Закрытие модалок: Escape, клик по фону, стек. */
 
-const MODAL_IDS = ['draft-modal', 'apply-log-modal', 'approved-letter-modal', 'questionnaire-modal'];
+const MODAL_IDS = [
+  'draft-modal',
+  'apply-log-modal',
+  'approved-letter-modal',
+  'questionnaire-modal',
+  'funnel-modal',
+  'settings-modal',
+];
 
 export function anyModalOpen() {
   return MODAL_IDS.some((id) => {
@@ -22,7 +29,12 @@ export function initModalLayer({ onEscape } = {}) {
     if (!modal) continue;
     modal.addEventListener('click', (e) => {
       const t = e.target;
-      if (t.classList?.contains('modal-backdrop') || t.hasAttribute?.('data-close-modal')) {
+      if (
+        t.classList?.contains('modal-backdrop') ||
+        t.hasAttribute?.('data-close-modal') ||
+        t.hasAttribute?.('data-close-funnel') ||
+        t.hasAttribute?.('data-close-settings')
+      ) {
         e.preventDefault();
         onEscape?.(id);
       }

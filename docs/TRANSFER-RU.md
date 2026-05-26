@@ -1,10 +1,10 @@
 # Передача HH Ai другому человеку
 
-**Версия:** 2.0.0
+**Версия:** 2.0.1
 
 ## Рекомендуемый способ — GitHub Release
 
-1. Скачать **[hh-ai-public-v2.0.0.zip](https://github.com/emildg8/HH_Ai/releases/latest)** (или актуальный с [Releases](https://github.com/emildg8/HH_Ai/releases)).
+1. Скачать **[hh-ai-public-v2.0.1.zip](https://github.com/emildg8/HH_Ai/releases/latest)** (или актуальный с [Releases](https://github.com/emildg8/HH_Ai/releases)).
 2. Отдать получателю ссылку на **[docs/PUBLIC-RELEASE.md](PUBLIC-RELEASE.md)** (внутри архива).
 
 Сборка у себя:

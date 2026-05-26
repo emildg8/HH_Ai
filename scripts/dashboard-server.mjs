@@ -48,7 +48,30 @@ import {
   getVacancyRecord,
   removeVacancyRecord,
 } from '../lib/store.mjs';
-import { vacancyHasHhApply, vacancyQuestionnairePending } from '../lib/vacancy-hh-apply.mjs';
+import {
+  vacancyHasHhApply,
+  vacancyQuestionnairePending,
+  vacancyShownInAppliedTab,
+  vacancyHhSiteBlocked,
+} from '../lib/vacancy-hh-apply.mjs';
+import { buildHhApplySiteStatePatch, hhSiteStateLabel } from '../lib/hh-vacancy-response-state.mjs';
+import { computeConversionStats } from '../lib/conversion-stats.mjs';
+import { computeDashboardStats } from '../lib/offers-stats.mjs';
+import { computeFunnelAnalytics } from '../lib/funnel-analytics.mjs';
+import { importInterviewNotesFromDir } from '../lib/interview-notes.mjs';
+import { buildInterviewPrepPack } from '../lib/interview-prep.mjs';
+import { draftChatReply } from '../lib/chat-reply-draft.mjs';
+import { DAILY_ROUTINE_STEPS } from '../lib/daily-routine.mjs';
+import { buildHhNegotiationOnlyCards } from '../lib/hh-negotiation-cards.mjs';
+import { importNegotiationsToQueue } from '../lib/import-negotiations-queue.mjs';
+import { CHAT_REPLY_TEMPLATES } from '../lib/chat-reply-templates.mjs';
+import {
+  loadNegotiationsCache,
+  mergeNegotiationsIntoQueue,
+  parseNegotiationStatusText,
+} from '../lib/hh-negotiations-sync.mjs';
+import { generateVariantTexts } from '../lib/resume-variants.mjs';
+import { pruneRespondedFromActiveQueue, QUEUE_STATUS_RESPONDED } from '../lib/queue-prune.mjs';
 import { recordNeedsQuestionnaireWork } from '../lib/questionnaire-labels.mjs';
 import { normalizeBatchScope } from '../lib/batch-scope.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
@@ -80,8 +103,19 @@ import {
   generateQuestionnaireAnswers,
   isQuestionnaireLlmEnabled,
 } from '../lib/hh-questionnaire-answers.mjs';
-import { meaningfulQuestions } from '../lib/questionnaire-labels.mjs';
+import {
+  meaningfulQuestions,
+  recordLooksLikeCaptchaQuestionnaire,
+  patchClearCaptchaQuestionnaire,
+} from '../lib/questionnaire-labels.mjs';
+import { resolveResumeForVacancy } from '../lib/resume-routing.mjs';
 import { remapQuestionnaireAnswers } from '../lib/questionnaire-merge.mjs';
+import {
+  prepQuestionnaireAnswersBatch,
+  filterQuestionnairePrepCandidates,
+  filterQuestionnaireReprobeCandidates,
+} from '../lib/questionnaire-pipeline.mjs';
+import { captureQuestionnaireEditsOnSave } from '../lib/questionnaire-user-edits.mjs';
 import { getJobStatus, setHarvestPid, setBatchPid, isProcessAlive } from '../lib/job-pids.mjs';
 import {
   getBatchControlSummary,
@@ -91,6 +125,12 @@ import {
   canResumeFromState,
   clearBatchResumeState,
 } from '../lib/batch-control.mjs';
+import {
+  getHarvestControlSummary,
+  requestHarvestPause,
+  requestHarvestResume,
+  requestHarvestStop,
+} from '../lib/harvest-control.mjs';
 import { readLogTail } from '../lib/log-tail.mjs';
 import { readJobProgress } from '../lib/job-progress.mjs';
 import { HARVEST_PROGRESS_FILE, BATCH_PROGRESS_FILE, APPLY_CHAT_PROGRESS_FILE } from '../lib/paths.mjs';
@@ -210,6 +250,36 @@ function handleBatchControlAction(action) {
   return { code: 400, body: { error: 'action: pause | resume | stop' } };
 }
 
+function handleHarvestControlAction(action) {
+  const st = getJobStatus();
+  if (action === 'pause') {
+    if (!st.harvest.running) {
+      return { code: 409, body: { error: 'Сбор не запущен' } };
+    }
+    requestHarvestPause();
+    return { code: 200, body: { ok: true, message: 'Пауза сбора — после текущей вакансии' } };
+  }
+  if (action === 'resume') {
+    const hc = getHarvestControlSummary();
+    if (!st.harvest.running) {
+      return { code: 409, body: { error: 'Сбор не запущен' } };
+    }
+    if (hc.command !== 'paused') {
+      return { code: 409, body: { error: 'Сбор не на паузе' } };
+    }
+    requestHarvestResume();
+    return { code: 200, body: { ok: true, message: 'Сбор продолжен' } };
+  }
+  if (action === 'stop') {
+    if (!st.harvest.running) {
+      return { code: 409, body: { error: 'Сбор не запущен' } };
+    }
+    requestHarvestStop();
+    return { code: 200, body: { ok: true, message: 'Остановка сбора…' } };
+  }
+  return { code: 400, body: { error: 'action: pause | resume | stop' } };
+}
+
 const server = http.createServer(async (req, res) => {
   const host = req.headers.host || '127.0.0.1';
   const url = new URL(req.url || '/', `http://${host}`);
@@ -252,6 +322,7 @@ const server = http.createServer(async (req, res) => {
     const batchProgressRaw = readJobProgress(BATCH_PROGRESS_FILE);
     const applyChatProgressRaw = readJobProgress(APPLY_CHAT_PROGRESS_FILE);
     const batchControlSummary = getBatchControlSummary();
+    const harvestControlSummary = getHarvestControlSummary();
     const batchAlive = st.batch.running || batchControlSummary.batchRunning;
     const uiProgress = (p, running, { allowStaleRunningMs = 0 } = {}) => {
       if (!p) return null;
@@ -282,9 +353,33 @@ const server = http.createServer(async (req, res) => {
         lastRunHeader: applyLogTail.lastRunHeader,
       },
       batchControl: batchControlSummary,
+      harvestControl: harvestControlSummary,
       batchActive: batchAlive,
       applyRates: applyRateLimitsSnapshot(),
+      conversion: computeConversionStats(),
+      dashboardStats: computeDashboardStats(),
     });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/conversion-stats') {
+    return sendJson(res, 200, computeDashboardStats());
+  }
+
+  if (req.method === 'GET' && pathname === '/api/dashboard-stats') {
+    return sendJson(res, 200, computeDashboardStats());
+  }
+
+  if (req.method === 'GET' && pathname === '/api/funnel-analytics') {
+    const periodDays = parseHarvestPeriodDays(url.searchParams.get('period') ?? url.searchParams.get('periodDays') ?? 0);
+    const since = url.searchParams.get('since') || url.searchParams.get('sinceDate') || '';
+    const scope = String(url.searchParams.get('scope') || 'applied').toLowerCase();
+    const minScoreRaw = url.searchParams.get('minScore');
+    const minScore = minScoreRaw != null && minScoreRaw !== '' ? Math.max(0, Number(minScoreRaw) || 0) : 0;
+    return sendJson(
+      res,
+      200,
+      computeFunnelAnalytics({ periodDays, since, scope, minScore })
+    );
   }
 
   if (
@@ -302,6 +397,24 @@ const server = http.createServer(async (req, res) => {
     }
     const action = String(body.action || '').toLowerCase();
     const result = handleBatchControlAction(action);
+    return sendJson(res, result.code, result.body);
+  }
+
+  if (
+    (req.method === 'GET' || req.method === 'POST') &&
+    pathname === '/api/harvest-control'
+  ) {
+    if (req.method === 'GET') {
+      return sendJson(res, 200, { ok: true, api: 'harvest-control', ...getHarvestControlSummary() });
+    }
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const action = String(body.action || '').toLowerCase();
+    const result = handleHarvestControlAction(action);
     return sendJson(res, result.code, result.body);
   }
 
@@ -330,6 +443,9 @@ const server = http.createServer(async (req, res) => {
     let q = loadQueue();
     if (applyView !== 'applied') {
       q = q.filter((x) => x.status === status);
+      if (status === 'pending' || status === 'approved') {
+        q = q.filter((x) => x.status !== QUEUE_STATUS_RESPONDED);
+      }
     }
     q = q
       .filter((x) => recordHasDescription(x))
@@ -356,9 +472,9 @@ const server = http.createServer(async (req, res) => {
         .filter((x) => recordPassesNotSenior(x, prefs))
         .filter((x) => recordPassesNot1C(x, prefs));
       if (applyView === 'applied') {
-        q = q.filter((x) => vacancyHasHhApply(x));
+        q = q.filter((x) => vacancyShownInAppliedTab(x));
       } else {
-        q = q.filter((x) => !vacancyHasHhApply(x));
+        q = q.filter((x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x));
       }
     }
     if (minScoreLegacy != null && minScoreLegacy !== '' && scoreBand === 'all') {
@@ -367,10 +483,17 @@ const server = http.createServer(async (req, res) => {
     } else {
       q = filterByScoreBand(q, scoreBand, threshold);
     }
+    let negotiationsOnlyCount = 0;
+    if (applyView === 'applied') {
+      const shownIds = new Set(q.map((x) => String(x.vacancyId || '').trim()).filter(Boolean));
+      const extra = buildHhNegotiationOnlyCards(shownIds);
+      negotiationsOnlyCount = extra.length;
+      q = [...q, ...extra];
+    }
     q.sort((a, b) => {
       if (applyView === 'applied') {
-        const ta = Date.parse(a.hhApply?.lastAt || '') || 0;
-        const tb = Date.parse(b.hhApply?.lastAt || '') || 0;
+        const ta = Date.parse(a.hhApply?.lastAt || a.hhApply?.hhSiteStateAt || '') || 0;
+        const tb = Date.parse(b.hhApply?.lastAt || b.hhApply?.hhSiteStateAt || '') || 0;
         if (tb !== ta) return tb - ta;
       }
       return scoreOfItem(b) - scoreOfItem(a);
@@ -387,12 +510,12 @@ const server = http.createServer(async (req, res) => {
       .filter((x) => recordPassesLlmList(x))
       .filter((x) => recordPassesMinSalary(x, prefs));
     const queueBase = baseForCounts.filter(
-      (x) => !vacancyHasHhApply(x) && !recordNeedsQuestionnaireWork(x)
+      (x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x) && !recordNeedsQuestionnaireWork(x)
     );
     const questionnaireBase = baseForCounts.filter(
-      (x) => !vacancyHasHhApply(x) && recordNeedsQuestionnaireWork(x)
+      (x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x) && recordNeedsQuestionnaireWork(x)
     );
-    const appliedBase = baseForCounts.filter((x) => vacancyHasHhApply(x));
+    const appliedBase = baseForCounts.filter((x) => vacancyShownInAppliedTab(x));
     const high = filterByScoreBand(queueBase, 'high', threshold).length;
     const low = filterByScoreBand(queueBase, 'low', threshold).length;
     const appliedHigh = filterByScoreBand(appliedBase, 'high', threshold).length;
@@ -401,7 +524,9 @@ const server = http.createServer(async (req, res) => {
     let rawInBand = 0;
     let hiddenByRole = 0;
     if (applyView !== 'applied') {
-      let rawStatus = loadQueue().filter((x) => x.status === status && !vacancyHasHhApply(x));
+      let rawStatus = loadQueue()
+        .filter((x) => x.status === status && !vacancyHasHhApply(x))
+        .filter((x) => !vacancyHhSiteBlocked(x));
       rawStatus = rawStatus.filter((x) => recordHasDescription(x));
       if (scoreBand === 'high' || scoreBand === 'low' || scoreBand === 'all') {
         rawInBand =
@@ -424,6 +549,17 @@ const server = http.createServer(async (req, res) => {
       if (applyView === 'hidden') {
         row.hiddenRoleReasons = recordHiddenRoleReasons(x, prefs);
       }
+      try {
+        const pick = resolveResumeForVacancy(x);
+        row.resumeRouting = {
+          role: pick.role,
+          label: pick.label,
+          title: pick.title,
+          reason: pick.reason,
+        };
+      } catch {
+        /* ignore */
+      }
       return row;
     });
 
@@ -445,6 +581,7 @@ const server = http.createServer(async (req, res) => {
         rawInBand,
         hiddenByRole,
         totalPending: loadQueue().filter((x) => x.status === status).length,
+        negotiationsOnly: negotiationsOnlyCount,
       },
     });
   }
@@ -847,6 +984,49 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (req.method === 'POST' && pathname === '/api/questionnaire/prep-batch') {
+    let body = {};
+    try {
+      const raw = await readBody(req);
+      if (raw.trim()) body = JSON.parse(raw);
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const force = Boolean(body.force);
+    const candidates = filterQuestionnairePrepCandidates(
+      loadQueue().filter((x) => x.status === 'pending' || x.status === 'approved')
+    );
+    if (!candidates.length) {
+      return sendJson(res, 200, {
+        ok: true,
+        okCount: 0,
+        skipped: 0,
+        failed: 0,
+        total: 0,
+        message: 'Нет карточек с вопросами анкеты — сначала probe или батч.',
+      });
+    }
+    if (isQuestionnaireLlmEnabled() && !hasScoreProviderCredentials()) {
+      return sendJson(res, 503, {
+        error:
+          'HH_QUESTIONNAIRE_LLM=1: нужен OpenRouter_API_KEY или HH_CUSTOM_LLM_*. Без LLM достаточно папки CV/.',
+      });
+    }
+    const r = await prepQuestionnaireAnswersBatch(candidates, { force });
+    return sendJson(res, 200, {
+      ok: true,
+      okCount: r.ok,
+      skipped: r.skipped,
+      failed: r.failed,
+      total: r.total,
+      errors: r.errors?.slice(0, 20),
+      needsRelabel: r.needsRelabel ?? 0,
+      message:
+        `Ответы: ${r.ok} сгенерировано, ${r.skipped} пропущено, ${r.failed} ошибок` +
+        (r.needsRelabel ? `; ${r.needsRelabel} без текста вопросов — сначала «Обновить вопросы с hh.ru»` : ''),
+    });
+  }
+
   if (req.method === 'POST' && pathname === '/api/questionnaire/save-answers') {
     let body;
     try {
@@ -880,11 +1060,103 @@ const server = http.createServer(async (req, res) => {
       savedAnswers: answers,
       answersSavedAt: now,
     };
+    const learned = captureQuestionnaireEditsOnSave(rec, answers);
     updateVacancyRecord(id, {
       hhApply: { ...rec.hhApply, lastAt: now, questionnaire },
     });
 
-    return sendJson(res, 200, { ok: true, questionnaire });
+    return sendJson(res, 200, { ok: true, questionnaire, learnedEdits: learned });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/questionnaire/reprobe-batch') {
+    let body = {};
+    try {
+      const raw = await readBody(req);
+      if (raw.trim()) body = JSON.parse(raw);
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const limit = Math.min(20, Math.max(1, Number(body.limit) || 5));
+    const candidates = filterQuestionnaireReprobeCandidates(
+      loadQueue().filter((x) => x.status === 'pending' || x.status === 'approved')
+    );
+    if (!candidates.length) {
+      return sendJson(res, 200, {
+        ok: true,
+        okCount: 0,
+        failed: 0,
+        total: 0,
+        message: 'Нет карточек с заглушками — probe не нужен.',
+      });
+    }
+    const harvestSt = getJobStatus();
+    if (harvestSt.harvest.running) {
+      return sendJson(res, 409, { error: 'Идёт сбор вакансий — дождитесь завершения.' });
+    }
+    const scriptPath = path.join(ROOT, 'scripts', 'probe-questionnaire.mjs');
+    let okCount = 0;
+    let failed = 0;
+    const errors = [];
+    for (const rec of candidates.slice(0, limit)) {
+      const exitCode = await new Promise((resolve) => {
+        const child = spawn(process.execPath, [scriptPath, `--id=${rec.id}`], {
+          cwd: ROOT,
+          env: { ...process.env },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let errText = '';
+        child.stderr?.on('data', (d) => {
+          errText += d.toString();
+        });
+        child.on('close', (code) => resolve({ code: code ?? 1, errText }));
+      });
+      if (exitCode.code === 0) okCount++;
+      else {
+        failed++;
+        errors.push({ id: rec.id, title: rec.title, error: exitCode.errText.slice(0, 200) });
+      }
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      okCount,
+      failed,
+      total: candidates.length,
+      ran: Math.min(limit, candidates.length),
+      errors: errors.slice(0, 10),
+      message: `Probe: ${okCount} OK, ${failed} ошибок (из ${Math.min(limit, candidates.length)} за запуск)`,
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/questionnaire/clear-captcha') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const { id, fixAll } = body;
+    if (!id && !fixAll) {
+      return sendJson(res, 400, { error: 'Нужен id или fixAll: true' });
+    }
+    if (!fixAll) {
+      const rec = getVacancyRecord(id);
+      if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+      if (!recordLooksLikeCaptchaQuestionnaire(rec)) {
+        return sendJson(res, 400, {
+          error: 'Карточка не похожа на капчу. Проверьте подписи полей.',
+        });
+      }
+      updateVacancyRecord(id, patchClearCaptchaQuestionnaire(rec));
+      return sendJson(res, 200, { ok: true, fixed: 1 });
+    }
+    const queue = loadQueue();
+    let fixed = 0;
+    for (const rec of queue) {
+      if (!recordLooksLikeCaptchaQuestionnaire(rec)) continue;
+      updateVacancyRecord(rec.id, patchClearCaptchaQuestionnaire(rec));
+      fixed++;
+    }
+    return sendJson(res, 200, { ok: true, fixed });
   }
 
   if (req.method === 'POST' && pathname === '/api/questionnaire/probe') {
@@ -1318,6 +1590,300 @@ const server = http.createServer(async (req, res) => {
       message: `Батч «${batchScope}» запущен (до ${limit} откликов${minScore ? `, ≥${minScore}` : ''}${maxScore ? `, ≤${maxScore}` : ''}). Смотрите лог.`,
       batchScope,
     });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/prune-responded-queue') {
+    const dryRun = url.searchParams.get('dryRun') === '1';
+    const r = pruneRespondedFromActiveQueue({ dryRun });
+    return sendJson(res, 200, {
+      ok: true,
+      dryRun,
+      changed: r.changed,
+      total: r.total,
+      message: dryRun
+        ? `Будет убрано: ${r.changed}`
+        : `Убрано из очереди: ${r.changed} (статус responded, см. вкладку «Отклики»)`,
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-prep') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const rec = getVacancyRecord(body.id);
+    if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+    try {
+      const pack = await buildInterviewPrepPack(rec);
+      updateVacancyRecord(rec.id, { interviewPrep: pack });
+      return sendJson(res, 200, { ok: true, interviewPrep: pack });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/import-interview-notes') {
+    try {
+      const dir = process.env.HH_INTERVIEW_DIR || 'D:\\Dev\\HH\\hh\\Интервью';
+      const r = importInterviewNotesFromDir(dir);
+      return sendJson(res, r.ok ? 200 : 400, r);
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'GET' && pathname === '/api/chat-templates') {
+    return sendJson(res, 200, { templates: CHAT_REPLY_TEMPLATES });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/import-negotiations-queue') {
+    try {
+      const r = importNegotiationsToQueue();
+      return sendJson(res, 200, {
+        ok: true,
+        ...r,
+        message: `Импортировано: ${r.imported}, пропущено (уже в очереди): ${r.skipped}`,
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/launch-sync-resume-from-source') {
+    const script = path.join(ROOT, 'scripts', 'sync-resume-from-source.mjs');
+    if (!fs.existsSync(script)) return sendJson(res, 500, { error: 'sync-resume-from-source.mjs не найден' });
+    let body = {};
+    try {
+      if (req.headers['content-length']) body = JSON.parse(await readBody(req));
+    } catch {
+      /* */
+    }
+    const args = [script];
+    if (body.probeOnly) args.push('--probe-only');
+    if (body.dryRun) args.push('--dry-run');
+    const child = spawn(process.execPath, args, {
+      cwd: ROOT,
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env },
+    });
+    child.unref();
+    return sendJson(res, 200, {
+      ok: true,
+      pid: child.pid,
+      message: body.probeOnly
+        ? 'Проверка завершённости резюме (см. data/resume-sync-report.json)'
+        : 'Синхронизация резюме с эталона запущена',
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/daily-routine') {
+    return sendJson(res, 200, { steps: DAILY_ROUTINE_STEPS });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/apply-negotiations-cache') {
+    try {
+      const cache = loadNegotiationsCache();
+      for (const it of cache.items || []) {
+        it.status = parseNegotiationStatusText(it.statusRaw);
+      }
+      const r = mergeNegotiationsIntoQueue(cache);
+      return sendJson(res, 200, {
+        ok: true,
+        updated: r.updated,
+        total: r.total,
+        negotiations: (cache.items || []).length,
+        message: `Обновлено карточек: ${r.updated}`,
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/daily-routine-run') {
+    let body = {};
+    try {
+      if (req.headers['content-length']) body = JSON.parse(await readBody(req));
+    } catch {
+      /* */
+    }
+    const script = path.join(ROOT, 'scripts', 'daily-routine.mjs');
+    const args = [script];
+    if (body.withHarvest) args.push('--with-harvest');
+    const child = spawn(process.execPath, args, {
+      cwd: ROOT,
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, HH_HEADLESS: process.env.HH_HEADLESS || '1' },
+    });
+    child.unref();
+    return sendJson(res, 200, {
+      ok: true,
+      pid: child.pid,
+      message: 'Ежедневная рутина запущена (синхр. отклики → кэш → чаты)',
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/chat-reply-batch') {
+    const q = loadQueue().filter((x) => x.hhApply?.chatSummary?.needsReply);
+    const results = [];
+    for (const rec of q.slice(0, 15)) {
+      try {
+        const draft = await draftChatReply({
+          vacancyTitle: rec.title,
+          company: rec.company,
+          messages: rec.hhApply?.chatMessages || [],
+        });
+        updateVacancyRecord(rec.id, {
+          hhApply: { ...(rec.hhApply || {}), chatReplyDraft: draft },
+        });
+        results.push({ id: rec.id, ok: true, source: draft.source });
+      } catch (e) {
+        results.push({ id: rec.id, ok: false, error: e.message });
+      }
+    }
+    return sendJson(res, 200, { ok: true, processed: results.length, results });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/chat-reply-draft') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    let rec = getVacancyRecord(body.id);
+    if (!rec) {
+      const id = String(body.id || '');
+      if (id.startsWith('hh-neg-')) {
+        const vid = id.slice('hh-neg-'.length);
+        const cache = loadNegotiationsCache();
+        const it = (cache.items || []).find((x) => String(x.vacancyId) === vid);
+        if (it) {
+          rec = {
+            id,
+            vacancyId: vid,
+            title: it.title,
+            company: it.company,
+            hhApply: {
+              chatMessages: it.chatMessages || [],
+              chatSummary: it.chatSummary,
+            },
+          };
+        }
+      }
+    }
+    if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+    const messages = body.messages || rec.hhApply?.chatMessages || [];
+    try {
+      const draft = await draftChatReply({
+        vacancyTitle: rec.title,
+        company: rec.company,
+        messages,
+      });
+      if (!String(rec.id || '').startsWith('hh-neg-')) {
+        updateVacancyRecord(rec.id, {
+          hhApply: { ...(rec.hhApply || {}), chatReplyDraft: draft },
+        });
+      }
+      return sendJson(res, 200, { ok: true, ...draft });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/generate-resume-variant') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const role = String(body.role || 'devops').trim();
+    try {
+      const texts = await generateVariantTexts(role);
+      return sendJson(res, 200, { ok: true, role, texts });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/launch-sync-hh-responses') {
+    const script = path.join(ROOT, 'scripts', 'sync-hh-responses.mjs');
+    if (!fs.existsSync(script)) return sendJson(res, 500, { error: 'sync-hh-responses.mjs не найден' });
+    const child = spawn(process.execPath, [script], {
+      cwd: ROOT,
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env },
+    });
+    child.unref();
+    return sendJson(res, 200, { ok: true, pid: child.pid, message: 'Синхронизация откликов hh.ru запущена' });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/launch-sync-hh-chats') {
+    const script = path.join(ROOT, 'scripts', 'sync-hh-chats.mjs');
+    if (!fs.existsSync(script)) return sendJson(res, 500, { error: 'sync-hh-chats.mjs не найден' });
+    const child = spawn(process.execPath, [script], {
+      cwd: ROOT,
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env },
+    });
+    child.unref();
+    return sendJson(res, 200, { ok: true, pid: child.pid, message: 'Синхронизация чатов запущена' });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/launch-sync-resume-variants') {
+    let body = {};
+    try {
+      if (req.headers['content-length']) body = JSON.parse(await readBody(req));
+    } catch {
+      /* empty body ok */
+    }
+    const script = path.join(ROOT, 'scripts', 'sync-hh-resume-variants.mjs');
+    if (!fs.existsSync(script)) return sendJson(res, 500, { error: 'sync-hh-resume-variants.mjs не найден' });
+    const args = [script];
+    if (body.role) args.push(`--role=${body.role}`);
+    if (body.generateOnly) args.push('--generate-only');
+    const child = spawn(process.execPath, args, {
+      cwd: ROOT,
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env },
+    });
+    child.unref();
+    return sendJson(res, 200, {
+      ok: true,
+      pid: child.pid,
+      message: 'Обновление резюме на hh.ru запущено (смотрите браузер)',
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/hh-site-state') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const { id, state } = body;
+    const allowed = new Set(['none', 'already_applied', 'invited', 'declined', 'viewed', 'awaiting']);
+    if (!id || !allowed.has(String(state || ''))) {
+      return sendJson(res, 400, { error: 'Нужны id и state: none | already_applied | invited | declined' });
+    }
+    const rec = getVacancyRecord(id);
+    if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+    const st = String(state);
+    const hhApply = buildHhApplySiteStatePatch(rec.hhApply || {}, {
+      state: st,
+      label: hhSiteStateLabel(st),
+      source: 'dashboard-manual',
+    });
+    updateVacancyRecord(id, { hhApply });
+    return sendJson(res, 200, { ok: true, hhApply });
   }
 
   if (req.method === 'POST' && pathname === '/api/dismiss') {

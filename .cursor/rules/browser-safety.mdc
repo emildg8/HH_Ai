@@ -1,0 +1,20 @@
+---
+description: Не закрывать личный Chrome пользователя при отладке hh-ru-apply
+alwaysApply: true
+---
+
+# Браузер: только профиль проекта
+
+**Запрещено** для освобождения Playwright/дашборда:
+
+- `Stop-Process -Name chrome` / `taskkill /IM chrome.exe` / убивать все процессы Chrome
+- Закрывать «лишний Chrome» без проверки, что это не рабочий браузер пользователя
+
+**Разрешено:**
+
+- Остановить только **дашборд**: процесс, слушающий порт `DASHBOARD_PORT` (по умолчанию 3849), например `Get-NetTCPConnection -LocalPort 3849` → `Stop-Process` по **конкретному PID**
+- `clearStaleBrowserLock()` / удалить `data/session/browser.lock`, если lock устарел
+- Удалить только lock-файлы **внутри** `data/session/chromium-profile/` (`SingletonLock` и т.п.) — не трогать `%LOCALAPPDATA%\Google\Chrome`
+- Скрипты проекта с `launchPersistentContext(profile)` — отдельный профиль в `data/session/chromium-profile`, не личный Chrome
+
+Если Chromium не стартует — предложить пользователю закрыть **окно автоматизации hh** (если он сам открыл), а не выполнять массовый kill.

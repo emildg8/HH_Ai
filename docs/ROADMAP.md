@@ -1,6 +1,6 @@
 # Roadmap HH Ai (подробный)
 
-**Версия:** 2.0.0 · **Репозиторий:** [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai) · идея-основа: [Steev193/hh-ru-apply](https://github.com/Steev193/hh-ru-apply)
+**Версия:** 2.0.1 · **Репозиторий:** [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai) · идея-основа: [Steev193/hh-ru-apply](https://github.com/Steev193/hh-ru-apply)
 
 Исходная цель: меньше ручного труда на hh.ru при контроле качества откликов, с ростом качества LLM и учётом приглашений/отказов.
 
@@ -154,7 +154,7 @@ flowchart LR
 
 | Версия | Фокус | Статус |
 |--------|--------|--------|
-| **2.0.1** | CI, QA, release workflow, setup, backlog Issues | [~] в основном сделано |
+| **2.0.1** | CI, QA, CRM-дашборд, воронка, роутинг резюме, hh-search url-safe | [x] срез 2026-05-22 |
 | **2.1.0** | Feedback invited/declined, HH_PROFILE в UI, резюме в батче | [ ] |
 | **2.2.0** | deferUntil, Telegram, метрики, portable zip | [ ] |
 | **3.0.0** | *(опционально)* Tauri / portable-only | [ ] backlog |
@@ -168,7 +168,7 @@ flowchart LR
 | # | Задача | Roadmap | Статус | Ссылка |
 |---|--------|---------|--------|--------|
 | 1 | CI: `verify:local` + `smoke:release` + UI smoke | R3.2 | [x] | [ci.yml](../.github/workflows/ci.yml) |
-| 2 | Release при теге `v*` → zip на GitHub | R1.4 | [~] | [release.yml](../.github/workflows/release.yml) — проверить на `v2.0.1` |
+| 2 | Release при теге `v*` → zip на GitHub | R1.4 | [x] | [release.yml](../.github/workflows/release.yml) — тег `v2.0.1` |
 | 3 | [QA-CLEAN-INSTALL.md](QA-CLEAN-INSTALL.md) | R1.7 | [~] | прогон на чистой VM |
 | 4 | [MAINTAINER.md](MAINTAINER.md), [UX-FRICTION-LOG.md](UX-FRICTION-LOG.md) | — | [x] | |
 | 5 | `npm run setup`, `secrets:check`, `hooks:install` | R1.6, R3.7 | [x] | |
@@ -246,7 +246,7 @@ git tag v2.0.1 && git push hh_ai v2.0.1
 | 1.0.0 | DevOps-профиль, дашборд, batch |
 | 1.0.1 | UI scale/modals, verify, плотность карточек |
 | 2.0.0 | Батч+анкета, публичный релиз, CONFIG-GUIDE, пресеты |
-| 2.0.1 | Maintainer/QA, CI, `npm run setup`, secrets hook |
+| 2.0.1 | CRM-дашборд, воронка union, роутинг резюме, CI/setup, hh-search url-safe |
 | 2.1.0 | Feedback invited (R2) |
 | 2.2.0 | Фон, defer, portable zip (R1.2) |
 

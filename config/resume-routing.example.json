@@ -1,0 +1,29 @@
+{
+  "defaultRole": "devops",
+  "resumes": {
+    "devops": {
+      "label": "DevOps / SRE",
+      "titleOnHh": "DevOps-инженер",
+      "titleMatch": "DevOps",
+      "hash": "YOUR_DEVOPS_RESUME_HASH"
+    },
+    "data": {
+      "label": "Data Engineer",
+      "titleOnHh": "Data Engineer",
+      "titleMatch": "Data Engineer",
+      "hash": "YOUR_DATA_ENGINEER_HASH"
+    },
+    "support": {
+      "label": "Поддержка",
+      "titleOnHh": "Специалист технической поддержки",
+      "titleMatch": "поддержк",
+      "hash": "YOUR_SUPPORT_RESUME_HASH"
+    },
+    "tam": {
+      "label": "TAM",
+      "titleOnHh": "Technical Account Manager",
+      "titleMatch": "account manager",
+      "hash": "YOUR_TAM_RESUME_HASH"
+    }
+  }
+}

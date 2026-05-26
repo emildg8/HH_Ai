@@ -25,6 +25,17 @@ async function waitModalOpen(page, id) {
   );
 }
 
+async function openSettingsTab(page, tabId) {
+  await page.locator('#btn-open-settings').click();
+  await waitModalOpen(page, 'settings-modal');
+  await page.locator(`[data-settings-tab="${tabId}"]`).click();
+}
+
+async function closeSettingsModal(page) {
+  await page.locator('#settings-modal .modal-close').click();
+  await waitModalHidden(page, 'settings-modal');
+}
+
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
@@ -48,7 +59,7 @@ async function main() {
   });
   await page.waitForSelector('.toast--visible', { timeout: 3000 });
 
-  await page.locator('.seg-btn[data-tip]').first().hover();
+  await page.locator('[data-tip]').first().hover();
   await page.waitForSelector('.float-tip:not([hidden])', { timeout: 3000 });
   if (!(await page.locator('.float-tip').textContent())?.trim()) {
     throw new Error('Плавающая подсказка пуста');
@@ -59,11 +70,9 @@ async function main() {
   await page.locator('[data-apply-view="questionnaire"]').click();
   await page.locator('[data-apply-view="queue"]').click();
 
-  const filterPanel = page.locator('#panel-filters');
-  await filterPanel.evaluate((el) => {
-    if (el instanceof HTMLDetailsElement) el.open = true;
-  });
+  await openSettingsTab(page, 'list');
   await page.locator('#filter-reset').click();
+  await closeSettingsModal(page);
 
   await page.locator('.btn-log-apply').click();
   await waitModalOpen(page, 'apply-log-modal');
@@ -109,6 +118,8 @@ async function main() {
     await page.locator('#approved-letter-modal .modal-backdrop').click({ position: { x: 5, y: 5 } });
     await waitModalHidden(page, 'approved-letter-modal');
   }
+
+  await openSettingsTab(page, 'ui');
 
   for (const preset of ['0.85', '1', '1.15']) {
     await page.locator(`[data-ui-scale-preset="${preset}"]`).click();
@@ -204,14 +215,20 @@ async function main() {
     );
   }
   await setFontScale(100);
+  await closeSettingsModal(page);
 
   const junkFiltered = await page.evaluate(async () => {
-    const { isGenericQuestionLabel } = await import('/questionnaire-labels.mjs');
+    const { isGenericQuestionLabel, isCaptchaFieldLabel } = await import('/questionnaire-labels.mjs');
     const junk =
       'Отклик на вакансию Для отклика необходимо ответить на несколько вопросов работодателя';
-    return isGenericQuestionLabel(junk) && isGenericQuestionLabel('Писать тут');
+    return (
+      isGenericQuestionLabel(junk) &&
+      isGenericQuestionLabel('Писать тут') &&
+      isGenericQuestionLabel('Текст с картинки') &&
+      isCaptchaFieldLabel('Текст с картинки Неверный текст. Пожалуйста, повторите попытку.')
+    );
   });
-  if (!junkFiltered) errors.push('questionnaire-labels: не отфильтрован шум страницы / placeholder');
+  if (!junkFiltered) errors.push('questionnaire-labels: не отфильтрован шум / капча');
 
   const choiceUiOk = await page.evaluate(async () => {
     const { isChoiceQuestion, matchAnswerToOption } = await import('/questionnaire-choice.mjs');

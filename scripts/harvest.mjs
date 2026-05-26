@@ -26,7 +26,7 @@ import {
   HARVEST_DASHBOARD_TICK_FILE,
 } from '../lib/paths.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
-import { parseHarvestPeriodDays, applySearchPeriodToParams, harvestPeriodLabel } from '../lib/hh-search-period.mjs';
+import { parseHarvestPeriodDays, harvestPeriodLabel } from '../lib/hh-search-period.mjs';
 import {
   launchPersistentContextSafe,
   closeContextSafe,
@@ -34,6 +34,12 @@ import {
   formatBrowserLaunchError,
 } from '../lib/chromium-session.mjs';
 import { createHarvestProgressTracker, writeHarvestError } from '../lib/job-progress.mjs';
+import {
+  initHarvestControl,
+  waitAtHarvestBoundary,
+  shouldStopHarvest,
+  finishHarvestControl,
+} from '../lib/harvest-control.mjs';
 import { ensureNoCaptchaBlocking } from '../lib/hh-captcha-wait.mjs';
 
 const BROWSER_OWNER = 'harvest';
@@ -41,7 +47,7 @@ import { parseVacancyPage, vacancyIdFromUrl } from '../lib/vacancy-parse.mjs';
 import { runHardFilters, runTitleOnlyFilters } from '../lib/filters.mjs';
 import { collectVacancyCardsFromSearch } from '../lib/harvest-serp.mjs';
 import { detectQuestionnaireHintFromVacancyText } from '../lib/harvest-questionnaire-hint.mjs';
-import { buildHhSearchText } from '../lib/hh-search.mjs';
+import { buildHhSearchUrl, describeHhSearchUrlPolicy } from '../lib/hh-search.mjs';
 import { loadCvBundle } from '../lib/cv-load.mjs';
 import {
   createLlmRoutingContext,
@@ -116,19 +122,6 @@ function looksLikeLoginUrl(url) {
   return u.includes('/account/login') || u.includes('oauth.hh.ru') || u.includes('/logon');
 }
 
-function buildSearchUrl(text) {
-  const params = new URLSearchParams();
-  params.set('text', buildHhSearchText(text));
-  params.set('ored_clusters', 'true');
-  const area = (process.env.HH_AREA || '').trim();
-  if (area) params.set('area', area);
-  applySearchPeriodToParams(params, parseHarvestPeriodDays(process.env.HH_SEARCH_PERIOD));
-  const orderBy = (process.env.HH_SEARCH_ORDER_BY || 'publication_time').trim();
-  if (orderBy) params.set('order_by', orderBy);
-  return `https://hh.ru/search/vacancy?${params.toString()}`;
-}
-
-
 function logSkipped(payload) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.appendFileSync(SKIPPED_FILE, `${JSON.stringify({ ...payload, at: new Date().toISOString() })}\n`, 'utf8');
@@ -155,6 +148,7 @@ function writeDashboardHarvestTick(addedThisRun) {
 
 async function main() {
   const progress = createHarvestProgressTracker();
+  initHarvestControl();
   progress.starting();
   const prefs = loadPreferences();
 
@@ -193,6 +187,7 @@ async function main() {
 
   const periodDays = parseHarvestPeriodDays(process.env.HH_SEARCH_PERIOD);
   console.log(`[harvest] Период на hh.ru: ${harvestPeriodLabel(periodDays)}`);
+  console.log(`[harvest] Поиск: ${describeHhSearchUrlPolicy(prefs)}`);
 
   let ctx;
   try {
@@ -224,17 +219,40 @@ async function main() {
     const globalSeen = new Set();
     const keywordsTotal = keywords.length;
     let keywordIndex = 0;
+    const serp = {
+      cards: 0,
+      skippedKnown: 0,
+      skippedTitle: 0,
+      emptyKeywords: 0,
+    };
 
-    progress.collecting(0, keywordsTotal, { urlsFound: 0 });
+    const serpStatsPayload = (extra = {}) => ({
+      knownIds: seenIds.size,
+      serpCards: serp.cards,
+      skippedKnown: serp.skippedKnown,
+      skippedTitle: serp.skippedTitle,
+      emptyKeywords: serp.emptyKeywords,
+      ...extra,
+    });
+
+    progress.collecting(0, keywordsTotal, { urlsFound: 0, ...serpStatsPayload() });
 
     for (const key of keywords) {
+      if ((await waitAtHarvestBoundary(() => progress.paused('Пауза — сбор ссылок'))) === 'stop') {
+        console.log('[harvest] Остановка по запросу дашборда (сбор ссылок).');
+        progress.done({ added: 0, stopped: true });
+        return;
+      }
       if (urls.length >= sessionLimit) break;
       keywordIndex++;
       progress.collecting(keywordIndex, keywordsTotal, {
         urlsFound: urls.length,
         currentKeyword: key,
       });
-      await page.goto(buildSearchUrl(key), { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await page.goto(buildHhSearchUrl(key, prefs, periodDays), {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000,
+      });
       await ensureNoCaptchaBlocking(page, { context: 'поиск (harvest)' });
       await sleepMs(randomIntInclusive(searchJitterMin, searchJitterMax));
       const found = await collectVacancyCardsFromSearch(page);
@@ -247,18 +265,23 @@ async function main() {
             return '';
           })
           .catch(() => '');
+        if (hint === 'ничего не найдено') serp.emptyKeywords++;
         if (hint) console.warn(`  [harvest] пустая выдача (${hint}) для «${key}»`);
       }
       let n = 0;
-      let titleSkipped = 0;
       for (const card of found) {
         if (urls.length >= sessionLimit) break;
         if (n >= perKeyLimit) break;
         const id = vacancyIdFromUrl(card.url);
-        if (!id || globalSeen.has(id) || seenIds.has(id)) continue;
+        if (!id) continue;
+        serp.cards++;
+        if (globalSeen.has(id) || seenIds.has(id)) {
+          serp.skippedKnown++;
+          continue;
+        }
         const titleFilter = runTitleOnlyFilters(card.title, prefs);
         if (!titleFilter.pass) {
-          titleSkipped++;
+          serp.skippedTitle++;
           logSkipped({
             vacancyId: id,
             url: card.url,
@@ -273,14 +296,26 @@ async function main() {
         urls.push({ url: card.url, query: key, serpTitle: card.title });
         n++;
       }
-      const skipNote = titleSkipped ? `, отсечено по заголовку ${titleSkipped}` : '';
+      const skipNote = serp.skippedTitle ? `, отсечено по заголовку ${serp.skippedTitle}` : '';
       console.log(`Ключ «${key}»: +${n} URL (в очереди на обход ${urls.length}${skipNote})`);
-      progress.collecting(keywordIndex, keywordsTotal, { urlsFound: urls.length, currentKeyword: key });
+      progress.collecting(keywordIndex, keywordsTotal, {
+        urlsFound: urls.length,
+        currentKeyword: key,
+        ...serpStatsPayload({ newToProcess: urls.length }),
+      });
     }
 
     if (!urls.length) {
-      console.log('Нет новых ссылок (все уже в очереди или пустая выдача).');
-      progress.done({ added: 0, message: 'Нет новых ссылок' });
+      const message =
+        serp.cards > 0 && serp.skippedKnown > 0
+          ? `Нет новых: на выдаче ${serp.cards}, уже в очереди ${serp.skippedKnown}`
+          : serp.cards === 0 && serp.emptyKeywords > 0
+            ? 'Пустая выдача по ключам (проверьте фильтры/период)'
+            : 'Нет новых ссылок';
+      console.log(
+        `${message}${serp.skippedTitle ? `, отсечено по заголовку ${serp.skippedTitle}` : ''} (известно ID: ${seenIds.size}).`
+      );
+      progress.done({ added: 0, message, ...serpStatsPayload() });
       return;
     }
 
@@ -324,6 +359,16 @@ async function main() {
     progress.scoring(0, urlsTotal, { added: 0, skipped: 0 }, scoringStartedAt);
 
     for (let i = 0; i < urls.length; i++) {
+      if (
+        (await waitAtHarvestBoundary(() =>
+          progress.paused(`Пауза — обработка ${i + 1}/${urls.length}`)
+        )) === 'stop'
+      ) {
+        console.log('[harvest] Остановка по запросу дашборда.');
+        if (newRecordsSinceDashboardTick > 0) writeDashboardHarvestTick(added);
+        progress.done({ added, skipped, urlsTotal, stopped: true });
+        return;
+      }
       if (i > 0) {
         const pause = randomIntInclusive(openDelayMin, openDelayMax);
         console.log(`Пауза ${pause} мс…`);
@@ -447,7 +492,8 @@ async function main() {
         company: parsed.company,
         salaryRaw: parsed.salaryRaw,
         salaryEstimate: filter.salaryEstimate,
-        remoteNote: filter.remoteReason,
+        remoteNote: filter.workFormatNote || filter.remoteReason,
+        workFormat: filter.workFormat,
         salaryNote: filter.salaryReason,
         descriptionPreview: parsed.description.slice(0, 600),
         descriptionForLlm: parsed.description.slice(0, 6000),
@@ -510,14 +556,22 @@ async function main() {
       writeDashboardHarvestTick(added);
     }
 
-    progress.done({ added, skipped, urlsTotal });
+    progress.done({
+      added,
+      skipped,
+      urlsTotal,
+      message: `Добавлено ${added}`,
+      ...serpStatsPayload({ newToProcess: urlsTotal }),
+    });
     console.log(`\nГотово. Новых записей в очереди: ${added}. Запустите: npm run dashboard`);
   } finally {
     await closeContextSafe(ctx, BROWSER_OWNER);
+    finishHarvestControl({ reason: shouldStopHarvest() ? 'stop' : 'complete' });
   }
 }
 
 main().catch((e) => {
+  finishHarvestControl({ reason: 'stop' });
   writeHarvestError(e?.message || e);
   console.error(e);
   process.exit(1);

@@ -1,6 +1,6 @@
 # Как запускать без Docker (и альтернативы)
 
-**Версия:** 2.0.0
+**Версия:** 2.0.1
 
 Цель: любой соискатель может начать за **15–30 минут** без контейнеров.
 
@@ -9,7 +9,7 @@
 | Артефакт | Команда | Содержимое |
 |----------|---------|------------|
 | Каталог | `npm run export:public` | `dist/hh-ai-public/` |
-| Zip | `npm run release:public` | `releases/hh-ai-public-v2.0.0.zip` |
+| Zip | `npm run release:public` | `releases/hh-ai-public-v2.0.1.zip` |
 
 Инструкция получателю: [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md). В архиве **нет** сессий, ключей, очередей, CV.
 
@@ -40,7 +40,7 @@
 
 ### B. Portable ZIP (**в работе, R1.2–R1.4**)
 
-- `npm run release:public` → `releases/hh-ai-public-v2.0.0.zip` (для передачи другим)
+- `npm run release:public` → `releases/hh-ai-public-v2.0.1.zip` (для передачи другим)
 - `npm run release:pack` → полный локальный снимок **с вашими data** (не публиковать)
 - `scripts/install-portable.ps1` + `start-dashboard.bat` на рабочий стол
 - Цель: **скачивание с [GitHub Releases HH_Ai](https://github.com/emildg8/HH_Ai/releases)** (`hh-ai-public-v*.zip`) без git

@@ -26,7 +26,7 @@ npm run release:public
 | Шаг | Команда |
 |-----|---------|
 | Версия | Обновить `VERSION`, `CHANGELOG.md` |
-| Тег | `git tag v2.0.1` && `git push hh_ai v2.0.1` |
+| Тег | `git tag v2.0.1` && `git push hh_ai v2.0.1` (текущий срез) |
 | CI | Workflow [release.yml](../.github/workflows/release.yml) прикрепит zip к Release |
 | Вручную (если CI не сработал) | `gh release upload vX.Y.Z releases/hh-ai-public-vX.Y.Z.zip` |
 

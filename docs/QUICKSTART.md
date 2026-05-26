@@ -1,6 +1,6 @@
 # Быстрый старт HH Ai
 
-**5 шагов** — от нуля до дашборда. Полная документация: [README.md](README.md).
+**5 шагов** — от нуля до дашборда. Минимум настроек: **[FIRST-RUN.md](FIRST-RUN.md)**. Документация: [README.md](README.md).
 
 ---
 
@@ -32,27 +32,33 @@ bash scripts/install.sh
 
 ### Без git
 
-1. Скачайте [hh-ai-public-v2.0.0.zip](https://github.com/emildg8/HH_Ai/releases/latest)
+1. Скачайте [hh-ai-public-v2.0.1.zip](https://github.com/emildg8/HH_Ai/releases/latest) (после тега `v2.0.1`)
 2. Распакуйте в `C:\Tools\hh-ai` (без кириллицы в пути)
 3. Запустите `install.ps1` или `install.sh` из папки проекта
 
 ---
 
-## Шаг 2. Настройка (5 минут)
+## Шаг 2. Настройка (≈2 минуты обязательно)
+
+`install` уже создал конфиги и режим **без LLM**. Осталось:
+
+| Действие | Где |
+|----------|-----|
+| `HH_PROFILE_RESUME_TITLE` | `config/profiles/devops.env` — **как на hh.ru** |
+| Проверка | `npm run setup:check` |
+
+**Опционально (LLM и письма):**
 
 ```bash
-npm run setup
-npm run setup:check
+npm run setup   # пресет OpenRouter / Ollama / без LLM
 ```
 
-| Файл | Действие |
-|------|----------|
-| `config/secrets.local.env` | Ключ LLM — **один пресет** из [`config/presets/`](../config/presets/README.md) |
-| `config/profiles/devops.env` | `HH_PROFILE_RESUME_TITLE` — название резюме на hh.ru |
-| `CV/` | Положите `resume.pdf` или `.md` — модель «узнает» ваш опыт |
-| `config/cover-letter.txt` | Шаблоны писем (создаётся при install) |
+| Файл | Зачем |
+|------|--------|
+| `config/secrets.local.env` | Ключ OpenRouter (если выбрали LLM) |
+| `CV/resume.pdf` или `.md` | Контекст для оценки и писем |
 
-**Без LLM-ключа** — harvest работает с локальной оценкой. Подробно: **[CONFIG-GUIDE.md](CONFIG-GUIDE.md)** (режимы LLM, другая роль, обучение стилю).
+Подробно: **[FIRST-RUN.md](FIRST-RUN.md)** · **[CONFIG-GUIDE.md](CONFIG-GUIDE.md)**.
 
 ---
 

@@ -2,6 +2,39 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версии — [SemVer](https://semver.org/lang/ru/).
 
+## [2.0.1] — 2026-05-22
+
+Срез после публикации **2.0.0**: CRM-дашборд, воронка по всем очередям, роутинг резюме, pipeline анкет, безопасный URL поиска на hh.ru, инфраструктура мейнтейнера и CI. Публичный zip: `npm run release:public` → `releases/hh-ai-public-v2.0.1.zip`. Тег: `v2.0.1`.
+
+### Added
+
+- **Онбординг:** `docs/FIRST-RUN.md` — что обязательно (2 поля) vs опционально; `install` копирует `no-llm` preset и `resume-routing.json` из example.
+
+- **Дашборд CRM:** вкладки сайдбара (Рутина / Работа / Отчёты / Настройки), KPI и мини-воронка, модалка **«Аналитика»** с разбивкой по резюме и динамикой откликов (`lib/funnel-analytics.mjs`, `lib/queue-aggregate.mjs`, `dashboard/public/funnel-timeline.mjs`).
+- **Поиск в списке:** вакансия, компания, резюме, чат, письмо (`dashboard/public/vacancy-search.mjs`).
+- **Настройки:** модалка с вкладками (отклики / список / интерфейс), фильтры карточек вынесены из шапки.
+- **Роутинг резюме:** `config/resume-routing.json`, `lib/resume-routing.mjs`, `lib/hh-resume-picker.mjs`; `npm run devops:preview-resume-routing`, `devops:probe-response-resumes`.
+- **Анкета:** pipeline (`lib/questionnaire-pipeline.mjs`), disclosure, special-answers, user-edits; batch prep/reprobe (`questionnaire-prep-batch`, `questionnaire-reprobe-batch`); `docs/QUESTIONNAIRE-AUTOMATION.md`.
+- **Очередь и отклики:** `docs/QUEUE-AND-APPLY.md`, `lib/hh-vacancy-response-state.mjs`, `npm run devops:prune-responded-queue`, `devops:probe-vacancy-state`.
+- **Harvest:** статистика SERP (`serpCards`, `skippedKnown`, …), понятные сообщения при «0 новых».
+- **Поиск hh.ru:** `lib/hh-search.mjs` — режим `url-safe`, `resolveHhSearchSalary()` (по умолчанию зарплата не попадает в URL), `HH_SEARCH_SALARY=0` в примерах профиля.
+- **Синхронизация:** `devops:sync-responses`, `sync-chats`, `sync-resume-variants`, `apply-negotiations-cache`, `daily-routine`.
+- **Мейнтейнер:** `npm run setup`, `secrets:check`, `hooks:install`; CI `smoke:release`; workflow [release.yml](.github/workflows/release.yml) при теге `v*`; `docs/MAINTAINER.md`, `docs/QA-CLEAN-INSTALL.md`, `docs/HIRING-ROADMAP.md`.
+
+### Changed
+
+- **Воронка:** агрегация по всем `data/vacancies*.json` + кэш переговоров; конверсия и summary через union-очередь.
+- **Форма отклика:** выбор резюме через `resumeId` в URL и fallback по hash (`lib/hh-resume-upload.mjs`, `lib/hh-response-modal.mjs`).
+- **Дашборд:** API расширен (`dashboard-server.mjs`), демо-очередь обновлена.
+- **Документация:** `docs/TROUBLESHOOTING.md` (пустая выдача hh.ru, URL поиска), `docs/CONFIG.md`, `docs/CONTINUATION.md`.
+
+### Fixed
+
+- Модалка воронки открывалась с неверным корнем (`openModalEl` → `#funnel-modal`).
+- График динамики откликов: нулевые дни не рисуются «полоской» на всю высоту; агрегация по неделям при длинном периоде.
+- Git hooks на Windows (`install-git-hooks`, pre-push).
+- Zip на Windows (`Compress-Archive -Path`) — из цепочки 2.0.0, зафиксировано в срезе.
+
 ## [2.0.0] — 2026-05-20
 
 Крупный релиз: батч-отклики с анкетами, понятный журнал пропусков, harvest/фильтры, капча, улучшения LLM и UI дашборда. Публичная копия: `npm run release:public` → `releases/hh-ai-public-v2.0.0.zip`. Документация: [docs/README.md](docs/README.md), репозиторий [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai).
@@ -63,6 +96,7 @@
 
 - Секреты и сессии вне git; публичный экспорт без cookies и ключей.
 
+[2.0.1]: https://github.com/emildg8/HH_Ai/releases/tag/v2.0.1
 [2.0.0]: https://github.com/emildg8/HH_Ai/releases/tag/v2.0.0
 [1.0.1]: https://github.com/emildg8/HH_Ai/releases/tag/v1.0.1
 [1.0.0]: https://github.com/emildg8/HH_Ai/releases/tag/v1.0.0

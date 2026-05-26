@@ -1,6 +1,6 @@
 # Конфигурация HH Ai
 
-**Версия:** 2.0.0
+**Версия:** 2.0.1
 
 > **Простой гид:** [CONFIG-GUIDE.md](CONFIG-GUIDE.md) — режимы LLM, профили, обучение стилю.  
 > **Пресеты:** [config/presets/README.md](../config/presets/README.md)  
@@ -69,6 +69,8 @@ HH_PROFILE_RESUME_HASH=806e0f3a...   # npm run devops:list-resumes
 | `HH_BATCH` | 1 — режим батча (ставится скриптом) |
 | `HH_CAPTCHA_WAIT_MS` | Ожидание решения капчи (600000 = 10 мин) |
 | `HH_QUESTIONNAIRE_AUTO` | Авто-ответы анкеты при отклике |
+| `HH_BATCH_QUESTIONNAIRE_AUTO` | Батч: генерация и подстановка анкеты (`1` по умолчанию, `0` — выкл.) |
+| `HH_QUESTIONNAIRE_HIGH_SCORE_MIN` | Порог `scoreOverall` для более развёрнутых ответов LLM (по умолчанию 72) |
 | `HH_MAX_APPLY_*` | Лимиты откликов час/день/месяц |
 
 ## Сопроводительные

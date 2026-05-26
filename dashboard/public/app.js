@@ -1,3 +1,5 @@
+import { vacancyMatchesSearch } from './vacancy-search.mjs';
+import { bucketTimelineForDisplay, renderFunnelTimelineHtml } from './funnel-timeline.mjs';
 import { initFloatingTooltips } from './tooltips.mjs';
 import { initModalLayer, openModalEl, closeModalEl } from './modals.mjs';
 import { initUiScaleControls } from './ui-scale.mjs';
@@ -10,12 +12,15 @@ import {
   itemQuestionnaireNeedsProbe,
   itemQuestionnaireShouldAutoProbe,
   recordNeedsQuestionnaireWork,
+  recordLooksLikeCaptchaQuestionnaire,
+  questionsLookLikeCaptchaMisdetect,
 } from './questionnaire-labels.mjs';
 import {
   isChoiceQuestion,
   matchAnswerToOption,
   normalizeChoiceOptionLabel,
 } from './questionnaire-choice.mjs';
+import { buildQuestionnaireAnswersMap } from './questionnaire-merge.mjs';
 
 const listEl = document.getElementById('list');
 const tpl = document.getElementById('card-tpl');
@@ -38,6 +43,8 @@ const applyRateMetersEl = document.getElementById('apply-rate-meters');
 let currentStatus = 'pending';
 let currentApplyView = 'queue';
 let currentScoreBand = 'high';
+let currentAppliedFunnel = 'all';
+let chatTemplatesCache = null;
 let scoreThreshold = 50;
 let batchSizeCap = 100;
 /** @type {Record<string, { min: number, max: number }>} */
@@ -47,6 +54,7 @@ let preferencesSaveAvailable = null;
 let lastHarvestTickSeq = 0;
 let applyLogPollTimer = null;
 let applyChatWasRunning = false;
+let harvestWasRunning = false;
 let cachedRawItems = [];
 let cachedCounts = null;
 /** Открыть первую анкету после перехода на вкладку «Анкета». */
@@ -70,27 +78,87 @@ function readFiltersFromUI() {
   };
 }
 
+function vacancyHhSiteBlocked(item) {
+  const s = item?.hhApply?.hhSiteState;
+  return (
+    s === 'already_applied' ||
+    s === 'invited' ||
+    s === 'declined' ||
+    s === 'archived' ||
+    s === 'unavailable'
+  );
+}
+
+function vacancyShownInAppliedTab(item) {
+  if (vacancyHasHhApply(item)) return true;
+  const s = item?.hhApply?.hhSiteState;
+  return s === 'already_applied' || s === 'invited' || s === 'declined' || s === 'viewed' || s === 'awaiting';
+}
+
+function hhSiteStateBadgeText(item) {
+  const h = item?.hhApply;
+  const st = h?.hhSiteState;
+  if (!st || st === 'none') return '';
+  const labels = {
+    invited: 'Приглашение на hh.ru',
+    declined: 'Отказ на hh.ru',
+    already_applied: 'Отклик уже на hh.ru',
+    viewed: 'Резюме просмотрели',
+    awaiting: 'Ждём ответа',
+    archived: 'Вакансия в архиве',
+    unavailable: 'Отклик недоступен',
+  };
+  const label = h.hhSiteStateLabel || labels[st] || st;
+  const when = h.hhSiteStateAt
+    ? new Date(h.hhSiteStateAt).toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '';
+  return when ? `${label} · ${when}` : label;
+}
+
+async function setHhSiteStateManual(item, state) {
+  await api('/api/hh-site-state', {
+    method: 'POST',
+    body: JSON.stringify({ id: item.id, state }),
+  });
+  showToast(
+    state === 'invited'
+      ? 'Отмечено: приглашение — вакансия уйдёт из очереди батча'
+      : state === 'declined'
+        ? 'Отмечено: отказ'
+        : 'Статус hh.ru сброшен',
+    'good'
+  );
+  await loadItems();
+}
+
 function filterItemsForApplyView(items, view = currentApplyView) {
+  const active = items.filter((x) => x.status !== 'responded');
+  if (view === 'applied') {
+    return items.filter((x) => vacancyShownInAppliedTab(x));
+  }
   if (view === 'noQuestionnaire') {
-    return items.filter((x) => !vacancyHasHhApply(x) && !recordNeedsQuestionnaireWork(x));
+    return active.filter(
+      (x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x) && !recordNeedsQuestionnaireWork(x)
+    );
   }
   if (view === 'questionnaire') {
-    return items.filter((x) => !vacancyHasHhApply(x) && recordNeedsQuestionnaireWork(x));
+    return active.filter(
+      (x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x) && recordNeedsQuestionnaireWork(x)
+    );
   }
-  return items;
+  return active.filter((x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x));
 }
 
 function applyClientFilters(items, filters) {
   let out = filterItemsForApplyView([...items]);
   const q = filters.search.toLowerCase();
   if (q) {
-    out = out.filter((it) => {
-      const blob = [it.title, it.company, it.searchQuery, it.geminiSummary]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return blob.includes(q);
-    });
+    out = out.filter((it) => vacancyMatchesSearch(it, q));
   }
   const comp = filters.company.toLowerCase();
   if (comp) {
@@ -102,6 +170,16 @@ function applyClientFilters(items, filters) {
   }
   if (filters.onlySalary) {
     out = out.filter((it) => it.salaryEstimate?.ok);
+  }
+  if (currentApplyView === 'applied' && currentAppliedFunnel !== 'all') {
+    out = out.filter((it) => {
+      const st = it?.hhApply?.hhSiteState;
+      if (currentAppliedFunnel === 'invited') return st === 'invited';
+      if (currentAppliedFunnel === 'viewed') return st === 'viewed';
+      if (currentAppliedFunnel === 'awaiting') return st === 'awaiting';
+      if (currentAppliedFunnel === 'declined') return st === 'declined';
+      return true;
+    });
   }
   switch (filters.sort) {
     case 'score-asc':
@@ -349,6 +427,11 @@ function hhApplyBadgeText(item) {
   const h = item?.hhApply;
   if (!h?.lastAt && !vacancyQuestionnairePending(item)) return '';
   const parts = [];
+  if (h.hhSiteState === 'invited') parts.push('приглашение hh.ru');
+  else if (h.hhSiteState === 'declined') parts.push('отказ hh.ru');
+  else if (h.hhSiteState === 'viewed') parts.push('просмотрели');
+  else if (h.hhSiteState === 'awaiting') parts.push('ждём ответа');
+  else if (h.hhSiteState === 'already_applied') parts.push('отклик на hh.ru');
   if (h.letterDelivered) parts.push('письмо доставлено');
   else if (h.letterInForm) parts.push('письмо в форме');
   else if (h.chatSent) parts.push('письмо в чате');
@@ -454,6 +537,21 @@ function closeApplyLogModal() {
 }
 
 function closeTopModal() {
+  const service = document.getElementById('service-drawer');
+  if (service && !service.hidden) {
+    closeServiceDrawer();
+    return true;
+  }
+  const settings = document.getElementById('settings-modal');
+  if (settings && !settings.hidden) {
+    closeModalEl(settings);
+    return true;
+  }
+  const funnel = document.getElementById('funnel-modal');
+  if (funnel && !funnel.hidden) {
+    closeFunnelModal();
+    return true;
+  }
   const questionnaire = document.getElementById('questionnaire-modal');
   if (questionnaire && !questionnaire.hidden) {
     closeQuestionnaireModal();
@@ -494,6 +592,17 @@ function closeModalById(modalId) {
     closeQuestionnaireModal();
     return true;
   }
+  if (modalId === 'settings-modal') {
+    const m = document.getElementById('settings-modal');
+    if (m && !m.hidden) {
+      closeModalEl(m);
+      return true;
+    }
+  }
+  if (modalId === 'funnel-modal') {
+    closeFunnelModal();
+    return true;
+  }
   return closeTopModal();
 }
 
@@ -502,24 +611,11 @@ let questionnaireModalState = null;
 
 function questionnaireAnswersMap(item) {
   const q = item?.hhApply?.questionnaire;
-  const questions = meaningfulQuestions(q?.questions || []);
-  const map = new Map();
-  const suggested = q?.suggestedAnswers || [];
-  const byPosition = suggested.length === questions.length;
-
-  for (let i = 0; i < questions.length; i++) {
-    const question = questions[i];
-    const row =
-      suggested.find((s) => Number(s.index) === question.index) ||
-      (byPosition ? suggested[i] : null);
-    if (row?.answer) map.set(question.index, String(row.answer));
-  }
-
-  for (const row of q?.savedAnswers || []) {
-    if (Number.isFinite(row?.index) && String(row.answer || '').trim()) {
-      map.set(row.index, String(row.answer));
-    }
-  }
+  const { map } = buildQuestionnaireAnswersMap(
+    q?.questions || [],
+    q?.suggestedAnswers || [],
+    q?.savedAnswers || []
+  );
   return map;
 }
 
@@ -590,6 +686,10 @@ function buildCardFacts(item) {
   const density = readCardDensityMode();
   const lines = [];
   if (item.remoteNote) lines.push(item.remoteNote);
+  if (item.workFormat?.city && !String(item.remoteNote || '').includes(item.workFormat.city)) {
+    lines.push(`Город: ${item.workFormat.city}`);
+  }
+  if (item.workFormat?.timezone) lines.push(item.workFormat.timezone);
   if (item.salaryNote && !item.salaryEstimate?.ok) lines.push(item.salaryNote);
   const mc = formatMatchCv(item.geminiMatchCv);
   if (mc) lines.push(mc);
@@ -608,10 +708,23 @@ function renderQuestionnaireModalBody(modal, item) {
 
   const q = item.hhApply?.questionnaire;
   const raw = q?.questions || [];
-  const questions = meaningfulQuestions(raw);
-  const answers = questionnaireAnswersMap(item);
+  const { questions, map: answers } = buildQuestionnaireAnswersMap(
+    raw,
+    q?.suggestedAnswers || [],
+    q?.savedAnswers || []
+  );
+  const clearCaptchaBtn = modal.querySelector('.btn-questionnaire-clear-captcha');
+  if (clearCaptchaBtn) {
+    clearCaptchaBtn.hidden = !recordLooksLikeCaptchaQuestionnaire(item);
+  }
 
   body.innerHTML = '';
+  if (!questions.length && questionsLookLikeCaptchaMisdetect(raw)) {
+    body.innerHTML =
+      '<p class="questionnaire-warn">Похоже на <strong>капчу hh.ru</strong> («Текст с картинки»), а не на анкету работодателя. Нажмите <strong>«Это капча, не анкета»</strong> — карточка вернётся в «Без анкет» / «Очередь». После решения капчи повторите отклик.</p>';
+    if (meta) meta.textContent = (raw.map((x) => x.label).join(' · ') || '').slice(0, 200);
+    return;
+  }
   if (!questions.length) {
     const needsProbe = itemQuestionnaireNeedsProbe(item) || raw.length > 0;
     body.innerHTML = needsProbe
@@ -1082,6 +1195,21 @@ questionnaireModalEl?.querySelector('.btn-questionnaire-probe')?.addEventListene
   void runQuestionnaireProbe({ silentToast: false });
 });
 
+questionnaireModalEl?.querySelector('.btn-questionnaire-clear-captcha')?.addEventListener('click', async () => {
+  if (!questionnaireModalState?.id) return;
+  try {
+    const res = await api('/api/questionnaire/clear-captcha', {
+      method: 'POST',
+      body: JSON.stringify({ id: questionnaireModalState.id }),
+    });
+    showToast(`Сброшено (капча): ${res.fixed || 1}`, 'good');
+    closeModalEl(questionnaireModalEl);
+    await load();
+  } catch (e) {
+    showToast(e.message || String(e), 'bad');
+  }
+});
+
 questionnaireModalEl?.querySelector('.btn-questionnaire-generate')?.addEventListener('click', async () => {
   if (!questionnaireModalState?.id) return;
   const modal = questionnaireModalEl;
@@ -1149,11 +1277,15 @@ questionnaireModalEl?.querySelector('.btn-questionnaire-save')?.addEventListener
   const answers = collectQuestionnaireAnswersFromModal(questionnaireModalEl);
   btn.disabled = true;
   try {
-    await api('/api/questionnaire/save-answers', {
+    const res = await api('/api/questionnaire/save-answers', {
       method: 'POST',
       body: JSON.stringify({ id: questionnaireModalState.id, answers }),
     });
-    showToast('Ответы сохранены в очереди', 'good');
+    const msg =
+      res.learnedEdits > 0
+        ? `Сохранено; ${res.learnedEdits} пример(ов) для следующих генераций`
+        : 'Ответы сохранены в очереди';
+    showToast(msg, 'good');
     await load();
   } catch (e) {
     showToast(e.message || 'Ошибка сохранения', 'bad');
@@ -1353,7 +1485,11 @@ function renderCard(item) {
       : item.salaryRaw || '';
   const parts = [item.company, salaryLine, item.searchQuery ? `запрос: ${item.searchQuery}` : '']
     .filter(Boolean);
-  if (metaCompact) metaCompact.textContent = [...new Set(parts)].join(' · ');
+  if (metaCompact) {
+    const metaParts = [...new Set(parts)];
+    if (item.resumeRouting?.label) metaParts.push(`Резюме: ${item.resumeRouting.label}`);
+    metaCompact.textContent = metaParts.join(' · ');
+  }
 
   const setMetaLine = (sel, label, value) => {
     const el = node.querySelector(sel);
@@ -1443,6 +1579,138 @@ function renderCard(item) {
     applyBadge.hidden = false;
     applyBadge.textContent = hhApplyBadgeText(item);
     node.classList.add('card--applied');
+  }
+
+  const siteBadge = node.querySelector('.hh-site-badge');
+  const siteOnly =
+    !showQuestionnaireBlock &&
+    !vacancyHasHhApply(item) &&
+    item?.hhApply?.hhSiteState &&
+    item.hhApply.hhSiteState !== 'none';
+  if (siteBadge && siteOnly) {
+    siteBadge.hidden = false;
+    siteBadge.textContent = hhSiteStateBadgeText(item);
+    siteBadge.classList.add(`hh-site-badge--${item.hhApply.hhSiteState}`);
+    node.classList.add('card--applied');
+    if (item.hhApply.hhSiteState === 'invited') node.classList.add('card--hh-invited');
+    if (item.hhApply.hhSiteState === 'declined') node.classList.add('card--hh-declined');
+    if (item.hhApply.hhSiteState === 'viewed') node.classList.add('card--hh-viewed');
+  }
+
+  const interviewBtn = node.querySelector('.btn-interview-prep');
+  if (interviewBtn && item.hhApply?.hhSiteState === 'invited') {
+    interviewBtn.hidden = false;
+    interviewBtn.addEventListener('click', async () => {
+      interviewBtn.disabled = true;
+      try {
+        const res = await api('/api/interview-prep', {
+          method: 'POST',
+          body: JSON.stringify({ id: item.id }),
+        });
+        const p = res.interviewPrep;
+        const lines = [
+          ...(p?.checklist || []),
+          '',
+          p?.llm?.pitch ? `Питч: ${p.llm.pitch}` : '',
+          (p?.llm?.techQuestions || []).map((q) => `• ${q}`).join('\n'),
+        ].filter(Boolean);
+        alert(lines.join('\n') || 'Пакет сохранён в карточке');
+        await load();
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        interviewBtn.disabled = false;
+      }
+    });
+  }
+
+  const negOnlyBadge = node.querySelector('.negotiation-only-badge');
+  if (item.negotiationOnly || item.hhApply?.negotiationOnly) {
+    if (negOnlyBadge) negOnlyBadge.hidden = false;
+    node.classList.add('card--negotiation-only');
+    node.querySelectorAll('.btn-apply-auto, .btn-apply-chat, .btn-apply-questionnaire').forEach((b) => {
+      b.disabled = true;
+    });
+  }
+
+  const chatBlock = node.querySelector('.card-chat-block');
+  const chatMsgs = item.hhApply?.chatMessages;
+  const chatEditor = chatBlock?.querySelector('.chat-reply-editor');
+  const chatOpen = chatBlock?.querySelector('.btn-chat-open-hh');
+  if (chatBlock && Array.isArray(chatMsgs) && chatMsgs.length) {
+    chatBlock.hidden = false;
+    const ul = chatBlock.querySelector('.chat-messages');
+    if (ul) {
+      ul.replaceChildren(
+        ...chatMsgs.slice(-8).map((m) => {
+          const li = document.createElement('li');
+          li.className = `chat-msg chat-msg--${m.kind || 'other'}`;
+          const who = m.kind === 'question' ? 'Работодатель' : m.kind === 'answer' ? 'Вы' : 'Сообщение';
+          li.textContent = `${who}: ${m.text}`;
+          return li;
+        })
+      );
+    }
+    const savedDraft = item.hhApply?.chatReplyDraft?.reply;
+    if (chatEditor && savedDraft) chatEditor.value = savedDraft;
+    const chatUrl = item.hhApply?.chatUrl;
+    if (chatOpen && chatUrl) {
+      chatOpen.href = chatUrl;
+      chatOpen.hidden = false;
+    }
+    chatBlock.querySelector('.btn-chat-copy')?.addEventListener('click', async () => {
+      const text = chatEditor?.value?.trim();
+      if (!text) return alert('Сначала сгенерируйте черновик («Ответ в чат»)');
+      if (navigator.clipboard) await navigator.clipboard.writeText(text);
+      showToast('Скопировано', 'good');
+    });
+    const tplRow = chatBlock.querySelector('.chat-template-row');
+    if (tplRow) {
+      ensureChatTemplates().then((templates) => {
+        tplRow.replaceChildren(
+          ...templates.map((t) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'btn btn-ghost btn-xs chat-tpl-btn';
+            b.textContent = t.label;
+            b.title = t.text.slice(0, 120);
+            b.addEventListener('click', () => {
+              if (chatEditor) chatEditor.value = t.text;
+            });
+            return b;
+          })
+        );
+      });
+    }
+  }
+
+  const chatDraftBtn = node.querySelector('.btn-chat-reply-draft');
+  const chatSummary = item.hhApply?.chatSummary;
+  const hasChat =
+    chatSummary?.needsReply ||
+    chatSummary?.questionCount > 0 ||
+    (Array.isArray(chatMsgs) && chatMsgs.some((m) => m.kind === 'question'));
+  if (chatDraftBtn && hasChat) {
+    chatDraftBtn.hidden = false;
+    chatDraftBtn.addEventListener('click', async () => {
+      chatDraftBtn.disabled = true;
+      try {
+        const res = await api('/api/chat-reply-draft', {
+          method: 'POST',
+          body: JSON.stringify({ id: item.id }),
+        });
+        if (chatEditor) chatEditor.value = res.reply || '';
+        else if (navigator.clipboard) await navigator.clipboard.writeText(res.reply);
+        showToast(
+          res.source === 'llm' ? 'Черновик в поле ниже — проверьте и вставьте в чат hh.ru' : 'Шаблонный черновик',
+          'good'
+        );
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        chatDraftBtn.disabled = false;
+      }
+    });
   }
 
   const hiddenBadge = node.querySelector('.hidden-role-badge');
@@ -1584,21 +1852,58 @@ function renderCard(item) {
     }
   };
 
-  if (item.status === 'pending' && applyAutoBtn) {
-    applyAutoBtn.disabled = false;
-    if (currentApplyView === 'hidden') {
-      applyAutoBtn.title = 'Скрыта фильтром — отклик на ваш риск';
+  const invitedBtn = node.querySelector('.btn-hh-invited');
+  const declinedBtn = node.querySelector('.btn-hh-declined');
+  if (item.status === 'pending' && !vacancyHasHhApply(item)) {
+    if (invitedBtn) {
+      invitedBtn.hidden = false;
+      invitedBtn.addEventListener('click', async () => {
+        invitedBtn.disabled = true;
+        try {
+          await setHhSiteStateManual(item, 'invited');
+        } catch (e) {
+          alert(e.message);
+          invitedBtn.disabled = false;
+        }
+      });
     }
-    applyAutoBtn.addEventListener('click', () =>
-      launchApply(applyAutoBtn, {
-        usePoolLetter: true,
-        tailorResume: true,
-        questionnaireAuto: true,
-        questionnaireWait:
-          vacancyQuestionnairePending(item) ||
-          (item.hhApply?.questionnaire?.savedAnswers?.length ?? 0) > 0,
-      })
-    );
+    if (declinedBtn) {
+      declinedBtn.hidden = false;
+      declinedBtn.addEventListener('click', async () => {
+        declinedBtn.disabled = true;
+        try {
+          await setHhSiteStateManual(item, 'declined');
+        } catch (e) {
+          alert(e.message);
+          declinedBtn.disabled = false;
+        }
+      });
+    }
+  }
+
+  if (item.status === 'pending' && applyAutoBtn) {
+    const hhBlocked = vacancyHhSiteBlocked(item);
+    applyAutoBtn.disabled = hhBlocked;
+    if (hhBlocked) {
+      applyAutoBtn.title = hhSiteStateBadgeText(item) || 'Повторный отклик на hh.ru не нужен';
+    } else if (currentApplyView === 'hidden') {
+      applyAutoBtn.disabled = false;
+      applyAutoBtn.title = 'Скрыта фильтром — отклик на ваш риск';
+    } else {
+      applyAutoBtn.disabled = false;
+    }
+    if (!hhBlocked) {
+      applyAutoBtn.addEventListener('click', () =>
+        launchApply(applyAutoBtn, {
+          usePoolLetter: true,
+          tailorResume: true,
+          questionnaireAuto: true,
+          questionnaireWait:
+            vacancyQuestionnairePending(item) ||
+            (item.hhApply?.questionnaire?.savedAnswers?.length ?? 0) > 0,
+        })
+      );
+    }
   }
 
   if (approvedLetter) {
@@ -1610,7 +1915,7 @@ function renderCard(item) {
   }
 
   const questionnaireBtn = node.querySelector('.btn-apply-questionnaire');
-  if (questionnaireBtn && item.status === 'pending' && !vacancyHasHhApply(item)) {
+  if (questionnaireBtn && item.status === 'pending' && !vacancyHasHhApply(item) && !vacancyHhSiteBlocked(item)) {
     questionnaireBtn.hidden = false;
     questionnaireBtn.disabled = false;
     questionnaireBtn.addEventListener('click', () =>
@@ -1651,9 +1956,10 @@ function renderCard(item) {
     const coverBtn = actions.querySelector('.btn-cover');
     const refreshBtn = actions.querySelector('.btn-refresh-vacancy');
 
-    coverBtn.addEventListener('click', async () => {
+    if (coverBtn) {
+      coverBtn.addEventListener('click', async () => {
       coverBtn.disabled = true;
-      refreshBtn.disabled = true;
+      if (refreshBtn) refreshBtn.disabled = true;
       try {
         await requestCoverLetterGenerate(item.id, false);
         showToast('Сгенерированы варианты сопроводительного', 'good');
@@ -1677,15 +1983,17 @@ function renderCard(item) {
         }
       } finally {
         coverBtn.disabled = false;
-        refreshBtn.disabled = false;
+        if (refreshBtn) refreshBtn.disabled = false;
       }
     });
+    }
 
-    refreshBtn.addEventListener('click', async () => {
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', async () => {
       refreshBtn.disabled = true;
-      coverBtn.disabled = true;
-      ok.disabled = true;
-      bad.disabled = true;
+      if (coverBtn) coverBtn.disabled = true;
+      if (ok) ok.disabled = true;
+      if (bad) bad.disabled = true;
       try {
         const refreshRes = await api('/api/vacancy/refresh-body', {
           method: 'POST',
@@ -1702,14 +2010,16 @@ function renderCard(item) {
       } catch (e) {
         alert(e.message);
         refreshBtn.disabled = false;
-        coverBtn.disabled = false;
-        ok.disabled = false;
-        bad.disabled = false;
+        if (coverBtn) coverBtn.disabled = false;
+        if (ok) ok.disabled = false;
+        if (bad) bad.disabled = false;
       }
     });
+    }
 
     const send = async (action) => {
-      ok.disabled = bad.disabled = true;
+      if (ok) ok.disabled = true;
+      if (bad) bad.disabled = true;
       try {
         const data = await api('/api/action', {
           method: 'POST',
@@ -1732,11 +2042,12 @@ function renderCard(item) {
         await load({ preserveScroll: true, anchorCardId: item.id });
       } catch (e) {
         alert(e.message);
-        ok.disabled = bad.disabled = false;
+        if (ok) ok.disabled = false;
+        if (bad) bad.disabled = false;
       }
     };
-    ok.addEventListener('click', () => send('approve'));
-    bad.addEventListener('click', () => send('reject'));
+    ok?.addEventListener('click', () => send('approve'));
+    bad?.addEventListener('click', () => send('reject'));
   } else {
     doneReason.textContent = item.feedbackReason
       ? `Комментарий: ${item.feedbackReason}`
@@ -1747,8 +2058,14 @@ function renderCard(item) {
 }
 
 function syncVacancyTabs() {
-  vacancyTabsEl.querySelectorAll('.tab').forEach((b) => {
+  vacancyTabsEl?.querySelectorAll('.tab').forEach((b) => {
     b.classList.toggle('active', b.dataset.status === currentStatus);
+  });
+}
+
+function syncScoreBandTabs() {
+  document.querySelectorAll('#panel-score-band .tab-band').forEach((b) => {
+    b.classList.toggle('active', b.dataset.band === currentScoreBand);
   });
 }
 
@@ -1797,11 +2114,30 @@ function syncApplyViewTabs() {
   applyViewTabsEl.querySelectorAll('.tab').forEach((b) => {
     b.classList.toggle('active', b.dataset.applyView === currentApplyView);
   });
-  const hideStatus = currentApplyView === 'applied' || currentApplyView === 'questionnaire';
-  if (vacancyTabsEl) vacancyTabsEl.hidden = hideStatus;
-  document.getElementById('panel-vacancy-status')?.toggleAttribute('hidden', hideStatus);
-  document.getElementById('panel-score-band')?.toggleAttribute('hidden', hideStatus);
+  const hideQueueFilters =
+    currentApplyView === 'applied' || currentApplyView === 'questionnaire';
+  const queueFiltersEl = document.getElementById('sidebar-queue-filters');
+  if (queueFiltersEl) queueFiltersEl.hidden = hideQueueFilters;
+
   updateBatchButtonsForView();
+
+  const onQ = currentApplyView === 'questionnaire';
+  const onApplied = currentApplyView === 'applied';
+  const prepBtn = document.getElementById('btn-questionnaire-prep-batch');
+  const reprobeBtn = document.getElementById('btn-questionnaire-reprobe-batch');
+  const qActions = document.getElementById('context-questionnaire-actions');
+  if (prepBtn) prepBtn.hidden = !onQ;
+  if (reprobeBtn) reprobeBtn.hidden = !onQ;
+  if (qActions) qActions.hidden = !onQ;
+  document.querySelectorAll('[data-service-q-only]').forEach((el) => {
+    el.hidden = !onQ;
+  });
+
+  const funnelEl = document.getElementById('applied-funnel-tabs');
+  if (funnelEl) funnelEl.hidden = !onApplied;
+
+  const contextBar = document.getElementById('main-context-bar');
+  if (contextBar) contextBar.hidden = !onApplied && !onQ;
 }
 
 function mergeBatchAndApplyProgress(st) {
@@ -1906,7 +2242,12 @@ function paintJobProgressBox(box, p, st, { scoped = false } = {}) {
   const s = p.stats || {};
   if (s.added != null) parts.push(`в очередь: ${s.added}`);
   if (s.skipped != null) parts.push(`пропущено: ${s.skipped}`);
-  if (s.urlsFound != null) parts.push(`найдено URL: ${s.urlsFound}`);
+  if (s.urlsFound != null) parts.push(`новых URL: ${s.urlsFound}`);
+  if (s.newToProcess != null && s.urlsFound == null) parts.push(`на обход: ${s.newToProcess}`);
+  if (s.serpCards != null) parts.push(`выдача: ${s.serpCards}`);
+  if (s.skippedKnown != null && s.skippedKnown > 0) parts.push(`уже в очереди: ${s.skippedKnown}`);
+  if (s.skippedTitle != null && s.skippedTitle > 0) parts.push(`фильтр заголовка: ${s.skippedTitle}`);
+  if (s.knownIds != null) parts.push(`известно ID: ${s.knownIds}`);
   if (s.done != null) parts.push(`откликов: ${s.done}`);
   if (s.failed) parts.push(`ошибок: ${s.failed}`);
   if (metaEl) metaEl.textContent = parts.join(' · ');
@@ -1935,26 +2276,54 @@ function renderJobProgress(st) {
   }
 }
 
-function updateBatchControlButtons(st) {
-  const row = document.getElementById('batch-control-row');
-  const pauseBtn = document.getElementById('btn-batch-pause');
-  const stopBtn = document.getElementById('btn-batch-stop');
-  const resumeBtn = document.getElementById('btn-batch-resume');
+/** @type {'idle'|'harvest'|'batch'} */
+let activeJobControl = 'idle';
+
+function updateJobControlButtons(st) {
+  const row = document.getElementById('job-control-row');
+  const labelEl = document.getElementById('job-control-label');
+  const pauseBtn = document.getElementById('btn-job-pause');
+  const stopBtn = document.getElementById('btn-job-stop');
+  const resumeBtn = document.getElementById('btn-job-resume');
   const bc = st.batchControl || {};
-  const running = Boolean(st.batchActive ?? st.batch?.running ?? st.batchControl?.batchRunning);
-  const paused = running && bc.command === 'paused';
-  const show = running || bc.canResume;
-  if (row) row.hidden = !show;
-  if (pauseBtn) pauseBtn.disabled = !running || paused;
-  if (stopBtn) stopBtn.disabled = !running;
-  if (resumeBtn) {
-    resumeBtn.disabled = paused ? false : !bc.canResume;
-    resumeBtn.title = paused
-      ? 'Снять паузу'
-      : bc.canResume
-        ? 'Продолжить прерванный батч'
-        : 'Нет сохранённого батча';
+  const hc = st.harvestControl || {};
+  const harvestRunning = Boolean(st.harvest?.running);
+  const batchRunning = Boolean(st.batchActive ?? st.batch?.running ?? bc.batchRunning);
+
+  if (harvestRunning) {
+    activeJobControl = 'harvest';
+    const paused = hc.command === 'paused';
+    if (row) row.hidden = false;
+    if (labelEl) labelEl.textContent = paused ? 'Сбор · пауза' : 'Сбор';
+    if (pauseBtn) pauseBtn.disabled = paused;
+    if (stopBtn) stopBtn.disabled = false;
+    if (resumeBtn) {
+      resumeBtn.disabled = !paused;
+      resumeBtn.title = paused ? 'Продолжить сбор' : 'Сбор не на паузе';
+    }
+    return;
   }
+
+  if (batchRunning || bc.canResume) {
+    activeJobControl = 'batch';
+    const paused = batchRunning && bc.command === 'paused';
+    if (row) row.hidden = false;
+    if (labelEl) labelEl.textContent = paused ? 'Батч · пауза' : 'Батч';
+    if (pauseBtn) pauseBtn.disabled = !batchRunning || paused;
+    if (stopBtn) stopBtn.disabled = !batchRunning;
+    if (resumeBtn) {
+      resumeBtn.disabled = paused ? false : !bc.canResume;
+      resumeBtn.title = paused
+        ? 'Снять паузу батча'
+        : bc.canResume
+          ? 'Продолжить прерванный батч'
+          : 'Нет сохранённого батча';
+    }
+    return;
+  }
+
+  activeJobControl = 'idle';
+  if (row) row.hidden = true;
 }
 
 async function postBatchControl(action) {
@@ -1967,25 +2336,34 @@ async function postBatchControl(action) {
   }
 }
 
-async function sendBatchControl(action) {
+async function postHarvestControl(action) {
+  return await api('/api/harvest-control', { method: 'POST', body: JSON.stringify({ action }) });
+}
+
+async function sendJobControl(action) {
   try {
-    const res = await postBatchControl(action);
-    if (res.needsRelaunch) {
-      const launch = await api('/api/hh-launch-apply-batch', {
-        method: 'POST',
-        body: JSON.stringify({ resume: true }),
-      });
-      showToast(launch.message || 'Батч продолжен', 'good');
-      openApplyLogModal();
-      startJobLogPoll();
-    } else {
+    if (activeJobControl === 'harvest') {
+      const res = await postHarvestControl(action);
       showToast(res.message || action, 'neutral');
+    } else {
+      const res = await postBatchControl(action);
+      if (res.needsRelaunch) {
+        const launch = await api('/api/hh-launch-apply-batch', {
+          method: 'POST',
+          body: JSON.stringify({ resume: true }),
+        });
+        showToast(launch.message || 'Батч продолжен', 'good');
+        openApplyLogModal();
+        startJobLogPoll();
+      } else {
+        showToast(res.message || action, 'neutral');
+      }
     }
     refreshJobStatus();
   } catch (e) {
     const hint =
       e.status === 404
-        ? 'Кнопки Пауза/Стоп требуют перезапуска дашборда: в терминале Ctrl+C, затем npm run devops:dashboard и обновите страницу (F5).'
+        ? 'Пауза/Стоп: перезапустите дашборд (npm run devops:dashboard) и обновите страницу (F5).'
         : e.message;
     alert(hint);
   }
@@ -1999,6 +2377,13 @@ async function probeBatchControlApi() {
       showToast('Перезапустите дашборд (npm run devops:dashboard) — иначе Пауза/Стоп не работают', 'neutral');
     }
   }
+  try {
+    await api('/api/harvest-control');
+  } catch (e) {
+    if (e.status === 404) {
+      showToast('Перезапустите дашборд — пауза сбора недоступна', 'neutral');
+    }
+  }
 }
 
 function formatHumanJobStatus(st) {
@@ -2008,7 +2393,12 @@ function formatHumanJobStatus(st) {
 
   if (st.harvest?.running) {
     const hp = st.harvestProgress;
-    msgs.push(hp?.label?.trim() || 'Собираем вакансии с hh.ru…');
+    const hc = st.harvestControl || {};
+    if (hc.command === 'paused') {
+      msgs.push(hp?.label?.trim() || 'Сбор на паузе');
+    } else {
+      msgs.push(hp?.label?.trim() || 'Собираем вакансии с hh.ru…');
+    }
   }
 
   if (batchAlive) {
@@ -2073,19 +2463,418 @@ function formatJobStatusTooltip(st, { msgs = [] } = {}) {
   return lines.join('\n');
 }
 
+function formatHarvestStatsLine(h) {
+  if (!h) return '';
+  if (h.message) return h.message;
+  if (h.added != null) return `Сбор: +${h.added} в очередь`;
+  return '';
+}
+
+function formatDashboardStatsExtra(stats) {
+  if (!stats) return '';
+  const q = stats.queue || {};
+  const roll = stats.appliedRolling || {};
+  const f = stats.funnel || {};
+  const viewPct = f.viewRatePct ?? stats.rates?.viewPct ?? 0;
+  const parts = [];
+  if (q.unionRecords != null) {
+    parts.push(`всего карточек: ${q.unionRecords}`);
+  } else if (q.queueTotal != null) {
+    parts.push(`вакансий: ${q.queueTotal}`);
+  }
+  if (q.knownVacancyIds != null) {
+    parts.push(`известно ID: ${q.knownVacancyIds}`);
+  }
+  if (roll.last7d != null) parts.push(`откл. 7д: ${roll.last7d}`);
+  if (roll.sinceFunnel != null && roll.sinceLabel) {
+    parts.push(`${roll.sinceLabel}: ${roll.sinceFunnel}`);
+  }
+  parts.push(`просмотр ${viewPct}%`);
+  const hLine = formatHarvestStatsLine(stats.harvestLast);
+  if (hLine) parts.push(hLine);
+  return parts.join(' · ');
+}
+
+function renderFunnelMini(stats) {
+  const el = document.getElementById('funnel-mini');
+  if (!el || !stats) return;
+  const f = stats.funnel || {};
+  const applied = Number(stats.applied ?? f.applied ?? 0) || 0;
+  const onHh = Number(stats.appliedOnHh ?? f.appliedOnHh ?? applied) || applied;
+  const sinceLabel = stats.funnelSince ? `с ${stats.funnelSince}` : 'с 1 апр';
+  const viewed = Number(stats.viewed ?? f.viewed ?? 0) || 0;
+  const invited = Number(stats.invited ?? f.invited ?? 0) || 0;
+  const awaiting = Number(stats.awaiting ?? 0) || 0;
+  const declined = Number(stats.declined ?? f.declined ?? 0) || 0;
+  const max = Math.max(applied, viewed, invited, 1);
+  const invitePct = f.inviteRatePct ?? stats.rates?.invitePct ?? 0;
+  const viewPct = f.viewRatePct ?? stats.rates?.viewPct ?? 0;
+  const inQueue =
+    stats.byStatus != null ? (stats.byStatus.pending || 0) + (stats.byStatus.approved || 0) : '—';
+  const steps = [
+    { label: 'Очередь', count: inQueue, w: Math.min(100, (Number(inQueue) / Math.max(applied, 1)) * 100) },
+    { label: 'Откл.', count: applied, w: (applied / max) * 100 },
+    { label: 'Просм.', count: viewed, w: (viewed / max) * 100 },
+    { label: 'Пригл.', count: invited, w: (invited / max) * 100 },
+  ];
+  el.hidden = false;
+  const hhExtra = onHh > applied ? ` · hh ${onHh}` : '';
+  el.innerHTML = `
+    <div class="funnel-mini__rates">${sinceLabel}: ${applied} откл.${hhExtra} · ${viewPct}% просм. · ${invitePct}% пригл. · ждём ${awaiting} · отказ ${declined}</div>
+    <div class="funnel-mini__bars">
+      ${steps
+        .map(
+          (s) =>
+            `<div class="funnel-mini__step" title="${s.label}: ${s.count}">
+              <span class="funnel-mini__bar" style="width:${Math.max(4, s.w)}%"></span>
+              <span class="funnel-mini__num">${s.count}</span>
+            </div>`
+        )
+        .join('')}
+    </div>`;
+}
+
+function readFunnelFiltersFromUI() {
+  const periodVal = String(document.getElementById('funnel-filter-period')?.value ?? 'since:2026-04-01');
+  const scope = document.getElementById('funnel-filter-scope')?.value || 'applied';
+  const minRaw = document.getElementById('funnel-filter-min-score')?.value;
+  const minScore = minRaw != null && String(minRaw).trim() !== '' ? Number(minRaw) : 0;
+  /** @type {{ periodDays: number, since: string, scope: string, minScore: number }} */
+  const out = { periodDays: 0, since: '', scope, minScore: Number.isFinite(minScore) ? minScore : 0 };
+  if (periodVal.startsWith('since:')) {
+    out.since = periodVal.slice(6);
+  } else {
+    const n = Number(periodVal);
+    out.periodDays = Number.isFinite(n) ? n : 0;
+  }
+  return out;
+}
+
+function funnelFilterQuery(filters) {
+  const p = new URLSearchParams();
+  if (filters.since) p.set('since', filters.since);
+  else p.set('period', String(filters.periodDays ?? 0));
+  p.set('scope', filters.scope || 'applied');
+  if (filters.minScore > 0) p.set('minScore', String(filters.minScore));
+  return p.toString();
+}
+
+function renderFunnelModalBody(data) {
+  const body = document.getElementById('funnel-modal-body');
+  if (!body) return;
+  if (!data) {
+    body.innerHTML = '<p class="funnel-loading">Нет данных</p>';
+    return;
+  }
+  const {
+    counts,
+    steps,
+    rates,
+    timeline,
+    hhNegotiations,
+    hhRates,
+    scoreBuckets,
+    filters,
+    byResume,
+    dataSources,
+  } = data;
+  const sinceNote = filters?.since
+    ? `Период: с ${filters.since}`
+    : filters?.periodDays
+      ? `Период: ${filters.periodDays} дн.`
+      : 'Период: всё время';
+  const stepsSafe = Array.isArray(steps) ? steps : [];
+  const timelineSafe = Array.isArray(timeline) ? timeline : [];
+  const buckets = scoreBuckets && typeof scoreBuckets === 'object' ? scoreBuckets : { high: 0, mid: 0, low: 0, none: 0 };
+  const hh = hhNegotiations && typeof hhNegotiations === 'object' ? hhNegotiations : { total: 0, viewed: 0, invited: 0, declined: 0, awaiting: 0, syncedAt: null };
+  const hhR = hhRates && typeof hhRates === 'object' ? hhRates : { viewFromAll: 0, inviteFromAll: 0, declineFromAll: 0 };
+  const ratesSafe = rates && typeof rates === 'object' ? rates : {};
+  const countsSafe = counts && typeof counts === 'object' ? counts : {};
+  const maxStep = Math.max(...stepsSafe.map((s) => s.count), 1);
+
+  const funnelBars = stepsSafe
+    .map((s) => {
+      const w = Math.round((s.count / maxStep) * 100);
+      const sub =
+        s.pctOfApplied != null
+          ? `${s.pctOfApplied}% от откликов`
+          : s.pctOfPrev != null
+            ? `${s.pctOfPrev}% от пред. шага`
+            : `${s.pctOfBase ?? 0}%`;
+      return `<div class="funnel-chart__row funnel-chart__row--${s.color || s.id}">
+        <span class="funnel-chart__label">${s.label}</span>
+        <div class="funnel-chart__track"><span class="funnel-chart__bar" style="width:${Math.max(2, w)}%"></span></div>
+        <span class="funnel-chart__count">${s.count}</span>
+        <span class="funnel-chart__pct">${sub}</span>
+      </div>`;
+    })
+    .join('');
+
+  const timelineChart = bucketTimelineForDisplay(timelineSafe);
+  const timelineHtml = renderFunnelTimelineHtml(timelineChart);
+
+  const sourcesLine = (dataSources || [])
+    .map((s) => `${s.file} (${s.count})`)
+    .join(' · ');
+  const queueNote =
+    data.queueOverview != null
+      ? `<p class="funnel-period-note funnel-queue-note">Охват: <strong>${
+          countsSafe.unionVacancyIds ?? data.queueOverview.queueTotal
+        }</strong> вакансий · <strong>${countsSafe.unionRecords ?? data.queueOverview.unionRecords ?? '—'}</strong> карточек${
+          data.queueOverview.hhCacheItems
+            ? ` · кэш hh: ${data.queueOverview.hhCacheItems}`
+            : ''
+        }${sourcesLine ? `<br><span class="funnel-sources">${sourcesLine}</span>` : ''}</p>`
+      : sourcesLine
+        ? `<p class="funnel-period-note funnel-queue-note"><span class="funnel-sources">${sourcesLine}</span></p>`
+        : '';
+
+  const resumeRows = (byResume || [])
+    .map(
+      (r) =>
+        `<tr><td>${r.label}</td><td>${r.applied}</td><td>${r.viewed}</td><td>${r.invited}</td><td>${r.declined}</td><td>${r.viewPct}%</td><td>${r.invitePct}%</td></tr>`
+    )
+    .join('');
+  const resumeTable = resumeRows
+    ? `<section class="funnel-panel funnel-panel--wide">
+        <h3 class="funnel-panel__title">По резюме (роль вакансии)</h3>
+        <table class="funnel-resume-table">
+          <thead><tr><th>Резюме</th><th>Откл.</th><th>Просм.</th><th>Пригл.</th><th>Отказ</th><th>% просм.</th><th>% пригл.</th></tr></thead>
+          <tbody>${resumeRows}</tbody>
+        </table>
+      </section>`
+    : '';
+
+  const harvestNote = data.harvestLast
+    ? `<p class="funnel-period-note funnel-harvest-note">Последний сбор: ${
+        data.harvestLast.message || '—'
+      }${
+        data.harvestLast.serpCards != null
+          ? ` · выдача ${data.harvestLast.serpCards}, дубликаты ${data.harvestLast.skippedKnown ?? 0}`
+          : ''
+      }${
+        data.harvestLast.finishedAt
+          ? ` · ${new Date(data.harvestLast.finishedAt).toLocaleString('ru-RU')}`
+          : ''
+      }</p>`
+    : '';
+
+  body.innerHTML = `
+    ${queueNote}
+    ${harvestNote}
+    <p class="funnel-period-note">${sinceNote} · откликов: <strong>${countsSafe.applied ?? 0}</strong>${
+      countsSafe.appliedHhCacheOnly
+        ? ` (${countsSafe.appliedHhCacheOnly} только из кэша hh — синхр. «Отклики» в сервисе)`
+        : ''
+    }</p>
+    <div class="funnel-modal-grid">
+      ${resumeTable}
+      <section class="funnel-panel">
+        <h3 class="funnel-panel__title">Воронка</h3>
+        <div class="funnel-chart">${funnelBars}</div>
+        <ul class="funnel-rates-list">
+          <li>Просмотр от откликов: <strong>${ratesSafe.viewFromApplied ?? 0}%</strong></li>
+          <li>Приглашения от откликов: <strong>${ratesSafe.inviteFromApplied ?? 0}%</strong></li>
+          <li>Приглашения от просмотров: <strong>${ratesSafe.inviteFromViewed ?? 0}%</strong></li>
+          <li>Отказы: ${countsSafe.declined ?? 0} (${ratesSafe.declineFromApplied ?? 0}%)</li>
+          <li>Ждём ответ: ${countsSafe.awaiting ?? 0} · без статуса: ${countsSafe.noResponseYet ?? 0}</li>
+        </ul>
+      </section>
+      <section class="funnel-panel funnel-panel--timeline">
+        <h3 class="funnel-panel__title">Динамика откликов</h3>
+        ${timelineHtml}
+      </section>
+      <section class="funnel-panel funnel-panel--half">
+        <h3 class="funnel-panel__title">По баллам</h3>
+        <div class="funnel-buckets">
+          <div class="funnel-bucket"><span>≥70</span><strong>${buckets.high}</strong></div>
+          <div class="funnel-bucket"><span>50–69</span><strong>${buckets.mid}</strong></div>
+          <div class="funnel-bucket"><span>&lt;50</span><strong>${buckets.low}</strong></div>
+          <div class="funnel-bucket"><span>без</span><strong>${buckets.none}</strong></div>
+        </div>
+        <h3 class="funnel-panel__title">Активность</h3>
+        <ul class="funnel-rates-list">
+          <li>Отклики за 7 дн.: <strong>${data.appliedRolling?.last7d ?? '—'}</strong></li>
+          <li>Отклики за 30 дн.: <strong>${data.appliedRolling?.last30d ?? '—'}</strong></li>
+          <li>Анкеты: ${countsSafe.withQuestionnaire ?? 0}</li>
+          <li>Чаты ждут ответ: ${countsSafe.chatNeedsReply ?? 0}</li>
+          <li>Отклонено в очереди: ${countsSafe.rejected ?? 0}</li>
+        </ul>
+      </section>
+      <section class="funnel-panel funnel-panel--half">
+        <h3 class="funnel-panel__title">Кэш hh.ru (все переговоры)</h3>
+        <p class="funnel-panel__meta">${hh.syncedAt ? `Синхр.: ${new Date(hh.syncedAt).toLocaleString('ru-RU')}` : 'Синхронизируйте отклики в «Сервис»'}</p>
+        <ul class="funnel-rates-list">
+          <li>Всего: <strong>${hh.total}</strong></li>
+          <li>Просмотр: ${hh.viewed} (${hhR.viewFromAll}%)</li>
+          <li>Приглашения: ${hh.invited} (${hhR.inviteFromAll}%)</li>
+          <li>Отказы: ${hh.declined} (${hhR.declineFromAll}%)</li>
+          <li>Ждём: ${hh.awaiting}</li>
+        </ul>
+      </section>
+    </div>`;
+}
+
+async function loadFunnelAnalytics(filters) {
+  const q = funnelFilterQuery(filters ?? readFunnelFiltersFromUI());
+  const [funnel, dash] = await Promise.all([
+    api(`/api/funnel-analytics?${q}`),
+    api('/api/dashboard-stats').catch(() => null),
+  ]);
+  if (dash) {
+    funnel.queueOverview = dash.queue;
+    funnel.harvestLast = dash.harvestLast;
+    funnel.appliedRolling = dash.appliedRolling;
+  }
+  return funnel;
+}
+
+async function refreshFunnelModal() {
+  const body = document.getElementById('funnel-modal-body');
+  if (body) body.innerHTML = '<p class="funnel-loading">Загрузка…</p>';
+  try {
+    const data = await loadFunnelAnalytics();
+    renderFunnelModalBody(data);
+  } catch (e) {
+    if (body) body.innerHTML = `<p class="err">${e.message}</p>`;
+  }
+}
+
+function openFunnelModal() {
+  closeServiceDrawer();
+  const modal = document.getElementById('funnel-modal');
+  if (!modal) return;
+  openModalEl(modal);
+  void refreshFunnelModal();
+}
+
+function closeFunnelModal() {
+  const modal = document.getElementById('funnel-modal');
+  if (!modal) return;
+  closeModalEl(modal);
+}
+
+function initFunnelUi() {
+  document.getElementById('btn-open-funnel')?.addEventListener('click', openFunnelModal);
+  document.getElementById('stats-panel')?.addEventListener('click', (e) => {
+    if (e.target.closest('#btn-open-funnel')) return;
+    openFunnelModal();
+  });
+  document.querySelectorAll('[data-close-funnel]').forEach((el) => {
+    el.addEventListener('click', closeFunnelModal);
+  });
+  document.getElementById('funnel-filter-apply')?.addEventListener('click', () => refreshFunnelModal());
+  for (const id of ['funnel-filter-period', 'funnel-filter-scope', 'funnel-filter-min-score']) {
+    document.getElementById(id)?.addEventListener('change', () => {
+      const modal = document.getElementById('funnel-modal');
+      if (modal && !modal.hidden) refreshFunnelModal();
+    });
+  }
+}
+
+function renderDashboardStats(stats) {
+  const panel = document.getElementById('stats-panel');
+  const grid = document.getElementById('stats-grid');
+  if (!grid) return;
+  if (!stats) {
+    grid.innerHTML = '<p class="stats-placeholder">Загрузка статистики…</p>';
+    const mini = document.getElementById('funnel-mini');
+    if (mini) mini.hidden = true;
+    return;
+  }
+  const f = stats.funnel || {};
+  if (panel) panel.hidden = false;
+  renderFunnelMini(stats);
+  const compact = panel?.classList.contains('stats-panel--crm');
+  const invitePct = f.inviteRatePct ?? stats.rates?.invitePct ?? 0;
+  const viewPct = f.viewRatePct ?? stats.rates?.viewPct ?? 0;
+  const q = stats.queue || {};
+  const roll = stats.appliedRolling || {};
+  const items = compact
+    ? [
+        { label: 'Очередь', value: stats.byStatus ? (stats.byStatus.pending || 0) + (stats.byStatus.approved || 0) : '—' },
+        { label: 'Всего', value: q.unionRecords ?? stats.total ?? q.queueTotal ?? '—', title: 'Все очереди + кэш hh' },
+        { label: 'ID известно', value: q.knownVacancyIds ?? '—', title: 'Учитывается при сборе (дедуп)' },
+        { label: 'Отклики', value: stats.applied ?? f.applied ?? 0 },
+        { label: '7 дней', value: roll.last7d ?? '—' },
+        { label: 'Просмотр', value: stats.viewed ?? f.viewed ?? 0 },
+        { label: '% просм.', value: `${viewPct}%` },
+        { label: 'Пригл.', value: stats.invited ?? f.invited ?? 0, highlight: true },
+        { label: '% пригл.', value: `${invitePct}%`, highlight: true },
+        { label: 'Ждём', value: stats.awaiting ?? 0 },
+        { label: 'Отказы', value: stats.declined ?? f.declined ?? 0 },
+        { label: 'Анкеты', value: stats.withQuestionnaire ?? 0 },
+        { label: 'Чаты', value: stats.chatNeedsReply ?? 0 },
+      ]
+    : [
+        { label: 'В очереди', value: stats.byStatus ? (stats.byStatus.pending || 0) + (stats.byStatus.approved || 0) : '—' },
+        { label: 'Откликов', value: stats.applied ?? f.applied ?? 0 },
+        { label: 'Просмотрели', value: stats.viewed ?? f.viewed ?? 0 },
+        { label: 'Приглашения', value: stats.invited ?? f.invited ?? 0, highlight: true },
+        { label: 'Отказы', value: stats.declined ?? f.declined ?? 0 },
+        { label: '% приглашений', value: `${f.inviteRatePct ?? stats.rates?.invitePct ?? 0}%`, highlight: true },
+        { label: 'Чаты: вопрос', value: stats.chatNeedsReply ?? 0 },
+        { label: 'Анкеты', value: stats.withQuestionnaire ?? 0 },
+        {
+          label: 'Воронка',
+          value: `${f.viewRatePct ?? 0}% просмотр → ${f.inviteRatePct ?? 0}% пригл.`,
+          wide: true,
+        },
+      ];
+  if (!compact && stats.hhNegotiations?.total) {
+    items.push({
+      label: 'На hh.ru (всего)',
+      value: stats.hhNegotiations.total,
+      wide: true,
+    });
+    items.push({
+      label: 'hh: просмотр / отказ',
+      value: `${stats.hhNegotiations.viewed} / ${stats.hhNegotiations.declined}`,
+    });
+  }
+  grid.replaceChildren(
+    ...items.map((it) => {
+      const div = document.createElement('div');
+      div.className = `stat-item${it.wide ? ' stat-item--wide' : ''}`;
+      if (it.title) div.title = it.title;
+      const val = document.createElement('span');
+      val.className = `stat-value${it.highlight ? ' stat-highlight' : ''}`;
+      val.textContent = String(it.value);
+      const lab = document.createElement('span');
+      lab.className = 'stat-label';
+      lab.textContent = it.label;
+      div.append(val, lab);
+      return div;
+    })
+  );
+
+  const extraEl = document.getElementById('stats-extra');
+  if (extraEl) {
+    const extra = formatDashboardStatsExtra(stats);
+    if (extra) {
+      extraEl.textContent = extra;
+      extraEl.hidden = false;
+    } else {
+      extraEl.textContent = '';
+      extraEl.hidden = true;
+    }
+  }
+}
+
 async function refreshJobStatus() {
   const el = document.getElementById('job-status');
   if (!el) return;
   try {
     const st = await api('/api/job-status');
     renderJobProgress(st);
-    updateBatchControlButtons(st);
+    updateJobControlButtons(st);
     if (st.harvestTick?.sequence > lastHarvestTickSeq) {
       lastHarvestTickSeq = st.harvestTick.sequence;
       load();
     }
     const { main, msgs } = formatHumanJobStatus(st);
     if (st.applyRates) renderApplyRateMeters(st.applyRates);
+    renderDashboardStats(st.dashboardStats || st.conversion);
     el.textContent = main;
     el.title = formatJobStatusTooltip(st, { msgs });
     el.classList.toggle('job-status--busy', msgs.length > 0);
@@ -2105,6 +2894,18 @@ async function refreshJobStatus() {
       }
     }
     applyChatWasRunning = Boolean(st.applyChat?.running);
+
+    if (harvestWasRunning && !st.harvest?.running) {
+      const hp = st.harvestProgress;
+      const msg = hp?.stats?.message || hp?.label || 'Сбор завершён';
+      const added = hp?.stats?.added;
+      const kind = added > 0 ? 'good' : 'neutral';
+      const toastText =
+        typeof added === 'number' && added > 0 ? `${msg} (+${added})` : msg;
+      showToast(toastText, kind);
+      void load();
+    }
+    harvestWasRunning = Boolean(st.harvest?.running);
 
     if (!st.applyChat?.running && !st.batch?.running && applyLogPollTimer) {
       clearInterval(applyLogPollTimer);
@@ -2246,11 +3047,9 @@ async function load(opts = {}) {
 
 const rerenderListDebounced = debounce(() => renderListFromCache(null), 180);
 
-vacancyTabsEl.querySelectorAll('.tab').forEach((btn) => {
+vacancyTabsEl?.querySelectorAll('.tab').forEach((btn) => {
   btn.addEventListener('click', () => {
-    vacancyTabsEl.querySelectorAll('.tab').forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentStatus = btn.dataset.status;
+    currentStatus = btn.dataset.status || 'pending';
     syncVacancyTabs();
     load();
   });
@@ -2275,11 +3074,10 @@ applyViewTabsEl?.querySelectorAll('.tab').forEach((btn) => {
 
 syncApplyViewTabs();
 
-document.querySelectorAll('.score-band-tabs .tab-band').forEach((btn) => {
+document.querySelectorAll('#panel-score-band .tab-band').forEach((btn) => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.score-band-tabs .tab-band').forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
     currentScoreBand = btn.dataset.band || 'all';
+    syncScoreBandTabs();
     load();
   });
 });
@@ -2297,7 +3095,8 @@ async function runBatch({ minScore, maxScore, label }) {
     confirmMsg =
       `Внимание: батч по скрытым вакансиям (Senior/Lead, 1С, разработчик и т.п.).\n\n${confirmMsg}`;
   } else if (batchScope === 'questionnaire') {
-    confirmMsg += '\n\nВакансии с анкетой работодателя — возможна пауза на ручное заполнение (или HH_QUESTIONNAIRE_AUTO).';
+    confirmMsg +=
+      '\n\nБатч по анкетам: вопросы сохраняются, ответы генерируются (CV/LLM), подстановка и повторная отправка (HH_BATCH_QUESTIONNAIRE_AUTO=1 по умолчанию).';
   } else if (batchScope === 'noQuestionnaire') {
     confirmMsg +=
       '\n\nЕсли при отклике на hh.ru появится анкета работодателя, отклик не будет отправлен: вопросы сохранятся, карточка перейдёт в раздел «Анкета», батч продолжит следующую вакансию.';
@@ -2327,13 +3126,214 @@ document.getElementById('btn-batch-manual')?.addEventListener('click', () =>
   runBatch({ maxScore: scoreThreshold - 1, label: `Ручной <${scoreThreshold}` })
 );
 
-document.getElementById('btn-batch-pause')?.addEventListener('click', () => sendBatchControl('pause'));
-document.getElementById('btn-batch-stop')?.addEventListener('click', () => {
-  if (confirm('Остановить батч? Прогресс сохранится — можно будет нажать «Продолжить».')) {
-    sendBatchControl('stop');
+document.getElementById('btn-job-pause')?.addEventListener('click', () => sendJobControl('pause'));
+document.getElementById('btn-job-stop')?.addEventListener('click', () => {
+  const msg =
+    activeJobControl === 'harvest'
+      ? 'Остановить сбор вакансий? Текущая страница прервётся.'
+      : 'Остановить батч? Прогресс сохранится — можно будет нажать «Продолжить».';
+  if (confirm(msg)) sendJobControl('stop');
+});
+document.getElementById('btn-job-resume')?.addEventListener('click', () => sendJobControl('resume'));
+
+document.getElementById('btn-questionnaire-reprobe-batch')?.addEventListener('click', async () => {
+  if (
+    !confirm(
+      'Открыть hh.ru в Chromium и обновить текст вопросов для карточек с заглушками?\n\n' +
+        'За один раз — до 5 вакансий (нужна сессия npm run login).'
+    )
+  ) {
+    return;
+  }
+  const btn = document.getElementById('btn-questionnaire-reprobe-batch');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api('/api/questionnaire/reprobe-batch', {
+      method: 'POST',
+      body: JSON.stringify({ limit: 5 }),
+    });
+    showToast(res.message || `Probe: ${res.okCount}`, res.failed ? 'neutral' : 'good');
+    await loadItems();
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 });
-document.getElementById('btn-batch-resume')?.addEventListener('click', () => sendBatchControl('resume'));
+
+document.getElementById('btn-questionnaire-prep-batch')?.addEventListener('click', async () => {
+  if (
+    !confirm(
+      'Сгенерировать черновики ответов для всех карточек с анкетой (pending/approved)?\n\n' +
+        'Используется CV/ и при HH_QUESTIONNAIRE_LLM=1 — LLM. Уже сохранённые ответы не перезаписываются.'
+    )
+  ) {
+    return;
+  }
+  const btn = document.getElementById('btn-questionnaire-prep-batch');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api('/api/questionnaire/prep-batch', { method: 'POST', body: '{}' });
+    showToast(res.message || `Готово: ${res.okCount}`, 'good');
+    await loadItems();
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
+async function launchBackgroundApi(path, toastMsg) {
+  const res = await api(path, { method: 'POST', body: '{}' });
+  showToast(res.message || toastMsg || 'Запущено', 'good');
+  refreshJobStatus();
+}
+
+async function runServiceAction(action, triggerEl) {
+  closeServiceDrawer();
+  const wasDisabled = Boolean(triggerEl?.disabled);
+  if (triggerEl) triggerEl.disabled = true;
+  try {
+    switch (action) {
+      case 'sync-hh-responses':
+        await launchBackgroundApi('/api/launch-sync-hh-responses', 'Синхронизация откликов hh.ru');
+        break;
+      case 'sync-hh-chats':
+        await launchBackgroundApi('/api/launch-sync-hh-chats', 'Синхронизация чатов');
+        break;
+      case 'apply-negotiations-cache': {
+        const res = await api('/api/apply-negotiations-cache', { method: 'POST', body: '{}' });
+        showToast(res.message || `Обновлено: ${res.updated}`, 'good');
+        await loadItems();
+        refreshJobStatus();
+        break;
+      }
+      case 'import-negotiations-queue': {
+        const res = await api('/api/import-negotiations-queue', { method: 'POST', body: '{}' });
+        showToast(res.message || `Импорт: ${res.imported}`, 'good');
+        await loadItems();
+        break;
+      }
+      case 'prune-responded':
+        if (
+          !confirm(
+            'Убрать из очереди все вакансии (Проверка/Подходят), где отклик уже на hh.ru?\n\n' +
+              'Статус станет responded — батч их не тронет.'
+          )
+        ) {
+          return;
+        }
+        {
+          const res = await api('/api/prune-responded-queue', { method: 'POST' });
+          showToast(res.message || `Убрано: ${res.changed}`, 'good');
+          await loadItems();
+        }
+        break;
+      case 'sync-resume-from-source':
+        if (
+          !confirm(
+            'Проверить завершённость всех резюме и дополнить опыт/«О себе» с эталона (L2/L3)?\n\nОткроется Chromium.'
+          )
+        ) {
+          return;
+        }
+        await launchBackgroundApi('/api/launch-sync-resume-from-source', 'Синхронизация резюме запущена');
+        break;
+      case 'sync-resume-variants':
+        if (
+          !confirm(
+            'Обновить до 5 резюме на hh.ru?\n\nНужен config/resume-variants.json и Chromium (npm run devops:list-resumes).'
+          )
+        ) {
+          return;
+        }
+        await launchBackgroundApi('/api/launch-sync-resume-variants', 'Обновление резюме на hh.ru');
+        break;
+      case 'import-interview-notes': {
+        const res = await api('/api/import-interview-notes', { method: 'POST', body: '{}' });
+        showToast(res.ok ? `Импорт: ${res.count} файлов` : res.error, res.ok ? 'good' : 'bad');
+        break;
+      }
+      case 'chat-reply-batch':
+        if (!confirm('Сгенерировать черновики ответов для до 15 карточек с вопросами в чате?')) return;
+        {
+          const res = await api('/api/chat-reply-batch', { method: 'POST', body: '{}' });
+          showToast(`Готово: ${res.processed} черновиков`, 'good');
+          await loadItems();
+        }
+        break;
+      case 'questionnaire-reprobe':
+        document.getElementById('btn-questionnaire-reprobe-batch')?.click();
+        break;
+      case 'questionnaire-prep':
+        document.getElementById('btn-questionnaire-prep-batch')?.click();
+        break;
+      default:
+        break;
+    }
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    if (triggerEl) triggerEl.disabled = wasDisabled;
+  }
+}
+
+function initServiceActions() {
+  document.querySelectorAll('[data-service-action]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const action = el.dataset.serviceAction;
+      if (action) void runServiceAction(action, el);
+    });
+  });
+}
+async function loadDailyRoutineSteps() {
+  const list = document.getElementById('routine-steps');
+  if (!list) return;
+  try {
+    const res = await api('/api/daily-routine');
+    list.replaceChildren(
+      ...(res.steps || []).map((s) => {
+        const li = document.createElement('li');
+        li.textContent = s.optional ? `${s.label} (опц.)` : s.label;
+        li.title = s.detail || '';
+        return li;
+      })
+    );
+  } catch {
+    list.innerHTML = '<li>Синхр. отклики → кэш → чаты</li>';
+  }
+}
+
+document.getElementById('btn-daily-routine')?.addEventListener('click', async () => {
+  const withHarvest = document.getElementById('daily-routine-harvest')?.checked;
+  if (
+    !confirm(
+      'Запустить утренний цикл?\n\n' +
+        '1) Синхр. откликов hh.ru (браузер)\n' +
+        '2) Обновление статусов в очереди\n' +
+        '3) Синхр. чатов (браузер)' +
+        (withHarvest ? '\n4) Сбор вакансий (harvest)' : '') +
+        '\n\nНе закрывайте окно Chromium до завершения.'
+    )
+  ) {
+    return;
+  }
+  const btn = document.getElementById('btn-daily-routine');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api('/api/daily-routine-run', {
+      method: 'POST',
+      body: JSON.stringify({ withHarvest: !!withHarvest }),
+    });
+    showToast(res.message || 'Рутина запущена', 'good');
+    refreshJobStatus();
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
 
 document.getElementById('btn-run-harvest')?.addEventListener('click', async () => {
   const periodRaw = document.getElementById('harvest-period')?.value;
@@ -2444,7 +3444,130 @@ initModalLayer({
 });
 
 syncVacancyTabs();
+syncScoreBandTabs();
 syncApplyViewTabs();
+async function ensureChatTemplates() {
+  if (chatTemplatesCache) return chatTemplatesCache;
+  try {
+    const res = await api('/api/chat-templates');
+    chatTemplatesCache = res.templates || [];
+  } catch {
+    chatTemplatesCache = [];
+  }
+  return chatTemplatesCache;
+}
+
+function initCrmUi() {
+  const funnelEl = document.getElementById('applied-funnel-tabs');
+  document.querySelectorAll('[data-applied-funnel]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      currentAppliedFunnel = btn.dataset.appliedFunnel || 'all';
+      funnelEl?.querySelectorAll('[data-applied-funnel]').forEach((b) =>
+        b.classList.toggle('active', b.dataset.appliedFunnel === currentAppliedFunnel)
+      );
+      renderListFromCache(null);
+    });
+  });
+
+  const settingsModal = document.getElementById('settings-modal');
+  const settingsTabBtns = settingsModal?.querySelectorAll('[data-settings-tab]') || [];
+  const settingsPanels = {
+    apply: document.getElementById('settings-panel-apply'),
+    list: document.getElementById('settings-panel-list'),
+    ui: document.getElementById('settings-panel-ui'),
+  };
+
+  function setSettingsTab(tabId) {
+    const id = tabId || 'apply';
+    try {
+      sessionStorage.setItem('hh-settings-tab', id);
+    } catch {
+      /* ignore */
+    }
+    for (const btn of settingsTabBtns) {
+      const on = btn.dataset.settingsTab === id;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    for (const [key, panel] of Object.entries(settingsPanels)) {
+      if (!panel) continue;
+      const on = key === id;
+      panel.classList.toggle('active', on);
+      panel.hidden = !on;
+    }
+  }
+
+  settingsTabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => setSettingsTab(btn.dataset.settingsTab));
+  });
+
+  const openSettings = (tabId) => {
+    closeServiceDrawer();
+    if (!settingsModal) return;
+    let tab = tabId;
+    if (!tab) {
+      try {
+        tab = sessionStorage.getItem('hh-settings-tab') || 'apply';
+      } catch {
+        tab = 'apply';
+      }
+    }
+    setSettingsTab(tab);
+    settingsModal.hidden = false;
+    openModalEl(settingsModal);
+  };
+  const closeSettings = () => {
+    if (!settingsModal) return;
+    settingsModal.hidden = true;
+    closeModalEl(settingsModal);
+  };
+  document.getElementById('btn-open-settings')?.addEventListener('click', () => openSettings());
+  settingsModal?.querySelector('[data-close-settings]')?.addEventListener('click', closeSettings);
+  settingsModal?.querySelector('.modal-close--settings')?.addEventListener('click', closeSettings);
+
+  initServiceDrawer();
+}
+
+function closeServiceDrawer() {
+  const drawer = document.getElementById('service-drawer');
+  if (!drawer) return;
+  drawer.hidden = true;
+  drawer.setAttribute('aria-hidden', 'true');
+  drawer.classList.remove('service-drawer--open');
+}
+
+function openServiceDrawer() {
+  const settingsModal = document.getElementById('settings-modal');
+  if (settingsModal && !settingsModal.hidden) return;
+  const drawer = document.getElementById('service-drawer');
+  const panel = drawer?.querySelector('.service-drawer__panel');
+  if (!drawer || !panel) return;
+  drawer.hidden = false;
+  drawer.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => {
+    drawer.classList.add('service-drawer--open');
+    panel.focus();
+  });
+}
+
+function initServiceDrawer() {
+  const open = () => openServiceDrawer();
+  document.getElementById('btn-open-service')?.addEventListener('click', open);
+  document.querySelectorAll('.btn-open-service-alt, [data-open-service]').forEach((el) => {
+    el.addEventListener('click', open);
+  });
+  document.querySelectorAll('[data-close-service]').forEach((el) => {
+    el.addEventListener('click', closeServiceDrawer);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeServiceDrawer();
+  });
+}
+
+loadDailyRoutineSteps();
+initServiceActions();
+initFunnelUi();
+initCrmUi();
 loadDashboardSettings().then(() => load());
 refreshJobStatus();
 setInterval(refreshJobStatus, 2000);

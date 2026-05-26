@@ -1,119 +1,82 @@
 # Чекпоинт для продолжения работы
 
-**Обновлено:** 2026-05-20 (после перезагрузки ПК)  
-**Версия проекта:** 2.0.0 · ветка `HH_Ai` · тег `v2.0.0`
+**Обновлено:** 2026-05-22 · **Версия проекта:** 2.0.1 (срез, тег `v2.0.1` — после коммита и push)
 
-> Этот файл — сжатая память сессии. Документация проекта: [docs/README.md](README.md). В новом чате: «продолжи по docs/CONTINUATION.md».
+**Новое в 2.0.1:** CRM-дашборд, воронка по union-очереди, поиск в списке, `resume-routing.json`, pipeline анкет, `hh-search` url-safe. См. [CHANGELOG.md](../CHANGELOG.md).
+
+> Этот файл — сжатая память сессии. Документация: [docs/README.md](README.md). В новом чате: «продолжи по docs/CONTINUATION.md».
 
 ---
 
-## Опубликовано (сделано)
+## Опубликовано
 
 | Что | Где |
 |-----|-----|
-| Релиз **2.0.0** | [github.com/emildg8/HH_Ai/releases/tag/v2.0.0](https://github.com/emildg8/HH_Ai/releases/tag/v2.0.0) |
-| Публичный zip | [hh-ai-public-v2.0.0.zip](https://github.com/emildg8/HH_Ai/releases/download/v2.0.0/hh-ai-public-v2.0.0.zip) |
+| Релиз **2.0.0** | [releases/tag/v2.0.0](https://github.com/emildg8/HH_Ai/releases/tag/v2.0.0) |
+| Релиз **2.0.1** | после `git tag v2.0.1 && git push hh_ai v2.0.1` → CI прикрепит zip |
+| Публичный zip | `npm run release:public` → `releases/hh-ai-public-v2.0.1.zip` |
 | Репозиторий | `https://github.com/emildg8/HH_Ai` · ветка **`HH_Ai`** |
-| Коммиты | `0e72219` (Release 2.0.0), `f7dffd0` (fix zip Windows), `43a6e1a` (полная документация HH Ai) |
-| Документация | [docs/README.md](README.md) — оглавление; BATCH, DASHBOARD, CONFIG, TROUBLESHOOTING |
-| Zip на Release | обновлён 2026-05-20 (с новой документацией внутри архива) |
+| Notes | `releases/RELEASE-v2.0.1-notes.md` |
 
-**Канонический git:** только [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai). В `Steev193/hh-ru-apply` **не публикуем** — это лишь идея-основа (см. `docs/ATTRIBUTION.md`).
+**Канонический git:** только [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai). В Steev193/hh-ru-apply **не публикуем**.
 
 ---
 
-## Ключевые фичи 2.0 (контекст диалога)
+## Ключевое в 2.0.1
 
-1. **Батч + анкета** — при анкете отклик не отправляется, код выхода `5` (`lib/hh-apply-exit-codes.mjs`), лимиты дня/часа не тратятся; карточка в разделе «Анкета».
-2. **Журнал батча** — понятные пропуски: `не выбрано резюме «DevOps»`, `анкета: N вопр.` (`lib/batch-skip-reason.mjs`, маркер `[hh-apply-batch-skip]`).
-3. **Области батча** — `queue` / `noQuestionnaire` / `questionnaire` / `hidden` (`lib/batch-scope.mjs`, вкладки дашборда).
-4. **Harvest** — hint анкеты по тексту (`lib/harvest-questionnaire-hint.mjs`), фильтры заголовка, `HH_SEARCH_EXCLUDE_TOKENS`, `HH_LOCAL_SCORE_MIN`.
-5. **Капча** — ожидание в Chromium (`lib/hh-captcha-wait.mjs`, `HH_CAPTCHA_WAIT_MS`).
-6. **Резюме в форме** — `HH_PROFILE_RESUME_TITLE` / `HASH`, `npm run devops:list-resumes`, правки `lib/hh-resume-upload.mjs`.
-7. **UI** — плотность карточек, `ui-card-tuning`, `local-dashboard-defaults.example.mjs`, `questionnaire-choice.mjs`.
+1. **Дашборд CRM** — Рутина / Работа / Отчёты / Настройки; аналитика и воронка (`lib/queue-aggregate.mjs`, `lib/funnel-analytics.mjs`).
+2. **Роутинг резюме** — `config/resume-routing.json`, `lib/hh-resume-picker.mjs`, `resumeId` в URL формы отклика.
+3. **Поиск hh.ru** — `HH_SEARCH_SALARY=0`, exclude только senior/lead/1с в URL (`lib/hh-search.mjs`).
+4. **Анкета** — pipeline, prep/reprobe batch; [QUESTIONNAIRE-AUTOMATION.md](QUESTIONNAIRE-AUTOMATION.md).
+5. **Мейнтейнер** — `npm run setup`, CI release workflow, [MAINTAINER.md](MAINTAINER.md).
+
+Контекст **2.0.0** (батч+анкета код `5`, batch-scope, капча) — без изменений, см. CHANGELOG 2.0.0.
 
 ---
 
-## Локальная среда (после перезагрузки)
+## Локальная среда
 
 ```powershell
-cd <папка-проекта>
-
-# Дашборд (отдельный терминал, не закрывается сам)
-npm run dashboard
-# → http://127.0.0.1:3849  · Ctrl+F5 после обновления кода
-
-# Сессия hh.ru (если сбросилась)
-npm run login
-
-# Публичный срез / zip
-npm run release:public
-# → dist/hh-ai-public + releases/hh-ai-public-v2.0.0.zip
+cd D:\Dev\HH\hh-ru-apply
+git pull hh_ai HH_Ai
+npm run dashboard   # http://127.0.0.1:3849 · Ctrl+F5 после обновления UI
+npm run setup:check
 ```
 
-| Путь | Назначение |
-|------|------------|
-| `data/hh-apply-chat.log` | Лог батча и откликов |
-| `data/vacancies-devops.json` | Очередь DevOps (в git не входит) |
-| `config/profiles/devops.env` | Профиль + резюме (секреты, в git не входит) |
-| `config/secrets.local.env` | OpenRouter и др. |
-| `data/session/` | Cookies Chromium |
-
-**Remote git:** пушить в **`hh_ai`** → emildg8/HH_Ai. `origin` может указывать на Steev193 (исторически) — для работы не использовать.
+**Не коммитить:** `data/batch-state.json`, `data/cover-letter-regen-state.json`, `config/resume-routing.json` (если личный), `releases/RELEASE-public-v*.json`, `releases/hh-ai-public-*.zip`.
 
 ---
 
-## Известные проблемы / открытое
+## Перед тегом v2.0.1
 
-| Тема | Статус | Действие при продолжении |
-|------|--------|---------------------------|
-| Резюме DevOps не всегда выбирается в батче | частично | Проверить `HH_PROFILE_RESUME_HASH`, лог `[batch] Пропуск … резюме`, скрины `data/hh-apply-chat-error-*.png` |
-| Сессия hh.ru после перезагрузки ПК | проверить | `npm run apply` или `npm run login` если редирект на вход |
-| Батч из «Очередь» ловит анкеты | ожидаемо | Для массового отклика — вкладка **«Без анкет»** |
-| `npm run release:public` на Windows | исправлено в `f7dffd0` | Был баг `Compress-Archive -LiteralPath` → `-Path` |
-| Steev193/hh-ru-apply | не наш репо | Только упоминание в ATTRIBUTION, без push |
-| Roadmap R1.2–R1.4 | [~] | Portable zip [ ]; CI release при теге [release.yml] |
-| GitHub Issues backlog | [x] | [#3](https://github.com/emildg8/HH_Ai/issues/3) резюме · [#4](https://github.com/emildg8/HH_Ai/issues/4) apply · [#6](https://github.com/emildg8/HH_Ai/issues/6) селекторы · [#5](https://github.com/emildg8/HH_Ai/issues/5) R2 |
-| QA / maintainer | [x] | docs/QA-CLEAN-INSTALL.md, MAINTAINER.md, UX-FRICTION-LOG.md |
+```powershell
+npm run smoke:release
+npm run verify:local
+npm run release:public
+git add -A   # без секретов и data/
+git commit -m "Release v2.0.1: CRM dashboard, funnel union, resume routing"
+git tag v2.0.1
+git push hh_ai HH_Ai
+git push hh_ai v2.0.1
+```
 
----
-
-## Планы (roadmap, кратко)
-
-См. `docs/ROADMAP.md`:
-
-- **Фаза 1:** portable zip из CI, `install-portable.ps1`, QA на чистой VM.
-- **Фаза 2:** feedback invited/declined → few-shot письма.
-- **Фаза 3:** pre-push hook секретов, Telegram после harvest.
-- **Фаза 4:** выбор `HH_PROFILE` в UI дашборда.
+При необходимости вручную: `gh release create v2.0.1 --repo emildg8/HH_Ai --notes-file releases/RELEASE-v2.0.1-notes.md releases/hh-ai-public-v2.0.1.zip`
 
 ---
 
-## Команды npm (шпаргалка)
+## Открытое / 2.1.0
 
-| Команда | Назначение |
-|---------|------------|
-| `npm run devops:harvest` | Сбор DevOps |
-| `npm run devops:apply-batch` | Батч откликов |
-| `npm run devops:list-resumes` | Hash резюме на hh.ru |
-| `npm run devops:probe-questionnaire` | Probe анкеты |
-| `npm run verify:local` | Проверка |
-| `npm run export:public` | Каталог без секретов |
-| `npm run release:public` | Zip для передачи |
+| Тема | Действие |
+|------|----------|
+| [#3](https://github.com/emildg8/HH_Ai/issues/3) резюме в батче | проверить с `resume-routing` |
+| [#5](https://github.com/emildg8/HH_Ai/issues/5) invited/declined → feedback | старт 2.1.0 |
+| QA на чистой VM | [QA-CLEAN-INSTALL.md](QA-CLEAN-INSTALL.md) |
+| Полная синхронизация откликов hh → очередь | `devops:sync-responses` |
 
----
-
-## История чата (темы сессии)
-
-1. Перезапуск дашборда, harvest, отделение анкет.
-2. Зависание при kill процесса на порту 3849 (долгоживущий сервер + фоновые задачи).
-3. Причины пропусков в батче → человекочитаемый журнал.
-4. Релиз **2.0.0**, доки, `release:public`, публикация на **emildg8/HH_Ai**.
-
-Транскрипт Cursor (если нужны детали): agent-transcripts, id `29b3ec05-c7ce-496f-9f7d-0ad44c1ca91b`.
+См. [ROADMAP.md](ROADMAP.md).
 
 ---
 
 ## Первое сообщение в следующей сессии (пример)
 
-> Продолжаем HH Ai 2.0 по `docs/CONTINUATION.md`. [ваша задача, например: донастроить выбор резюме DevOps в батче / …]
+> Продолжаем HH Ai 2.0.1 по `docs/CONTINUATION.md`. [задача]

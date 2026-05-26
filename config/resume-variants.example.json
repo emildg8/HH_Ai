@@ -1,0 +1,41 @@
+{
+  "maxVariants": 5,
+  "comment": "Скопируйте в config/resume-variants.json. hash — из npm run devops:list-resumes. Костяк (образование, навыки, контакты) не трогаем — меняем только «О себе» и описание последнего места работы.",
+  "variants": [
+    {
+      "role": "devops",
+      "titleOnHh": "DevOps-инженер",
+      "hash": "",
+      "aboutMe": "",
+      "experienceDescription": ""
+    },
+    {
+      "role": "support",
+      "titleOnHh": "Специалист технической поддержки L2",
+      "hash": "",
+      "aboutMe": "",
+      "experienceDescription": ""
+    },
+    {
+      "role": "tam",
+      "titleOnHh": "Technical Account Manager",
+      "hash": "",
+      "aboutMe": "",
+      "experienceDescription": ""
+    },
+    {
+      "role": "sysengineer",
+      "titleOnHh": "Системный инженер",
+      "hash": "",
+      "aboutMe": "",
+      "experienceDescription": ""
+    },
+    {
+      "role": "sre",
+      "titleOnHh": "SRE / инженер по надёжности",
+      "hash": "",
+      "aboutMe": "",
+      "experienceDescription": ""
+    }
+  ]
+}

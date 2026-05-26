@@ -21,11 +21,11 @@ async function main() {
     process.exit(1);
   }
 
-  const ctx = await launchPersistentContextSafe(
-    profile,
-    { headless: true, viewport: { width: 1280, height: 900 }, locale: 'ru-RU' },
-    { owner: 'list-resumes' }
-  );
+  const launchOpts = { headless: false, viewport: { width: 1280, height: 900 }, locale: 'ru-RU' };
+  const ch = String(process.env.HH_PLAYWRIGHT_CHANNEL || '').trim();
+  if (ch) launchOpts.channel = ch;
+
+  const ctx = await launchPersistentContextSafe(profile, launchOpts, { owner: 'list-resumes' });
   const page = ctx.pages()[0] || (await ctx.newPage());
 
   try {
@@ -65,14 +65,11 @@ async function main() {
     }
 
     const want = String(process.env.HH_PROFILE_RESUME_TITLE || 'DevOps').toLowerCase();
-    console.log('Резюме на hh.ru:\n');
+    console.log(`Резюме на hh.ru (${rows.length}):\n`);
     for (const r of rows) {
-      const mark =
-        r.title.toLowerCase().includes(want) || want.includes(r.title.toLowerCase().slice(0, 6))
-          ? '  ← подходит для HH_PROFILE_RESUME_TITLE'
-          : '';
+      const mark = r.title.toLowerCase().includes(want) ? '  ← HH_PROFILE_RESUME_TITLE' : '';
       console.log(`  ${r.title}`);
-      console.log(`    HH_PROFILE_RESUME_HASH=${r.hash}${mark}\n`);
+      console.log(`    hash=${r.hash}${mark}\n`);
     }
     const cfgHash = String(process.env.HH_PROFILE_RESUME_HASH || '').trim();
     if (cfgHash) {

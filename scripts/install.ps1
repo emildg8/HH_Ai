@@ -28,10 +28,18 @@ function Ensure-Copy($src, $dest, $label) {
 }
 
 Ensure-Copy ".env.example" ".env" ".env"
-Ensure-Copy "config/secrets.example.env" "config/secrets.local.env" "config/secrets.local.env"
+if (-not (Test-Path "config/secrets.local.env")) {
+  if (Test-Path "config/presets/no-llm.env") {
+    Copy-Item "config/presets/no-llm.env" "config/secrets.local.env"
+    Write-Host "  + config/secrets.local.env (режим без LLM — см. npm run setup)"
+  } else {
+    Ensure-Copy "config/secrets.example.env" "config/secrets.local.env" "config/secrets.local.env"
+  }
+}
 Ensure-Copy "config/profiles/devops.env.example" "config/profiles/devops.env" "config/profiles/devops.env"
 Ensure-Copy "config/cover-letter.example.txt" "config/cover-letter.txt" "config/cover-letter.txt"
 Ensure-Copy "config/cover-letter-style-examples.example.txt" "config/cover-letter-style-examples.txt" "config/cover-letter-style-examples.txt (опционально)"
+Ensure-Copy "config/resume-routing.example.json" "config/resume-routing.json" "config/resume-routing.json"
 
 New-Item -ItemType Directory -Force -Path "data", "CV" | Out-Null
 
@@ -42,13 +50,11 @@ $checkExit = $LASTEXITCODE
 
 Write-Host ""
 Write-Host "Дальше:" -ForegroundColor Green
-Write-Host "  1. npm run setup  (или docs/CONFIG-GUIDE.md — LLM, профиль)"
-Write-Host "  2. config/secrets.local.env — ключ OpenRouter или Ollama (или без LLM)"
-Write-Host "  3. config/profiles/devops.env — HH_PROFILE_RESUME_TITLE"
-Write-Host "  4. CV/ — положите resume.pdf или .md"
-Write-Host "  5. npm run login"
-Write-Host "  6. npm run dashboard  ->  http://127.0.0.1:3849"
+Write-Host "  1. config/profiles/devops.env — HH_PROFILE_RESUME_TITLE (как на hh.ru)"
+Write-Host "  2. npm run login"
+Write-Host "  3. npm run dashboard  ->  http://127.0.0.1:3849"
 Write-Host ""
-Write-Host "Кратко: docs/QUICKSTART.md"
+Write-Host "Опционально: npm run setup (LLM), CV/resume.pdf"
+Write-Host "Чеклист: docs/FIRST-RUN.md · docs/QUICKSTART.md"
 
 if ($checkExit -ne 0) { exit $checkExit }

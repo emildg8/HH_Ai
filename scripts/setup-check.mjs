@@ -10,6 +10,7 @@ import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
 import { ROOT, CV_DIR, getQueueFile } from '../lib/paths.mjs';
 import { listProfiles } from '../lib/load-profile.mjs';
 import { sessionProfilePath } from '../lib/paths.mjs';
+import { playwrightChromiumInstalled } from '../lib/playwright-launch.mjs';
 
 loadEnv();
 loadDevOpsEnv();
@@ -84,6 +85,14 @@ function main() {
   if (/HH_PROFILE_RESUME_HASH\s*=\s*[a-f0-9]{8,}/i.test(prof)) pass('HH_PROFILE_RESUME_HASH задан');
   else warning('HH_PROFILE_RESUME_HASH пуст — npm run devops:list-resumes после login');
 
+  const routingPath = path.join(ROOT, 'config', 'resume-routing.json');
+  if (fs.existsSync(routingPath)) pass('config/resume-routing.json (резюме по типу вакансии)');
+  else action('Создайте config/resume-routing.json из config/resume-routing.example.json');
+
+  const variantsPath = path.join(ROOT, 'config', 'resume-variants.json');
+  if (fs.existsSync(variantsPath)) pass('config/resume-variants.json (до 5 резюме на hh.ru)');
+  else action('Скопируйте config/resume-variants.example.json → resume-variants.json для редактирования резюме на hh');
+
   if (fs.existsSync(path.join(ROOT, 'config', 'cover-letter.txt'))) pass('config/cover-letter.txt есть');
   else action('copy config/cover-letter.example.txt config/cover-letter.txt');
 
@@ -105,6 +114,12 @@ function main() {
   const sessionDir = sessionProfilePath();
   if (fs.existsSync(sessionDir)) pass('Профиль Chromium (сессия) есть');
   else action('npm run login — войти на hh.ru');
+
+  if (playwrightChromiumInstalled()) pass('Playwright bundled Chromium установлен');
+  else action('npx playwright install chromium — браузер для harvest/откликов');
+
+  const pwChannel = String(process.env.HH_PLAYWRIGHT_CHANNEL || '').trim();
+  if (pwChannel) warning(`HH_PLAYWRIGHT_CHANNEL=${pwChannel} — используется системный браузер вместо bundled`);
 
   const queue = getQueueFile();
   if (fs.existsSync(queue)) {

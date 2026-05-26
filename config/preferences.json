@@ -1,9 +1,15 @@
 {
-  "minMonthlyRub": 200000,
+  "minMonthlyRub": 150000,
+  "targetMonthlyRub": 180000,
+  "maxMonthlyRubSearch": 300000,
   "minMonthlyUsd": 0,
   "rubPerUsd": 98,
-  "requireRemote": true,
-  "allowHybrid": false,
+  "requireRemote": false,
+  "allowHybrid": true,
+  "allowOfficeMoscow": true,
+  "hybridMoscowOnly": true,
+  "blockSpokenEnglishRequired": true,
+  "blockNightShiftOnly": true,
   "allowUnknownSalary": true,
   "remotePositivePatterns": [
     "удален",
@@ -14,17 +20,23 @@
     "из любой точки",
     "любая локация",
     "удаленная работа",
-    "удалённая работа"
+    "удалённая работа",
+    "полностью удален",
+    "полностью удалён"
   ],
   "hybridPatterns": [
     "гибрид",
-    "hybrid"
+    "hybrid",
+    "частично удален",
+    "частично удалён"
   ],
   "officeOnlyPatterns": [
     "только офис",
     "офис обязателен",
     "работа в офисе компании",
-    "в офисе ежедневно"
+    "в офисе ежедневно",
+    "без удален",
+    "без удалён"
   ],
   "excludeSeniorRoles": true,
   "excludeSeniorRolePatterns": [
@@ -37,9 +49,6 @@
     "тимлид",
     "lead devops",
     "lead sre",
-    "lead golang",
-    "lead go",
-    "golang lead",
     "старший devops",
     "ведущий devops"
   ],
@@ -61,8 +70,6 @@
     "ml engineer",
     "machine learning",
     "data scientist",
-    "тестировщик",
-    "qa engineer",
     "product manager",
     "ux designer",
     "php разработ",
@@ -90,12 +97,12 @@
     "web developer"
   ],
   "llmScoreWeights": {
-    "vacancy": 0.35,
-    "cvMatch": 0.65
+    "vacancy": 0.45,
+    "cvMatch": 0.55
   },
   "hhApplyChatMaxPerHour": 50,
   "hhApplyChatMaxPerDay": 1000,
   "hhApplyChatMaxPerMonth": 5000,
   "dashboardMinScoreFilter": 50,
-  "dashboardBatchSize": 26
+  "dashboardBatchSize": 50
 }

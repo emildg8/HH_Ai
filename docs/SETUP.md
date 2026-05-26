@@ -1,6 +1,6 @@
 # Установка HH Ai
 
-**Версия:** 2.0.0 · [Вся документация](README.md) · Публичный zip: [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md)
+**Версия:** 2.0.1 · [Вся документация](README.md) · Публичный zip: [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md)
 
 **Репозиторий:** [github.com/emildg8/HH_Ai](https://github.com/emildg8/HH_Ai) (ветка `HH_Ai`). Идея-основа — [ATTRIBUTION.md](ATTRIBUTION.md).
 
