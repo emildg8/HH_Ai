@@ -1601,8 +1601,13 @@ body {
 #app-shell[data-sidebar-mode='compact'] .sidebar-panel__expandable,
 #app-shell[data-sidebar-mode='compact'] .sidebar-hint,
 #app-shell[data-sidebar-mode='compact'] .routine-steps,
-#app-shell[data-sidebar-mode='compact'] .routine-harvest-opt {
+#app-shell[data-sidebar-mode='compact'] .routine-harvest-opt,
+#app-shell[data-sidebar-mode='compact'] .crm-action-grid {
   display: none;
+}
+
+.sidebar-mode-toggle {
+  margin: 0.25rem 0 0.35rem;
 }
 
 #app-shell[data-sidebar-mode='compact'] .btn-routine-hero {

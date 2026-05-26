@@ -3458,6 +3458,28 @@ async function ensureChatTemplates() {
 }
 
 function initCrmUi() {
+  const shell = document.getElementById('app-shell');
+  const sidebarModeBtns = document.querySelectorAll('[data-sidebar-mode]');
+  function setSidebarMode(mode) {
+    const m = mode === 'compact' ? 'compact' : 'full';
+    if (shell) shell.dataset.sidebarMode = m;
+    try {
+      localStorage.setItem('hh-sidebar-mode', m);
+    } catch {
+      /* ignore */
+    }
+    sidebarModeBtns.forEach((b) => b.classList.toggle('active', b.dataset.sidebarMode === m));
+  }
+  try {
+    const saved = localStorage.getItem('hh-sidebar-mode');
+    if (saved === 'compact' || saved === 'full') setSidebarMode(saved);
+  } catch {
+    /* ignore */
+  }
+  sidebarModeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => setSidebarMode(btn.dataset.sidebarMode));
+  });
+
   const funnelEl = document.getElementById('applied-funnel-tabs');
   document.querySelectorAll('[data-applied-funnel]').forEach((btn) => {
     btn.addEventListener('click', () => {

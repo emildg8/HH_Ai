@@ -10,10 +10,10 @@
 
 ## Приоритет 1 (осталось)
 
-1. **Связать переписки hh с очередью** — частично: импорт из кэша; полное совпадение vacancyId при harvest — в работе.
-2. **После транскрибации** — `npm run devops:analyze-interviews` → подсказки в «К собесу» и в черновиках чата автоматически.
-3. **5 резюме** — после ваших 3 копий: hash в `resume-variants.json` + `resume-routing` (tam, sysengineer), `devops:sync-resume-variants`.
-4. **Лимиты hh** — жёсткий дневной cap откликов в дашборде + пауза при капче (уже частично есть — вынести в рутину предупреждением).
+1. **Связать переписки hh с очередью** — импорт из кэша есть; после sync: `devops:apply-negotiations-cache`.
+2. **После транскрибации** — `npm run devops:analyze-interviews` → подсказки в «К собесу» и черновиках чата.
+3. **5 резюме** — hash в конфиге есть; периодически `devops:sync-resume-from-source` при смене эталона.
+4. **Лимиты hh** — cap в настройках; пауза при капче — вынести в toast рутины.
 
 ## Приоритет 2
 
@@ -26,7 +26,7 @@
 
 9. **A/B резюме** — метрика просмотр/приглашение по `resumeRouting.role` в конверсии.
 10. **Реплика собеседований** — RAG по `data/interview-transcripts` в `interview-prep` и ответах в чат.
-11. **Публичный релиз** — вынести hiring-roadmap и daily-routine в README для форка HH Ai.
+11. ~~**Публичный релиз 2.0.1**~~ — [v2.0.1](https://github.com/emildg8/HH_Ai/releases/tag/v2.0.1), FIRST-RUN, install, скрины.
 
 ## Риски
 

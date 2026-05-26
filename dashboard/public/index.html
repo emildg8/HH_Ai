@@ -38,7 +38,7 @@
         }
       } catch (_) {}
     </script>
-    <link rel="stylesheet" href="/style.css?v=20260525crm14" />
+    <link rel="stylesheet" href="/style.css?v=20260526crm15" />
   </head>
   <body>
     <div id="app-shell" class="app crm-layout" aria-label="HH Ai — дашборд откликов">
@@ -51,13 +51,17 @@
               <p class="brand-sub">Поиск · отклики · воронка</p>
             </div>
           </header>
+          <div class="segmented sidebar-mode-toggle crm-seg-tight" role="tablist" aria-label="Режим сайдбара">
+            <button type="button" class="seg-btn active" data-sidebar-mode="full">Полный</button>
+            <button type="button" class="seg-btn" data-sidebar-mode="compact">Кратко</button>
+          </div>
 
           <div class="crm-status">
             <p class="job-status" id="job-status" title="">Готов</p>
             <div class="apply-rate-meters" id="apply-rate-meters" aria-label="Лимиты откликов"></div>
           </div>
 
-          <section class="crm-kpi" aria-label="Воронка и конверсия">
+          <section class="crm-kpi sidebar-panel__expandable" aria-label="Воронка и конверсия">
             <div class="crm-kpi-head">
               <button type="button" class="btn btn-ghost btn-xs btn-funnel-open" id="btn-open-funnel" data-tip="Графики, фильтры, конверсия">Аналитика</button>
             </div>
@@ -77,7 +81,7 @@
               <button type="button" class="btn btn-secondary" id="btn-batch-auto" data-tip="Батч авто ≥ порога">Батч авто</button>
               <button type="button" class="btn btn-ghost btn-batch-manual" id="btn-batch-manual" data-tip="Батч &lt; порога">Батч ручн.</button>
             </div>
-            <label class="crm-harvest-row" title="Период сбора вакансий">
+            <label class="crm-harvest-row sidebar-panel__expandable" title="Период сбора вакансий">
               <span class="crm-harvest-label">Сбор за</span>
               <select id="harvest-period" class="field-input field-input--compact">
                 <option value="0">всё</option>
@@ -99,7 +103,7 @@
             </div>
           </nav>
 
-          <section class="sidebar-quick" aria-label="Быстрые действия">
+          <section class="sidebar-quick sidebar-panel__expandable" aria-label="Быстрые действия">
             <div class="sidebar-quick__grid">
               <button type="button" class="btn btn-ghost btn-sm sidebar-quick__btn" data-service-action="sync-hh-responses" data-tip="Синхр. откликов и статусов с hh.ru">Отклики</button>
               <button type="button" class="btn btn-ghost btn-sm sidebar-quick__btn" data-service-action="sync-hh-chats" data-tip="Подтянуть чаты переговоров">Чаты</button>
@@ -109,7 +113,7 @@
             <button type="button" class="btn btn-ghost btn-block btn-open-service-alt" data-tip="Все сервисные операции">Ещё сервис…</button>
           </section>
 
-          <div class="sidebar-filters" id="sidebar-queue-filters" aria-label="Фильтры очереди">
+          <div class="sidebar-filters sidebar-panel__expandable" id="sidebar-queue-filters" aria-label="Фильтры очереди">
             <div class="sidebar-filters__row" id="panel-score-band">
               <div class="segmented score-band-tabs crm-seg-tight" role="tablist" aria-label="Оценка">
                 <button type="button" data-band="high" class="tab tab-band seg-btn active">Авто</button>
@@ -662,6 +666,6 @@
       </div>
     </div>
 
-    <script type="module" src="/app.js?v=20260525crm13"></script>
+    <script type="module" src="/app.js?v=20260526crm15"></script>
   </body>
 </html>

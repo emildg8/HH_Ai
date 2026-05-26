@@ -56,5 +56,7 @@ Write-Host "  3. npm run dashboard  ->  http://127.0.0.1:3849"
 Write-Host ""
 Write-Host "Опционально: npm run setup (LLM), CV/resume.pdf"
 Write-Host "Чеклист: docs/FIRST-RUN.md · docs/QUICKSTART.md"
+Write-Host ""
+Write-Host "Перезапуск UI после git pull: npm run dashboard и Ctrl+F5"
 
 if ($checkExit -ne 0) { exit $checkExit }
