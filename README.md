@@ -1,6 +1,6 @@
 # HH Ai — локальный помощник откликов на hh.ru
 
-[![Release](https://img.shields.io/github/v/release/emildg8/HH_Ai?label=3.0.2)](https://github.com/emildg8/HH_Ai/releases)
+[![Release](https://img.shields.io/github/v/release/emildg8/HH_Ai?label=3.0.3)](https://github.com/emildg8/HH_Ai/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Версия:** 3.0.3 · [**Быстрый старт**](docs/QUICKSTART.md) · [Документация](docs/README.md) · [Скачать](https://github.com/emildg8/HH_Ai/releases/latest) · [Changelog](CHANGELOG.md)
