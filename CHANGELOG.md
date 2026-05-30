@@ -2,6 +2,14 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версии — [SemVer](https://semver.org/lang/ru/).
 
+## [3.0.1] — 2026-05-30
+
+### Fixed
+
+- **CI:** `rust-toolchain.toml` — корректный формат для Tauri build на Windows.
+- **QA clean install:** `setup:check` в режиме `HH_QA_CLEAN` — ожидаемые todo (resume title, variants).
+- **Dashboard UI smoke:** нет console 404 от отсутствующего `local-dashboard-defaults.mjs`.
+
 ## [3.0.0] — 2026-05-30
 
 «Финальный продукт»: desktop-приложение Windows, автотест установки A+B, CI release с installer.

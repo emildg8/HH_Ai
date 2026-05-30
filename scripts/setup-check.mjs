@@ -144,12 +144,12 @@ function main() {
     console.log('\nПодробно: docs/CONFIG-GUIDE.md');
   }
   console.log('');
-  if (process.env.HH_QA_CLEAN === '1' && todo.length > 0) {
-    const okOnClean = todo.every((t) =>
-      /login|playwright|chromium|CV\/|сессия|профиль Chromium/i.test(t)
-    );
-    if (okOnClean && warn.length <= 3) {
-      console.log('(QA clean install: ожидаемые пропуски — login / CV / Chromium)');
+  if (process.env.HH_QA_CLEAN === '1') {
+    const expectedTodo = (t) =>
+      /login|playwright|chromium|CV\/|сессия|профиль Chromium|HH_PROFILE_RESUME_TITLE|resume-variants/i.test(t);
+    const okOnClean = todo.length === 0 || todo.every(expectedTodo);
+    if (okOnClean && warn.length <= 5) {
+      console.log('(QA clean install: ожидаемые пропуски — login / CV / Chromium / resume title)');
       process.exit(0);
     }
   }

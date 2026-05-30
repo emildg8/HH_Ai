@@ -75,6 +75,7 @@ function applyInstallCopies(root, variant) {
     ['config/cover-letter-style-examples.example.txt', 'config/cover-letter-style-examples.txt'],
     ['config/resume-routing.example.json', 'config/resume-routing.json'],
     ['config/resume-raise-schedule.example.json', 'config/resume-raise-schedule.json'],
+    ['config/resume-variants.example.json', 'config/resume-variants.json'],
   ];
   for (const [src, dest] of copies) {
     const sp = path.join(root, src);
