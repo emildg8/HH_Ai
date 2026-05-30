@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{Manager, RunEvent, State};
+use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Manager, RunEvent, State};
 
 struct DashboardSidecar(Mutex<Option<Child>>);
 
@@ -38,26 +39,56 @@ fn dashboard_up(port: u16) -> bool {
     resp.contains(" 200 ")
 }
 
-fn hh_ai_root() -> PathBuf {
-    if let Ok(p) = std::env::var("HH_AI_ROOT") {
-        return PathBuf::from(p);
-    }
+fn dev_repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("..")
 }
 
-fn spawn_dashboard_child() -> Result<Child, String> {
-    let root = hh_ai_root();
+fn hh_ai_root(app: &AppHandle) -> PathBuf {
+    if let Ok(p) = std::env::var("HH_AI_ROOT") {
+        let path = PathBuf::from(p);
+        if path.join("scripts/dashboard-server.mjs").exists() {
+            return path;
+        }
+    }
+    if let Ok(dir) = app.path().resolve("hh-ai", BaseDirectory::Resource) {
+        if dir.join("scripts/dashboard-server.mjs").exists() {
+            return dir;
+        }
+    }
+    let bundled = dev_repo_root()
+        .join("desktop")
+        .join("hh-ai-desktop")
+        .join("bundled")
+        .join("hh-ai");
+    if bundled.join("scripts/dashboard-server.mjs").exists() {
+        return bundled;
+    }
+    dev_repo_root()
+}
+
+fn node_program(app: &AppHandle) -> PathBuf {
+    if let Ok(exe) = app.path().resolve("node/node.exe", BaseDirectory::Resource) {
+        if exe.exists() {
+            return exe;
+        }
+    }
+    PathBuf::from("node")
+}
+
+fn spawn_dashboard_child(app: &AppHandle) -> Result<Child, String> {
+    let root = hh_ai_root(app);
     let script = root.join("scripts").join("dashboard-server.mjs");
     if !script.exists() {
         return Err(format!(
-            "нет scripts/dashboard-server.mjs (HH_AI_ROOT={})",
+            "нет scripts/dashboard-server.mjs (root={})",
             root.display()
         ));
     }
-    Command::new("node")
+    let node = node_program(app);
+    Command::new(node)
         .arg(script)
         .current_dir(&root)
         .stdout(Stdio::null())
@@ -76,7 +107,7 @@ fn wait_dashboard(port: u16, secs: u64) -> bool {
     false
 }
 
-fn ensure_dashboard_running(sidecar: &DashboardSidecar) -> bool {
+fn ensure_dashboard_running(app: &AppHandle, sidecar: &DashboardSidecar) -> bool {
     let port = dashboard_port();
     if dashboard_up(port) {
         return true;
@@ -84,7 +115,7 @@ fn ensure_dashboard_running(sidecar: &DashboardSidecar) -> bool {
     {
         let mut guard = sidecar.0.lock().expect("sidecar lock");
         if guard.is_none() {
-            match spawn_dashboard_child() {
+            match spawn_dashboard_child(app) {
                 Ok(child) => *guard = Some(child),
                 Err(e) => {
                     eprintln!("[hh-ai-desktop] {e}");
@@ -104,7 +135,7 @@ fn stop_dashboard(sidecar: &DashboardSidecar) {
     }
 }
 
-fn navigate_dashboard(app: &tauri::AppHandle) -> bool {
+fn navigate_dashboard(app: &AppHandle) -> bool {
     let port = dashboard_port();
     let Some(win) = app.get_webview_window("main") else {
         return false;
@@ -113,13 +144,14 @@ fn navigate_dashboard(app: &tauri::AppHandle) -> bool {
     win.navigate(url.parse().expect("dashboard url")).is_ok()
 }
 
-fn run_node_script(args: &[&str]) -> Result<String, String> {
-    let root = hh_ai_root();
+fn run_node_script(app: &AppHandle, args: &[&str]) -> Result<String, String> {
+    let root = hh_ai_root(app);
     let script = root.join("scripts").join("desktop-chromium.mjs");
     if !script.exists() {
         return Err(format!("нет {}", script.display()));
     }
-    let output = Command::new("node")
+    let node = node_program(app);
+    let output = Command::new(node)
         .arg(script)
         .args(args)
         .current_dir(&root)
@@ -135,18 +167,18 @@ fn run_node_script(args: &[&str]) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn check_chromium() -> bool {
-    run_node_script(&["--check"])
+fn check_chromium(app: AppHandle) -> bool {
+    run_node_script(&app, &["--check"])
         .map(|s| s.starts_with("installed"))
         .unwrap_or(false)
 }
 
 #[tauri::command]
-fn install_chromium() -> Result<String, String> {
-    if check_chromium() {
+fn install_chromium(app: AppHandle) -> Result<String, String> {
+    if check_chromium(app.clone()) {
         return Ok("installed".into());
     }
-    run_node_script(&["--install"])
+    run_node_script(&app, &["--install"])
 }
 
 #[tauri::command]
@@ -155,16 +187,21 @@ fn check_dashboard() -> bool {
 }
 
 #[tauri::command]
-fn open_dashboard(app: tauri::AppHandle, sidecar: State<'_, DashboardSidecar>) -> bool {
-    if !ensure_dashboard_running(&sidecar) {
+fn open_dashboard(app: AppHandle, sidecar: State<'_, DashboardSidecar>) -> bool {
+    if !ensure_dashboard_running(&app, &sidecar) {
         return false;
     }
     navigate_dashboard(&app)
 }
 
 #[tauri::command]
-fn start_dashboard_sidecar(sidecar: State<'_, DashboardSidecar>) -> bool {
-    ensure_dashboard_running(&sidecar)
+fn start_dashboard_sidecar(app: AppHandle, sidecar: State<'_, DashboardSidecar>) -> bool {
+    ensure_dashboard_running(&app, &sidecar)
+}
+
+#[tauri::command]
+fn hh_ai_root_path(app: AppHandle) -> String {
+    hh_ai_root(&app).display().to_string()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -176,12 +213,14 @@ pub fn run() {
             open_dashboard,
             start_dashboard_sidecar,
             check_chromium,
-            install_chromium
+            install_chromium,
+            hh_ai_root_path
         ])
         .setup(|app| {
+            let handle = app.handle().clone();
             let sidecar = app.state::<DashboardSidecar>();
-            if ensure_dashboard_running(&sidecar) {
-                let _ = navigate_dashboard(app.handle());
+            if ensure_dashboard_running(&handle, &sidecar) {
+                let _ = navigate_dashboard(&handle);
             }
             Ok(())
         })

@@ -153,6 +153,8 @@ function main() {
     'SECURITY.md',
     'CONTRIBUTING.md',
     'docker-compose.yml',
+    'start-dashboard.bat',
+    'start-hh-ai.ps1',
   ]) {
     const src = path.join(ROOT, f);
     if (!fs.existsSync(src)) continue;

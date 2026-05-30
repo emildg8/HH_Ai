@@ -1,22 +1,29 @@
-# HH Ai 2.2.0 — для нового пользователя
+# HH Ai 3.0.0 — для нового пользователя
 
-**Скачать:** [hh-ai-public-v2.2.0.zip](https://github.com/emildg8/HH_Ai/releases/latest) или **hh-ru-apply-win-x64-v2.2.0.zip** (то же содержимое)  
+**Скачать:** [Releases](https://github.com/emildg8/HH_Ai/releases/latest)
+
+| Артефакт | Для кого |
+|----------|----------|
+| **HH-Ai_*-setup.exe** | Windows — приложение «как программа» (рекомендуется) |
+| **hh-ai-public-v3.0.0.zip** | Любая ОС с Node.js — portable / git-free |
+| **hh-ru-apply-win-x64-v3.0.0.zip** | То же, альias для Windows |
+
 **Минимум ручного труда:** [FIRST-RUN.md](FIRST-RUN.md) · **5 шагов:** [QUICKSTART.md](QUICKSTART.md)
 
 ---
 
-## Что внутри zip
+## Вариант 1 — Desktop installer (Windows)
 
-| Есть | Нет (создаёт install) |
-|------|------------------------|
-| Код, дашборд, примеры конфигов | Сессия hh.ru |
-| `docs/`, `EXPORT-README.md`, `start-dashboard.bat` | Ваши вакансии и CV |
-| `data/vacancies-queue.example.json` — демо | API-ключи, hash резюме |
-| `config/*.example.*`, `scripts/install-portable.ps1` | Логи и скриншоты ошибок |
+1. Скачайте `HH-Ai_*-setup.exe` с Releases.
+2. Установите (Current User, без admin).
+3. Запустите **HH Ai** из меню Пуск.
+4. На экране подготовки: **Установить Chromium** → один раз **login** на hh.ru (см. FIRST-RUN).
+
+Приложение само поднимает дашборд на http://127.0.0.1:3849.
 
 ---
 
-## Установка за 4 шага
+## Вариант 2 — Portable zip
 
 ### 1. Распакуйте
 
@@ -24,25 +31,11 @@
 
 ### 2. Установщик
 
-**Из git clone:**
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1
-```
-
-**Из zip (без git):**
-
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install-portable.ps1
 ```
 
-После install-portable можно запускать **`start-dashboard.bat`** с рабочего стола или из папки.
-
-```bash
-bash scripts/install.sh
-```
-
-Создаёт: `.env`, `secrets.local.env` (без LLM), профиль `devops`, шаблон письма, `resume-routing.json` из example.
+Или **`start-dashboard.bat`** / **`start-hh-ai.ps1`** после install.
 
 ### 3. Два поля и вход
 
@@ -64,31 +57,27 @@ npm run dashboard
 
 ---
 
-## Сценарии
+## Что внутри zip
 
-| Задача | Как |
-|--------|-----|
-| Сбор вакансий | `npm run harvest` или **Сбор** в сайдбаре |
-| Массовый отклик | Вкладка **«Без анкет»** → батч ([BATCH.md](BATCH.md)) |
-| Аналитика | Кнопка **Аналитика** в сайдбаре |
-| Анкета | Вкладка **«Анкета»** → ответы → отклик |
-| Капча | Решить в окне Chromium |
+| Есть | Нет (создаёт install) |
+|------|------------------------|
+| Код, дашборд, примеры конфигов | Сессия hh.ru |
+| `docs/`, `EXPORT-README.md`, `start-dashboard.bat` | Ваши вакансии и CV |
+| `data/vacancies-queue.example.json` — демо | API-ключи, hash резюме |
+| `config/*.example.*`, `scripts/install-portable.ps1` | Логи и скриншоты ошибок |
 
 ---
 
-## Проверка
+## Требования
 
-```bash
-npm run verify:local
-npm run qa:public
-```
+- **Node.js 18+** (для zip; в desktop installer Node bundled)
+- **Windows 10/11** для `.exe` installer
+- Интернет для hh.ru и опционально LLM
 
 ---
 
 ## Безопасность
 
-Не публикуйте `.env`, `data/session/`, очереди, `CV/`, `config/resume-routing.json` с вашими hash. [SECURITY.md](../SECURITY.md)
+Не публикуйте `data/session/`, `config/secrets.local.env`, `CV/`. См. [SECURITY.md](SECURITY.md).
 
-## Лицензия
-
-MIT · [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai)
+Канонический репозиторий: [github.com/emildg8/HH_Ai](https://github.com/emildg8/HH_Ai).

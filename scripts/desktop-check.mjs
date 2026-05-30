@@ -30,7 +30,11 @@ pass('node', process.version);
 
 const cargo = cmdOk('cargo', ['--version']);
 if (cargo) pass('rust/cargo', cargo);
-else fail('rust/cargo', 'установите https://rustup.rs для сборки Tauri');
+else if (process.env.HH_DESKTOP_REQUIRE_RUST === '1') {
+  fail('rust/cargo', 'установите https://rustup.rs для сборки Tauri');
+} else {
+  pass('rust/cargo', 'optional — нужен для tauri:build');
+}
 
 const tauriDir = path.join(desktopDir, 'src-tauri');
 if (fs.existsSync(path.join(tauriDir, 'tauri.conf.json'))) pass('desktop/scaffold', desktopDir);
@@ -53,6 +57,14 @@ if (fs.existsSync(mainRs)) {
 const chromiumScript = path.join(ROOT, 'scripts', 'desktop-chromium.mjs');
 if (fs.existsSync(chromiumScript)) pass('desktop/chromium-script');
 else fail('desktop/chromium-script');
+
+const bundleScript = path.join(ROOT, 'scripts', 'desktop-bundle.mjs');
+if (fs.existsSync(bundleScript)) pass('desktop/bundle-script');
+else fail('desktop/bundle-script');
+
+const icons = path.join(tauriDir, 'icons', 'icon.ico');
+if (fs.existsSync(icons)) pass('desktop/icons');
+else fail('desktop/icons', 'запустите scripts/make-app-icon.ps1 && tauri icon');
 
 const r = spawnSync(process.execPath, ['--check', path.join(ROOT, 'scripts', 'dashboard-server.mjs')], {
   encoding: 'utf8',

@@ -2,6 +2,29 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версии — [SemVer](https://semver.org/lang/ru/).
 
+## [3.0.0] — 2026-05-30
+
+«Финальный продукт»: desktop-приложение Windows, автотест установки A+B, CI release с installer.
+
+### Added
+
+- **HH Ai Desktop (Tauri 3.0):** WebView дашборда, sidecar `dashboard-server`, bundled `hh-ai` + `node.exe` в NSIS installer.
+- **Экран подготовки:** автозапуск дашборда, кнопка «Установить Chromium», `npm run desktop:install-chromium`.
+- **QA clean install A+B:** `npm run qa:clean-install` — git clone + portable zip simulation.
+- **CI:** `qa:clean-install`, `desktop:smoke`; release workflow — NSIS `*-setup.exe` на Windows.
+- **Скрипты:** `desktop-bundle.mjs`, `desktop-chromium.mjs`, `desktop-sidecar-smoke.mjs`, `start-hh-ai.ps1`, `start-dashboard.bat`.
+- **Иконка приложения** и `scripts/make-app-icon.ps1`.
+
+### Changed
+
+- **Версия** 2.2.0 → **3.0.0** (desktop + portable zip в одном релизе).
+- **ROADMAP R6.1/R6.2** — desktop shell и установка Chromium в UI.
+
+### Fixed
+
+- **UI smoke headless:** клик `.card-tile__open` с fallback `evaluate(click)`.
+- **install-portable.ps1** — паритет с `install.ps1` (secrets, profile, routing).
+
 ## [2.2.0] — 2026-05-30
 
 «Умный фон»: portable-релиз, вкладка «Отлож.», дайджест, rescore pending.

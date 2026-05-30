@@ -1,9 +1,9 @@
 # HH Ai — локальный помощник откликов на hh.ru
 
-[![Release](https://img.shields.io/github/v/release/emildg8/HH_Ai?label=2.2.0)](https://github.com/emildg8/HH_Ai/releases)
+[![Release](https://img.shields.io/github/v/release/emildg8/HH_Ai?label=3.0.0)](https://github.com/emildg8/HH_Ai/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Версия:** 2.2.0 · [**Быстрый старт**](docs/QUICKSTART.md) · [Документация](docs/README.md) · [Скачать zip](https://github.com/emildg8/HH_Ai/releases/latest) · [Changelog](CHANGELOG.md)
+**Версия:** 3.0.0 · [**Быстрый старт**](docs/QUICKSTART.md) · [Документация](docs/README.md) · [Скачать](https://github.com/emildg8/HH_Ai/releases/latest) · [Changelog](CHANGELOG.md)
 
 Автоматизация [hh.ru](https://hh.ru): сбор вакансий, LLM-оценка, сопроводительные, отклик через Playwright, дашборд с анкетой и батч-откликами.
 
@@ -11,42 +11,38 @@
 |:---:|:---:|:---:|
 | ![Дашборд — очередь](docs/screenshots/dashboard-queue.png) | ![Воронка](docs/screenshots/dashboard-analytics.png) | ![Батч](docs/screenshots/dashboard-batch.png) |
 
-| Анкета |
-|:---:|
-| ![Анкета](docs/screenshots/dashboard-questionnaire.png) |
-
 > **Репозиторий:** [github.com/emildg8/HH_Ai](https://github.com/emildg8/HH_Ai)  
 > Автоотклики могут противоречить правилам hh.ru — используйте умеренно. [SECURITY.md](SECURITY.md)
 
 ---
 
-## Установка за 3 команды
+## Установка
 
-### Windows
+### Windows — приложение (рекомендуется)
+
+1. Скачайте **`HH-Ai_*-setup.exe`** с [Releases](https://github.com/emildg8/HH_Ai/releases/latest).
+2. Установите и запустите **HH Ai** из меню Пуск.
+3. На первом экране: **Установить Chromium** → `login` на hh.ru (см. [FIRST-RUN.md](docs/FIRST-RUN.md)).
+
+### Windows / macOS / Linux — git
 
 ```powershell
 git clone https://github.com/emildg8/HH_Ai.git
 cd HH_Ai
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1
-npm run login
-npm run dashboard
-```
-
-### macOS / Linux
-
-```bash
-git clone https://github.com/emildg8/HH_Ai.git
-cd HH_Ai
-bash scripts/install.sh
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1   # или bash scripts/install.sh
 npm run login
 npm run dashboard
 ```
 
 → **http://127.0.0.1:3849**
 
-После install: `npm run setup:check` — что ещё настроить.
+### Без git — portable zip
 
-**Без git:** [скачать zip](https://github.com/emildg8/HH_Ai/releases/latest) → `install.ps1` / `install.sh`
+[Скачать zip](https://github.com/emildg8/HH_Ai/releases/latest) → `install-portable.ps1` → `start-dashboard.bat`
+
+**Быстрый лauncher:** `powershell -File start-hh-ai.ps1`
+
+После install: `npm run setup:check`
 
 ---
 
@@ -54,12 +50,12 @@ npm run dashboard
 
 | Функция | Описание |
 |---------|----------|
-| **Дашборд** | Очередь, LLM-письма, анкета, светлая/тёмная тема |
+| **Desktop 3.0** | Tauri-приложение: дашборд без терминала, sidecar, Chromium в один клик |
+| **Дашборд** | Очередь, LLM-письма, анкета, CRM-воронка, светлая/тёмная тема |
 | **Harvest** | Сбор с hh.ru + оценка (LLM или локально) |
-| **Батч** | Массовый отклик; анкеты — авто-ответы и подстановка ([QUESTIONNAIRE-AUTOMATION.md](docs/QUESTIONNAIRE-AUTOMATION.md), [BATCH.md](docs/BATCH.md)) |
+| **Батч** | Массовый отклик; анкеты — авто-ответы ([BATCH.md](docs/BATCH.md)) |
 | **Профили** | `HH_PROFILE` — DevOps и свои роли |
-| **Капча** | Ожидание ручного решения в Chromium |
-| **Релиз** | `npm run release:public` — zip без секретов |
+| **Релиз** | Portable zip + Windows installer в CI |
 
 ---
 
@@ -68,42 +64,27 @@ npm run dashboard
 | | |
 |---|---|
 | [**QUICKSTART.md**](docs/QUICKSTART.md) | **5 шагов — с нуля до отклика** |
-| [**CONFIG-GUIDE.md**](docs/CONFIG-GUIDE.md) | **LLM, профиль, обучение модели** |
+| [**PUBLIC-RELEASE.md**](docs/PUBLIC-RELEASE.md) | **Desktop exe + zip для нового пользователя** |
+| [**CONFIG-GUIDE.md**](docs/CONFIG-GUIDE.md) | LLM, профиль, обучение модели |
 | [docs/README.md](docs/README.md) | Оглавление |
-| [USAGE.md](docs/USAGE.md) | Полный рабочий цикл |
-| [DASHBOARD.md](docs/DASHBOARD.md) | Интерфейс |
-| [CONFIG.md](docs/CONFIG.md) | Переменные и конфиги |
+| [TAURI-PLAN.md](docs/TAURI-PLAN.md) | Desktop-приложение |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Решение проблем |
-| [QUEUE-AND-APPLY.md](docs/QUEUE-AND-APPLY.md) | Очередь, батч, «уже отклик», статус responded |
-| [PUBLIC-RELEASE.md](docs/PUBLIC-RELEASE.md) | Для получателя zip |
 
 ---
 
-## Команды
+## Для мейнтейнера
 
-| Команда | Назначение |
-|---------|------------|
-| `npm run dashboard` | Локальный UI |
-| `npm run harvest` | Сбор и оценка |
-| `npm run login` | Сессия hh.ru |
-| `npm run devops:apply-batch` | Массовый отклик |
-| `npm run devops:prune-responded-queue` | Убрать из очереди вакансии, где отклик уже на hh.ru |
-| `npm run devops:sync-responses` | Статусы откликов с hh.ru → карточки и конверсия |
-| `npm run devops:sync-chats` | Переписки: вопросы / автоответы |
-| `npm run devops:sync-resume-variants` | «О себе» и опыт на до 5 резюме hh.ru |
-| `npm run devops:raise-resumes -- --all` | Поднять резюме в поиске hh.ru (раз в ~4 ч) |
-| `npm run devops:raise-resumes:scheduled` | Авто-слот (если дашборд закрыт — в Планировщике задач) |
-| `npm run setup` | Мастер: пресет LLM + профиль |
-| `npm run setup:check` | Что настроить перед первым запуском |
-| `npm run verify:local` | Проверка установки |
-| `npm run release:public` | Zip для передачи |
+```powershell
+npm run verify:local
+npm run qa:clean-install
+npm run release:public
+npm run desktop:bundle    # перед tauri build
+```
+
+Тег `v3.0.0` → GitHub Release: zip + NSIS installer.
 
 ---
-
-## Требования
-
-Node.js **18+** · `npx playwright install chromium` (делает `install.ps1`)
 
 ## Лицензия
 
-MIT · [ATTRIBUTION.md](docs/ATTRIBUTION.md)
+MIT · Идея-основа: [Steev193/hh-ru-apply](https://github.com/Steev193/hh-ru-apply) · [ATTRIBUTION.md](docs/ATTRIBUTION.md)

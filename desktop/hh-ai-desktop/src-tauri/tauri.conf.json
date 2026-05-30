@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "HH Ai",
-  "version": "3.0.0-alpha.0",
+  "version": "3.0.0",
   "identifier": "dev.hh-ai.dashboard",
   "build": {
     "beforeDevCommand": "",
-    "beforeBuildCommand": "",
+    "beforeBuildCommand": "node ../../scripts/desktop-bundle.mjs --bundle-node",
     "devUrl": "http://127.0.0.1:3849",
     "frontendDist": "../public"
   },
@@ -28,7 +28,24 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
-    "icon": []
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "bundled/hh-ai/*": "hh-ai/",
+      "bundled/node/*": "node/"
+    },
+    "shortDescription": "HH Ai — очередь откликов hh.ru",
+    "longDescription": "Локальный дашборд и автоматизация откликов на hh.ru без облака.",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }

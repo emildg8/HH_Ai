@@ -1,6 +1,3 @@
-# Публичный zip на GitHub Release при теге v*.*.*
-# Локально перед тегом: npm run smoke:release && npm run release:public
-
 name: Release assets
 
 on:
@@ -44,3 +41,37 @@ jobs:
             releases/hh-ru-apply-win-x64-v*.zip
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+  desktop-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle HH Ai for desktop
+        run: node scripts/desktop-bundle.mjs --bundle-node
+
+      - name: Install desktop deps
+        working-directory: desktop/hh-ai-desktop
+        run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Tauri NSIS installer
+        working-directory: desktop/hh-ai-desktop
+        run: npm run tauri:build
+        env:
+          CI: true
+
+      - name: Upload desktop installer
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/hh-ai-desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+          fail_on_unmatched_files: true

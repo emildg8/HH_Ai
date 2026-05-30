@@ -1,33 +1,32 @@
 # Чекпоинт для продолжения работы
 
-**Обновлено:** 2026-05-30 · **Версия:** 2.2.0 · **Desktop:** 3.0.0-alpha
+**Обновлено:** 2026-05-30 · **Версия:** 3.0.0
 
-**Релиз:** [v2.2.0](https://github.com/emildg8/HH_Ai/releases/tag/v2.2.0) · ветка `HH_Ai`
+**Релиз:** тег `v3.0.0` — zip + NSIS installer · ветка `HH_Ai`
 
 ---
 
-## Сделано недавно
+## Продукт 3.0.0
 
-| Область | Статус |
-|---------|--------|
-| QA clean install A+B | `npm run qa:clean-install` — автотест git clone + portable |
-| Tauri фаза 0–3 | sidecar дашборда, кнопка Chromium, `desktop:smoke` |
-| CI | qa:clean-install + desktop:smoke в workflow |
+| Канал | Артефакт |
+|-------|----------|
+| Windows desktop | `HH-Ai_*-setup.exe` |
+| Portable | `hh-ai-public-v3.0.0.zip` |
+| Git | `install.ps1` / `install.sh` |
 
 ```powershell
 npm run verify:local
 npm run qa:clean-install
-npm run desktop:check
 npm run desktop:smoke
-npm run dashboard   # Ctrl+F5
+npm run release:public
 ```
 
 ---
 
-## Следующее
+## Backlog post-3.0
 
-- [ ] Tauri **фаза 4**: `tauri build` + installer в CI (нужен Rust/windows runner)
-- [ ] Прогон [QA-CLEAN-INSTALL.md](QA-CLEAN-INSTALL.md) на VM (login/apply вручную)
-- [ ] Friction → [UX-FRICTION-LOG.md](UX-FRICTION-LOG.md)
+- [ ] macOS/Linux desktop installer
+- [ ] Автообновление Tauri
+- [ ] VM QA login/apply вручную → UX-FRICTION-LOG
 
 См. [TAURI-PLAN.md](TAURI-PLAN.md) · [ROADMAP.md](ROADMAP.md)

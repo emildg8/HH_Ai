@@ -1,6 +1,6 @@
 # План HH Ai Desktop (Tauri 3.0)
 
-**Статус:** alpha scaffold · **Версия:** 3.0.0-alpha.0
+**Статус:** release · **Версия:** 3.0.0
 
 Цель: приложение «как программа» без терминала для ежедневной работы с очередью откликов.
 
@@ -14,7 +14,7 @@
 | **1** | WebView → `http://127.0.0.1:3849`, проверка «дашборд не запущен» | [x] |
 | **2** | Sidecar: встроенный spawn `dashboard-server.mjs` при старте app | [x] |
 | **3** | Кнопка «Установить Chromium» → `npx playwright install chromium` | [x] |
-| **4** | Installer `.msi` / `.exe` в CI, автообновление (optional) | [ ] |
+| **4** | Installer `.msi` / `.exe` в CI, автообновление (optional) | [x] CI NSIS · автообновление — backlog |
 
 ---
 
@@ -31,7 +31,7 @@ flowchart LR
   S --> P[Playwright profile]
 ```
 
-Сейчас (фаза 3): экран подготовки с кнопкой «Установить Chromium» (`scripts/desktop-chromium.mjs`); sidecar дашборда — фаза 2. Сборка installer — фаза 4.
+Сейчас (3.0.0): NSIS installer на Releases, bundled `hh-ai` + `node.exe`, sidecar дашборда, Chromium в UI. Portable zip — для macOS/Linux и без installer.
 
 ---
 

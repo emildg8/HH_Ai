@@ -66,6 +66,7 @@ CV/
 
 # Артефакты сборки и бэкапы
 dist/
+desktop/hh-ai-desktop/bundled/
 backups/
 releases/*.zip
 releases/RELEASE-public-v*.json

@@ -1,6 +1,6 @@
 # Первый запуск — что обязательно, что опционально
 
-**Версия:** 2.0.1 · Полный путь: [QUICKSTART.md](QUICKSTART.md) · zip: [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md)
+**Версия:** 3.0.0 · Полный путь: [QUICKSTART.md](QUICKSTART.md) · zip/desktop: [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md)
 
 Цель: после `install` + `setup` + `login` дашборд уже работает **без API-ключей** (локальная оценка). LLM и несколько резюме — по желанию.
 

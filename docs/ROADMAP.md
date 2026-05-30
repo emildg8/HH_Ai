@@ -111,8 +111,8 @@
 
 | ID | Задача | Статус |
 |----|--------|--------|
-| R6.1 | Tauri-оболочка над дашбордом | [ ] |
-| R6.2 | Встроенный «Установить Chromium» | [ ] |
+| R6.1 | Tauri-оболочка над дашбордом | [x] 3.0.0 |
+| R6.2 | Встроенный «Установить Chromium» | [x] 3.0.0 |
 
 **Не в scope:** SaaS с хранением cookies на сервере; обход капчи/ToS hh.ru.
 
@@ -157,7 +157,7 @@ flowchart LR
 | **2.0.1** | CI, QA, CRM-дашборд, воронка, роутинг резюме, hh-search url-safe | [x] срез 2026-05-22 |
 | **2.1.0** | Feedback invited/declined, HH_PROFILE в UI, резюме в батче | [x] срез 2026-05-30 |
 | **2.2.0** | deferUntil, Telegram, portable zip, rescore pending | [x] срез 2026-05-30 |
-| **3.0.0** | *(опционально)* Tauri / portable-only | [ ] backlog |
+| **3.0.0** | Desktop Tauri + portable zip | [x] v3.0.0 |
 
 ---
 

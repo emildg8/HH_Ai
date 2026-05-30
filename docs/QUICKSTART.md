@@ -14,7 +14,15 @@
 
 ## Шаг 1. Установка
 
-### Windows (рекомендуется)
+### Windows — приложение (3.0, без терминала)
+
+1. [Releases](https://github.com/emildg8/HH_Ai/releases/latest) → **`HH-Ai_*-setup.exe`**
+2. Установить → запустить **HH Ai**
+3. «Установить Chromium» на экране подготовки
+
+Дальше — шаг 2 (резюме + login).
+
+### Windows (git)
 
 ```powershell
 git clone https://github.com/emildg8/HH_Ai.git
@@ -32,9 +40,9 @@ bash scripts/install.sh
 
 ### Без git
 
-1. Скачайте [hh-ai-public-v2.0.1.zip](https://github.com/emildg8/HH_Ai/releases/latest) (после тега `v2.0.1`)
+1. Скачайте [hh-ai-public-v3.0.0.zip](https://github.com/emildg8/HH_Ai/releases/latest)
 2. Распакуйте в `C:\Tools\hh-ai` (без кириллицы в пути)
-3. Запустите `install.ps1` или `install.sh` из папки проекта
+3. `powershell -ExecutionPolicy Bypass -File scripts/install-portable.ps1`
 
 ---
 
