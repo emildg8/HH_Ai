@@ -1,7 +1,7 @@
 {
   "name": "hh-ai-desktop",
   "private": true,
-  "version": "3.0.3",
+  "version": "3.0.4",
   "description": "HH Ai desktop shell (Tauri 2)",
   "scripts": {
     "tauri": "tauri",

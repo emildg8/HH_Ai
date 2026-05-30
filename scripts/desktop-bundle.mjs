@@ -46,8 +46,10 @@ function bundleNodeBinary() {
 
 function writeBundleMeta() {
   const version = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim();
+  const metaDir = path.join(DESKTOP, 'bundled');
+  fs.mkdirSync(metaDir, { recursive: true });
   fs.writeFileSync(
-    path.join(DESKTOP, 'bundled', 'bundle-meta.json'),
+    path.join(metaDir, 'bundle-meta.json'),
     JSON.stringify({ version, bundledAt: new Date().toISOString(), bundleNode }, null, 2)
   );
 }

@@ -2,6 +2,12 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версии — [SemVer](https://semver.org/lang/ru/).
 
+## [3.0.4] — 2026-05-30
+
+### Fixed
+
+- **desktop-bundle:** создание `bundled/` перед записью bundle-meta (Windows CI).
+
 ## [3.0.3] — 2026-05-30
 
 ### Fixed
