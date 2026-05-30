@@ -1,28 +1,40 @@
 /**
- * Автоматический прогон QA «вариант B» (zip / portable) без личных data/.
- * Симулирует чистую установку: export → npm install → setup:check → дашборд + UI smoke.
+ * Автоматический прогон QA чистой установки (варианты A и B).
  *
- *   npm run qa:clean-install
- *   npm run qa:clean-install -- --skip-playwright   # быстрее, если Chromium уже есть
+ *   npm run qa:clean-install                    # A + B
+ *   npm run qa:clean-install -- --variant=b     # только portable zip
+ *   npm run qa:clean-install -- --variant=a     # только git clone
+ *   npm run qa:clean-install -- --skip-playwright
  */
 
 import { spawn, spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { ROOT } from '../lib/paths.mjs';
+import { copyRepoForQaClone } from '../lib/qa-clone-copy.mjs';
 
 const skipPlaywright = process.argv.includes('--skip-playwright');
-const OUT = path.join(ROOT, 'dist', 'qa-clean-install');
+const variantArg = (process.argv.find((a) => a.startsWith('--variant=')) || '--variant=all').slice(
+  '--variant='.length
+);
 const REPORT = path.join(ROOT, 'data', 'qa-clean-install-report.json');
 const started = Date.now();
 
-/** @type {Array<{ id: string, ok: boolean, detail?: string, ms?: number }>} */
-const steps = [];
+/** @type {Record<string, Array<{ id: string, ok: boolean, detail?: string, ms?: number }>>} */
+const byVariant = {};
 
-function step(id, ok, detail = '') {
-  steps.push({ id, ok, detail, ms: Date.now() - started });
+function parseVariants() {
+  const v = variantArg.toLowerCase();
+  if (v === 'a') return ['A'];
+  if (v === 'b') return ['B'];
+  return ['A', 'B'];
+}
+
+function step(variant, id, ok, detail = '') {
+  if (!byVariant[variant]) byVariant[variant] = [];
+  byVariant[variant].push({ id, ok, detail, ms: Date.now() - started });
   const mark = ok ? 'OK' : 'FAIL';
-  console.log(`  ${mark}  ${id}${detail ? ` — ${detail}` : ''}`);
+  console.log(`  ${mark}  ${variant}-${id}${detail ? ` — ${detail}` : ''}`);
   return ok;
 }
 
@@ -50,20 +62,135 @@ async function waitHttp(url, ms = 30_000) {
   return false;
 }
 
-function mustExist(rel) {
-  const p = path.join(OUT, rel);
-  return fs.existsSync(p);
+function mustExist(root, rel) {
+  return fs.existsSync(path.join(root, rel));
 }
 
-async function main() {
-  console.log('[qa:clean-install] вариант B (portable zip simulation)\n');
+function applyInstallCopies(root, variant) {
+  const copies = [
+    ['.env.example', '.env'],
+    ['config/presets/no-llm.env', 'config/secrets.local.env'],
+    ['config/profiles/devops.env.example', 'config/profiles/devops.env'],
+    ['config/cover-letter.example.txt', 'config/cover-letter.txt'],
+    ['config/cover-letter-style-examples.example.txt', 'config/cover-letter-style-examples.txt'],
+    ['config/resume-routing.example.json', 'config/resume-routing.json'],
+    ['config/resume-raise-schedule.example.json', 'config/resume-raise-schedule.json'],
+  ];
+  for (const [src, dest] of copies) {
+    const sp = path.join(root, src);
+    const dp = path.join(root, dest);
+    if (fs.existsSync(sp) && !fs.existsSync(dp)) {
+      fs.mkdirSync(path.dirname(dp), { recursive: true });
+      fs.copyFileSync(sp, dp);
+    }
+  }
+  fs.mkdirSync(path.join(root, 'data'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'CV'), { recursive: true });
+  step(variant, 'portable-config', fs.existsSync(path.join(root, 'config/secrets.local.env')));
+}
+
+async function npmInstall(root, variant) {
+  console.log(`\n[qa:clean-install] ${variant}: npm install (может занять 1–2 мин)…`);
+  const npm = spawnSync('npm', ['install', '--ignore-scripts'], {
+    cwd: root,
+    stdio: 'inherit',
+    shell: true,
+  });
+  return step(variant, 'npm-install', npm.status === 0);
+}
+
+async function playwrightInstall(root, variant) {
+  if (skipPlaywright) {
+    step(variant, 'playwright', true, 'skipped');
+    return true;
+  }
+  console.log(`[qa:clean-install] ${variant}: playwright chromium…`);
+  const pw = spawnSync('npx', ['playwright', 'install', 'chromium'], {
+    cwd: root,
+    stdio: 'inherit',
+    shell: true,
+  });
+  return step(variant, 'playwright', pw.status === 0);
+}
+
+async function runDashboardSmoke(root, variant) {
+  let child = null;
+  try {
+    child = spawn(process.execPath, ['scripts/dashboard-server.mjs', '--queue-file=./docs/demo/vacancies-demo.json'], {
+      cwd: root,
+      stdio: 'ignore',
+      env: { ...process.env, HH_VACANCIES_QUEUE_FILE: './docs/demo/vacancies-demo.json' },
+    });
+    await new Promise((r) => setTimeout(r, 2500));
+    const up = await waitHttp('http://127.0.0.1:3849');
+    step(variant, 'dashboard-up', up);
+
+    if (up) {
+      if (!skipPlaywright) {
+        spawnSync('npx', ['playwright', 'install', 'chromium'], {
+          cwd: root,
+          stdio: 'ignore',
+          shell: true,
+        });
+      }
+      const ui = runNode(['scripts/test-dashboard-ui.mjs'], root, {
+        DASHBOARD_URL: 'http://127.0.0.1:3849',
+      });
+      step(variant, 'dashboard-ui', ui.status === 0, ui.status !== 0 ? ui.stderr.slice(0, 300) : '');
+    }
+  } finally {
+    if (child) {
+      try {
+        child.kill();
+      } catch {
+        /* ignore */
+      }
+      await new Promise((r) => setTimeout(r, 800));
+    }
+  }
+}
+
+async function runVariantA() {
+  const variant = 'A';
+  const OUT = path.join(ROOT, 'dist', 'qa-git-clone');
+  console.log(`\n[qa:clean-install] вариант A (git clone simulation)\n`);
+
+  if (fs.existsSync(OUT)) fs.rmSync(OUT, { recursive: true, force: true });
+  copyRepoForQaClone(ROOT, OUT);
+  step(variant, 'clone-copy', fs.existsSync(path.join(OUT, 'package.json')));
+
+  for (const f of [
+    'scripts/install.ps1',
+    'scripts/install.sh',
+    '.github/workflows/ci.yml',
+    'docs/demo/vacancies-demo.json',
+    'config/presets/no-llm.env',
+  ]) {
+    step(variant, `structure:${f}`, mustExist(OUT, f), mustExist(OUT, f) ? '' : 'missing');
+  }
+
+  if (!(await npmInstall(OUT, variant))) return false;
+  if (!(await playwrightInstall(OUT, variant))) return false;
+
+  applyInstallCopies(OUT, variant);
+
+  const check = runNode(['scripts/setup-check.mjs'], OUT, { HH_QA_CLEAN: '1' });
+  step(variant, 'setup-check', check.status === 0, check.status !== 0 ? check.stdout.split('\n').slice(-5).join(' ') : '');
+
+  await runDashboardSmoke(OUT, variant);
+  return byVariant[variant].every((s) => s.ok);
+}
+
+async function runVariantB() {
+  const variant = 'B';
+  const OUT = path.join(ROOT, 'dist', 'qa-clean-install');
+  console.log(`\n[qa:clean-install] вариант B (portable zip simulation)\n`);
 
   if (fs.existsSync(OUT)) fs.rmSync(OUT, { recursive: true, force: true });
 
   const exp = runNode(['scripts/export-public.mjs', `--out=${OUT}`], ROOT);
-  if (!step('B-export', exp.status === 0, exp.status !== 0 ? exp.stderr.slice(0, 200) : '')) {
-    writeReport(false);
-    process.exit(1);
+  if (!step(variant, 'export', exp.status === 0, exp.status !== 0 ? exp.stderr.slice(0, 200) : '')) {
+    return false;
   }
 
   for (const f of [
@@ -73,118 +200,57 @@ async function main() {
     'docs/demo/vacancies-demo.json',
     'config/presets/no-llm.env',
   ]) {
-    step(`B-structure:${f}`, mustExist(f), mustExist(f) ? '' : 'missing');
+    step(variant, `structure:${f}`, mustExist(OUT, f), mustExist(OUT, f) ? '' : 'missing');
   }
 
   const readme = fs.readFileSync(path.join(OUT, 'EXPORT-README.md'), 'utf8');
-  step('B-readme-portable', /install-portable/i.test(readme));
+  step(variant, 'readme-portable', /install-portable/i.test(readme));
 
-  console.log('\n[qa:clean-install] npm install (может занять 1–2 мин)…');
-  const npm = spawnSync('npm', ['install', '--ignore-scripts'], {
-    cwd: OUT,
-    stdio: 'inherit',
-    shell: true,
-  });
-  if (!step('B-npm-install', npm.status === 0)) {
-    writeReport(false);
-    process.exit(1);
-  }
+  if (!(await npmInstall(OUT, variant))) return false;
+  if (!(await playwrightInstall(OUT, variant))) return false;
 
-  if (!skipPlaywright) {
-    console.log('[qa:clean-install] playwright chromium…');
-    const pw = spawnSync('npx', ['playwright', 'install', 'chromium'], {
-      cwd: OUT,
-      stdio: 'inherit',
-      shell: true,
-    });
-    step('B-playwright', pw.status === 0);
-  } else {
-    step('B-playwright', true, 'skipped');
-  }
-
-  // Эмуляция install-portable.ps1 (копии конфигов)
-  const copies = [
-    ['.env.example', '.env'],
-    ['config/presets/no-llm.env', 'config/secrets.local.env'],
-    ['config/profiles/devops.env.example', 'config/profiles/devops.env'],
-    ['config/cover-letter.example.txt', 'config/cover-letter.txt'],
-    ['config/resume-routing.example.json', 'config/resume-routing.json'],
-  ];
-  for (const [src, dest] of copies) {
-    const sp = path.join(OUT, src);
-    const dp = path.join(OUT, dest);
-    if (fs.existsSync(sp) && !fs.existsSync(dp)) {
-      fs.mkdirSync(path.dirname(dp), { recursive: true });
-      fs.copyFileSync(sp, dp);
-    }
-  }
-  fs.mkdirSync(path.join(OUT, 'data'), { recursive: true });
-  fs.mkdirSync(path.join(OUT, 'CV'), { recursive: true });
-  step('B-portable-config', fs.existsSync(path.join(OUT, 'config/secrets.local.env')));
+  applyInstallCopies(OUT, variant);
 
   const check = runNode(['scripts/setup-check.mjs'], OUT, { HH_QA_CLEAN: '1' });
-  const checkOk = check.status === 0;
-  step('B-setup-check', checkOk, checkOk ? '' : check.stdout.split('\n').slice(-5).join(' '));
+  step(variant, 'setup-check', check.status === 0, check.status !== 0 ? check.stdout.split('\n').slice(-5).join(' ') : '');
 
-  let child = null;
-  try {
-    child = spawn(process.execPath, ['scripts/dashboard-server.mjs', '--queue-file=./docs/demo/vacancies-demo.json'], {
-      cwd: OUT,
-      stdio: 'ignore',
-      env: { ...process.env, HH_VACANCIES_QUEUE_FILE: './docs/demo/vacancies-demo.json' },
-    });
-    await new Promise((r) => setTimeout(r, 2500));
-    const up = await waitHttp('http://127.0.0.1:3849');
-    step('B-dashboard-up', up);
+  await runDashboardSmoke(OUT, variant);
+  return byVariant[variant].every((s) => s.ok);
+}
 
-    if (up) {
-      if (!skipPlaywright) {
-        spawnSync('npx', ['playwright', 'install', 'chromium'], {
-          cwd: OUT,
-          stdio: 'ignore',
-          shell: true,
-        });
-      }
-      const ui = runNode(['scripts/test-dashboard-ui.mjs'], OUT, {
-        DASHBOARD_URL: 'http://127.0.0.1:3849',
-      });
-      step('B-dashboard-ui', ui.status === 0, ui.status !== 0 ? ui.stderr.slice(0, 300) : '');
-    }
-  } finally {
-    if (child) {
-      try {
-        child.kill();
-      } catch {
-        /* ignore */
-      }
-    }
+async function main() {
+  const variants = parseVariants();
+  console.log(`[qa:clean-install] варианты: ${variants.join(' + ')}\n`);
+
+  const results = {};
+  for (const v of variants) {
+    results[v] = v === 'A' ? await runVariantA() : await runVariantB();
   }
 
-  const friction = [];
-  if (!checkOk) friction.push({ step: 'B-setup-check', issue: 'setup:check не green после portable-копий' });
-  if (!mustExist('config/profiles/devops.env.example') && !fs.existsSync(path.join(OUT, 'config/profiles/devops.env.example'))) {
-    friction.push({ step: 'B-portable', issue: 'install-portable не копирует profile/secrets как install.ps1' });
-  }
-
-  const ok = steps.every((s) => s.ok);
-  writeReport(ok, friction);
+  const ok = Object.values(results).every(Boolean);
+  writeReport(ok, results, variants);
   console.log(`\n[qa:clean-install] ${ok ? 'ВСЁ OK' : 'есть ошибки'} (${Math.round((Date.now() - started) / 1000)} с)`);
+  for (const v of variants) {
+    console.log(`  ${v}: ${results[v] ? 'OK' : 'FAIL'}`);
+  }
   console.log(`  отчёт: ${REPORT}`);
   process.exit(ok ? 0 : 1);
 }
 
-function writeReport(ok, friction = []) {
+function writeReport(ok, results, variants) {
   fs.mkdirSync(path.dirname(REPORT), { recursive: true });
   fs.writeFileSync(
     REPORT,
     JSON.stringify(
       {
         at: new Date().toISOString(),
-        variant: 'B-portable-simulation',
+        variants: variants.map((v) => ({
+          id: v,
+          ok: results[v],
+          steps: byVariant[v] || [],
+        })),
         ok,
         durationSec: Math.round((Date.now() - started) / 1000),
-        steps,
-        friction,
         version: fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim(),
       },
       null,

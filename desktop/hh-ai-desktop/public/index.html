@@ -35,10 +35,11 @@
   <body>
     <h1>HH Ai</h1>
     <p>Локальный дашборд на <code id="port-label">127.0.0.1:3849</code> не отвечает.</p>
-    <div id="status">Проверка…</div>
+    <div id="status">Запускаем дашборд…</div>
     <ol>
-      <li>В корне HH Ai: <code>npm run dashboard</code></li>
-      <li>Или interim: <code>npm run desktop:launcher</code></li>
+      <li>Desktop (Tauri) попробует запустить <code>dashboard-server</code> автоматически</li>
+      <li>Или вручную в корне HH Ai: <code>npm run dashboard</code></li>
+      <li>Interim: <code>npm run desktop:launcher</code></li>
       <li>Один раз: <code>npm run login</code> (сессия hh.ru)</li>
     </ol>
     <p>
@@ -59,6 +60,7 @@
       async function probe() {
         if (window.__TAURI_INTERNALS__?.invoke) {
           try {
+            await window.__TAURI_INTERNALS__.invoke('start_dashboard_sidecar');
             const up = await window.__TAURI_INTERNALS__.invoke('check_dashboard');
             if (up) {
               const opened = await window.__TAURI_INTERNALS__.invoke('open_dashboard');

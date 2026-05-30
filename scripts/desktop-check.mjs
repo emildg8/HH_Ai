@@ -39,8 +39,12 @@ else fail('desktop/scaffold', 'нет src-tauri/tauri.conf.json');
 const mainRs = path.join(tauriDir, 'src', 'main.rs');
 if (fs.existsSync(mainRs)) {
   const src = fs.readFileSync(mainRs, 'utf8');
-  if (/dashboard_up|check_dashboard/.test(src)) pass('desktop/phase1-healthcheck');
-  else fail('desktop/phase1-healthcheck', 'нет проверки дашборда в main.rs');
+  if (/dashboard_up|check_dashboard|spawn_dashboard|DashboardSidecar/.test(src)) {
+    pass('desktop/phase1-healthcheck');
+  } else fail('desktop/phase1-healthcheck', 'нет проверки дашборда в main.rs');
+  if (/spawn_dashboard_child|DashboardSidecar|start_dashboard_sidecar/.test(src)) {
+    pass('desktop/phase2-sidecar');
+  } else fail('desktop/phase2-sidecar', 'нет sidecar spawn в main.rs');
 } else fail('desktop/phase1-healthcheck', 'нет main.rs');
 
 const r = spawnSync(process.execPath, ['--check', path.join(ROOT, 'scripts', 'dashboard-server.mjs')], {

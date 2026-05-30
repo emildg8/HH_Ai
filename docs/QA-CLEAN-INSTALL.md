@@ -60,7 +60,9 @@ node scripts/dashboard-server.mjs --queue-file=./docs/demo/vacancies-demo.json
 ```bash
 npm run smoke:release
 npm run verify:local
-npm run qa:clean-install              # вариант B: export → portable install → UI smoke
+npm run qa:clean-install              # варианты A+B: git clone + portable zip
+npm run qa:clean-install -- --variant=a
+npm run qa:clean-install -- --variant=b
 npm run qa:clean-install -- --skip-playwright   # быстрее, если Chromium уже установлен
 ```
 

@@ -12,7 +12,7 @@
 |------|------------|--------|
 | **0** | Scaffold `desktop/hh-ai-desktop`, `npm run desktop:launcher` | [x] |
 | **1** | WebView → `http://127.0.0.1:3849`, проверка «дашборд не запущен» | [x] |
-| **2** | Sidecar: встроенный spawn `dashboard-server.mjs` при старте app | [ ] |
+| **2** | Sidecar: встроенный spawn `dashboard-server.mjs` при старте app | [x] |
 | **3** | Кнопка «Установить Chromium» → `npx playwright install chromium` | [ ] |
 | **4** | Installer `.msi` / `.exe` в CI, автообновление (optional) | [ ] |
 
@@ -31,7 +31,7 @@ flowchart LR
   S --> P[Playwright profile]
 ```
 
-Сейчас (фаза 1): при старте Tauri проверяет `:3849`; если дашборд не отвечает — экран `index.html` с инструкцией и кнопкой «Повторить». Sidecar spawn — фаза 2.
+Сейчас (фаза 2): Tauri при старте поднимает `node scripts/dashboard-server.mjs` (если `:3849` молчит), при выходе — завершает процесс. Корень проекта: `HH_AI_ROOT` или `desktop/hh-ai-desktop/../../..`.
 
 ---
 
