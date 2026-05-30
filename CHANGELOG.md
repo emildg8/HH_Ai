@@ -6,8 +6,9 @@
 
 ### Fixed
 
-- **Tauri NSIS:** пути resources `../bundled/…` относительно src-tauri; жёсткая проверка node.exe при bundle.
-- **QA/CI dashboard-ui:** stub `local-dashboard-defaults.mjs` в export/install; фильтр optional 404 в UI smoke.
+- **Tauri NSIS:** пути resources `../bundled/…` относительно src-tauri.
+- **QA/CI dashboard-ui:** stub `local-dashboard-defaults.mjs` в export/install.
+- **playwrightChromiumInstalled:** Linux `~/.cache/ms-playwright` (CI и Ubuntu).
 - **install.ps1 / install-portable.ps1** — копия local-dashboard-defaults.
 
 ## [3.0.1] — 2026-05-30
