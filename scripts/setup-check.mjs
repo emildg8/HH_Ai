@@ -144,6 +144,15 @@ function main() {
     console.log('\nПодробно: docs/CONFIG-GUIDE.md');
   }
   console.log('');
+  if (process.env.HH_QA_CLEAN === '1' && todo.length > 0) {
+    const okOnClean = todo.every((t) =>
+      /login|playwright|chromium|CV\/|сессия|профиль Chromium/i.test(t)
+    );
+    if (okOnClean && warn.length <= 3) {
+      console.log('(QA clean install: ожидаемые пропуски — login / CV / Chromium)');
+      process.exit(0);
+    }
+  }
   process.exit(todo.length ? 1 : 0);
 }
 

@@ -1,0 +1,47 @@
+# HH Ai Desktop (Tauri 3.0 alpha)
+
+Оболочка «как программа» над локальным дашбордом `http://127.0.0.1:3849`.
+
+## Требования
+
+- Node.js 18+
+- [Rust](https://rustup.rs) (для сборки Tauri)
+- HH Ai установлен и настроен в корне репозитория (`npm run login` один раз)
+
+## Фаза 1 (3.0.0-alpha)
+
+При запуске Tauri проверяет, отвечает ли дашборд на `:3849`. Если нет — показывается экран с инструкцией (`public/index.html`). Дашборд по-прежнему нужно запустить отдельно (`npm run dashboard` или `desktop:launcher`); автозапуск sidecar — фаза 2.
+
+## Быстрый старт (разработка)
+
+```powershell
+# Терминал 1 — дашборд
+cd D:\Dev\HH\hh-ru-apply
+npm run dashboard
+
+# Терминал 2 — Tauri (webview на :3849)
+cd desktop\hh-ai-desktop
+npm install
+npm run tauri:dev
+```
+
+## Interim без Rust
+
+Пока Tauri не собран:
+
+```powershell
+npm run desktop:launcher
+```
+
+Откроет дашборд и браузер по умолчанию.
+
+## Сборка installer
+
+```powershell
+cd desktop\hh-ai-desktop
+npm run tauri:build
+```
+
+Артефакты: `src-tauri/target/release/bundle/`
+
+Подробный план: [docs/TAURI-PLAN.md](../../docs/TAURI-PLAN.md)

@@ -82,6 +82,9 @@
     "hooks:install": "node scripts/install-git-hooks-runner.mjs",
     "smoke:release": "node scripts/smoke-release.mjs",
     "qa:public": "node scripts/qa-public-check.mjs",
+    "qa:clean-install": "node scripts/qa-clean-install.mjs",
+    "desktop:check": "node scripts/desktop-check.mjs",
+    "desktop:launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/desktop-launcher.ps1",
     "docs:screenshots": "node scripts/capture-demo-screenshots.mjs",
     "postinstall": "node -e \"console.log('HH Ai: npm run login && npm run dashboard  |  docs/QUICKSTART.md')\""
   },

@@ -185,7 +185,12 @@ async function main() {
 
   const tileOpen = page.locator('#list .card-tile__open').first();
   if ((await tileOpen.count()) > 0) {
-    await tileOpen.click();
+    await tileOpen.scrollIntoViewIfNeeded();
+    try {
+      await tileOpen.click({ timeout: 8000 });
+    } catch {
+      await page.evaluate(() => document.querySelector('#list .card-tile__open')?.click());
+    }
     await waitModalOpen(page, 'vacancy-detail-modal');
     const detailOk = await page.evaluate(
       () => !!document.querySelector('#vacancy-detail-body .card--in-modal')

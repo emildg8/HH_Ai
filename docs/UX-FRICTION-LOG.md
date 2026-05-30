@@ -5,7 +5,11 @@
 
 | Дата | Кто (роль) | Шаг QUICKSTART | Что мешало | Предложение | Issue |
 |------|------------|----------------|------------|-------------|-------|
-| — | — | — | — | — | — |
+| 2026-05-30 | maintainer / `qa:clean-install` | B3 install-portable | Раньше не копировались secrets/profile/resume-routing — setup:check падал | Паритет с `install.ps1` (исправлено в 2.2.x+) | — |
+| 2026-05-30 | maintainer / `qa:clean-install` | A3 setup:check | На чистой установке пугает `→ login`, `→ Chromium`, `→ CV/` | Режим `HH_QA_CLEAN=1` для автотеста; в UI/README — «ожидаемо до login» | — |
+| 2026-05-30 | maintainer / `qa:clean-install` | A6 devops.env | `HH_PROFILE_RESUME_TITLE` пустой после portable — неочевидно до первого apply | Подсказка в install-portable + FIRST-RUN; wizard в setup (backlog) | — |
+| 2026-05-30 | maintainer / Release zip | B1–B2 | Node.js обязателен даже для «portable» zip — не exe-installer | Tauri 3.0 desktop installer (фаза 4 TAURI-PLAN) | R6.1 |
+| 2026-05-30 | maintainer / CI smoke | A9 dashboard UI | В headless клик `.card-tile__open` иногда «not visible» | fallback `evaluate(click)` в test-dashboard-ui | — |
 
 ---
 

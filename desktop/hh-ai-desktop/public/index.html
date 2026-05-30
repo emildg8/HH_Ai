@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>HH Ai — дашборд не запущен</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, Segoe UI, sans-serif;
+        line-height: 1.5;
+      }
+      body {
+        max-width: 42rem;
+        margin: 3rem auto;
+        padding: 0 1.25rem;
+      }
+      code {
+        background: rgba(127, 127, 127, 0.15);
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+      button {
+        font: inherit;
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+      }
+      #status {
+        margin: 1rem 0;
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        background: rgba(127, 127, 127, 0.12);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>HH Ai</h1>
+    <p>Локальный дашборд на <code id="port-label">127.0.0.1:3849</code> не отвечает.</p>
+    <div id="status">Проверка…</div>
+    <ol>
+      <li>В корне HH Ai: <code>npm run dashboard</code></li>
+      <li>Или interim: <code>npm run desktop:launcher</code></li>
+      <li>Один раз: <code>npm run login</code> (сессия hh.ru)</li>
+    </ol>
+    <p>
+      <button type="button" id="retry">Повторить подключение</button>
+    </p>
+    <p><a id="open-link" href="http://127.0.0.1:3849/">Открыть дашборд в браузере</a></p>
+    <script>
+      const port = 3849;
+      const statusEl = document.getElementById('status');
+      const retryBtn = document.getElementById('retry');
+      const openLink = document.getElementById('open-link');
+      const portLabel = document.getElementById('port-label');
+      const dashboardUrl = `http://127.0.0.1:${port}/`;
+
+      portLabel.textContent = `127.0.0.1:${port}`;
+      openLink.href = dashboardUrl;
+
+      async function probe() {
+        if (window.__TAURI_INTERNALS__?.invoke) {
+          try {
+            const up = await window.__TAURI_INTERNALS__.invoke('check_dashboard');
+            if (up) {
+              const opened = await window.__TAURI_INTERNALS__.invoke('open_dashboard');
+              if (opened) return true;
+            }
+          } catch {
+            /* fallback below */
+          }
+        }
+        try {
+          const r = await fetch(dashboardUrl, { cache: 'no-store' });
+          if (r.ok) {
+            window.location.href = dashboardUrl;
+            return true;
+          }
+        } catch {
+          /* still down */
+        }
+        return false;
+      }
+
+      async function refreshStatus() {
+        statusEl.textContent = 'Проверка…';
+        const up = await probe();
+        statusEl.textContent = up
+          ? 'Дашборд найден, переключаем…'
+          : 'Дашборд не запущен. Выполните npm run dashboard в корне проекта.';
+      }
+
+      retryBtn.addEventListener('click', refreshStatus);
+      refreshStatus();
+      setInterval(refreshStatus, 5000);
+    </script>
+  </body>
+</html>
