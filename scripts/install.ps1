@@ -41,6 +41,7 @@ Ensure-Copy "config/cover-letter.example.txt" "config/cover-letter.txt" "config/
 Ensure-Copy "config/cover-letter-style-examples.example.txt" "config/cover-letter-style-examples.txt" "config/cover-letter-style-examples.txt (опционально)"
 Ensure-Copy "config/resume-routing.example.json" "config/resume-routing.json" "config/resume-routing.json"
 Ensure-Copy "config/resume-raise-schedule.example.json" "config/resume-raise-schedule.json" "config/resume-raise-schedule.json"
+Ensure-Copy "dashboard/public/local-dashboard-defaults.example.mjs" "dashboard/public/local-dashboard-defaults.mjs" "local-dashboard-defaults.mjs (опционально)"
 
 New-Item -ItemType Directory -Force -Path "data", "CV" | Out-Null
 

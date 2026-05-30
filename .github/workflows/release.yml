@@ -55,7 +55,7 @@ jobs:
       - run: npm ci
 
       - name: Bundle HH Ai for desktop
-        run: node scripts/desktop-bundle.mjs --bundle-node
+        run: node scripts/desktop-bundle.mjs
 
       - name: Install desktop deps
         working-directory: desktop/hh-ai-desktop

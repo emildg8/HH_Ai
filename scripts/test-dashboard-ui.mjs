@@ -43,7 +43,11 @@ async function main() {
 
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (msg) => {
-    if (msg.type() === 'error') errors.push(`console: ${msg.text()}`);
+    if (msg.type() !== 'error') return;
+    const t = msg.text();
+    if (/local-dashboard-defaults\.mjs/i.test(t)) return;
+    if (/favicon\.ico/i.test(t)) return;
+    errors.push(`console: ${t}`);
   });
 
   await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30_000 });

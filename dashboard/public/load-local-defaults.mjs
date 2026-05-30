@@ -4,13 +4,6 @@ import { writeUiScale, setUiScaleDefault } from './ui-scale.mjs';
 import { writeCardTuning, setCardTuningDefaults } from './ui-card-tuning.mjs';
 
 export async function applyLocalDashboardDefaults() {
-  try {
-    const probe = await fetch(new URL('./local-dashboard-defaults.mjs', import.meta.url), { method: 'HEAD' });
-    if (!probe.ok) return null;
-  } catch {
-    return null;
-  }
-
   let mod;
   try {
     mod = await import('./local-dashboard-defaults.mjs');

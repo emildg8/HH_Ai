@@ -76,6 +76,7 @@ function applyInstallCopies(root, variant) {
     ['config/resume-routing.example.json', 'config/resume-routing.json'],
     ['config/resume-raise-schedule.example.json', 'config/resume-raise-schedule.json'],
     ['config/resume-variants.example.json', 'config/resume-variants.json'],
+    ['dashboard/public/local-dashboard-defaults.example.mjs', 'dashboard/public/local-dashboard-defaults.mjs'],
   ];
   for (const [src, dest] of copies) {
     const sp = path.join(root, src);

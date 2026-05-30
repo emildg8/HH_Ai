@@ -57,6 +57,10 @@ function main() {
   runExport();
   if (bundleNode) bundleNodeBinary();
   writeBundleMeta();
+  if (bundleNode && process.platform === 'win32' && !fs.existsSync(path.join(NODE_OUT, 'node.exe'))) {
+    console.error('[desktop-bundle] FAIL: node.exe не скопирован (нужен для NSIS)');
+    process.exit(1);
+  }
   console.log(`[desktop-bundle] OK: ${OUT}`);
 }
 

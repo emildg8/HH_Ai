@@ -2,6 +2,14 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версии — [SemVer](https://semver.org/lang/ru/).
 
+## [3.0.2] — 2026-05-30
+
+### Fixed
+
+- **Tauri NSIS:** пути resources `../bundled/…` относительно src-tauri; жёсткая проверка node.exe при bundle.
+- **QA/CI dashboard-ui:** stub `local-dashboard-defaults.mjs` в export/install; фильтр optional 404 в UI smoke.
+- **install.ps1 / install-portable.ps1** — копия local-dashboard-defaults.
+
 ## [3.0.1] — 2026-05-30
 
 ### Fixed

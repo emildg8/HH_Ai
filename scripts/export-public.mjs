@@ -175,6 +175,12 @@ function main() {
 
   writeExportReadme();
 
+  const localDefaultsExample = path.join(OUT, 'dashboard', 'public', 'local-dashboard-defaults.example.mjs');
+  const localDefaults = path.join(OUT, 'dashboard', 'public', 'local-dashboard-defaults.mjs');
+  if (fs.existsSync(localDefaultsExample) && !fs.existsSync(localDefaults)) {
+    fs.copyFileSync(localDefaultsExample, localDefaults);
+  }
+
   const bat = `@echo off\r\n` +
     `cd /d "%~dp0"\r\n` +
     `echo HH Ai dashboard — http://127.0.0.1:3849\r\n` +
