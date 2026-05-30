@@ -33,6 +33,14 @@ jobs:
         run: npm run smoke:release
 
       - name: Dashboard UI smoke
-        run: npm run devops:test-dashboard-ui
+        run: |
+          node scripts/dashboard-server.mjs --queue-file=./docs/demo/vacancies-demo.json &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3849/ >/dev/null && break
+            sleep 1
+          done
+          npm run devops:test-dashboard-ui
+          kill $SERVER_PID 2>/dev/null || true
         env:
-          HH_VACANCIES_QUEUE_FILE: ./data/vacancies-queue.example.json
+          HH_VACANCIES_QUEUE_FILE: ./docs/demo/vacancies-demo.json

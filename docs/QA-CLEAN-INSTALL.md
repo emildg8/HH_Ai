@@ -41,14 +41,15 @@ node scripts/dashboard-server.mjs --queue-file=./docs/demo/vacancies-demo.json
 
 ---
 
-## Вариант B — zip с Release
+## Вариант B — zip с Release (2.2.0+)
 
 | # | Шаг | OK |
 |---|-----|-----|
-| B1 | Скачать `hh-ai-public-vX.Y.Z.zip` с [Releases](https://github.com/emildg8/HH_Ai/releases) | ☐ |
+| B1 | Скачать `hh-ai-public-v2.2.0.zip` или `hh-ru-apply-win-x64-v2.2.0.zip` с [Releases](https://github.com/emildg8/HH_Ai/releases/tag/v2.2.0) | ☐ |
 | B2 | Распаковать, открыть `EXPORT-README.md` | ☐ |
-| B3 | `npm install` && `npx playwright install chromium` | ☐ |
-| B4 | Повторить A3–A9 в распакованной папке | ☐ |
+| B3 | `powershell -ExecutionPolicy Bypass -File scripts/install-portable.ps1` | ☐ |
+| B4 | Повторить A5–A9 (login, apply, dashboard) | ☐ |
+| B5 | Опционально: двойной клик `start-dashboard.bat` | ☐ |
 
 ---
 
