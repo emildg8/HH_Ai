@@ -1,24 +1,26 @@
 /**
  * Проверка сохранённой сессии: открывает раздел соискателя.
- * Массовые отклики и селекторы форм — отдельная доработка (верстка hh.ru меняется).
+ * Использует общий lock/launch Chromium (как login и open-hh).
  *
  * Флаги:
  *   --stay-open  — не закрывать браузер, пока не нажмёте Enter в терминале.
  */
 
-import { chromium } from 'playwright';
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import readline from 'readline';
-import 'dotenv/config';
+import { loadEnv } from '../lib/load-env.mjs';
+loadEnv();
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.join(__dirname, '..');
-const SESSION_DIR = process.env.HH_SESSION_DIR
-  ? path.resolve(process.cwd(), process.env.HH_SESSION_DIR)
-  : path.join(ROOT, 'data', 'session');
-const PERSISTENT_PROFILE = path.join(SESSION_DIR, 'chromium-profile');
+import { sessionProfilePath } from '../lib/paths.mjs';
+import {
+  launchPersistentContextSafe,
+  closeContextSafe,
+  clearStaleBrowserLock,
+  getBrowserLockInfo,
+  formatBrowserLaunchError,
+  repairChromiumProfileCaches,
+} from '../lib/chromium-session.mjs';
+import { assertHhLoggedIn } from '../lib/hh-session-check.mjs';
 
 const stayOpen = process.argv.includes('--stay-open');
 const headless = process.env.HH_HEADLESS === '1';
@@ -33,53 +35,91 @@ function waitEnter(message) {
   });
 }
 
-function looksLikeLoginUrl(url) {
-  const u = url.toLowerCase();
-  return u.includes('/account/login') || u.includes('oauth.hh.ru') || u.includes('/logon');
-}
-
 async function main() {
-  if (!fs.existsSync(PERSISTENT_PROFILE)) {
+  const profile = sessionProfilePath();
+  if (!fs.existsSync(profile)) {
     console.error(
       'Профиль не найден. Сначала выполните: npm run login\nОжидалась папка:',
-      PERSISTENT_PROFILE
+      profile
     );
     process.exit(1);
   }
 
-  const ctx = await chromium.launchPersistentContext(PERSISTENT_PROFILE, {
+  clearStaleBrowserLock();
+  const lock = getBrowserLockInfo();
+  if (lock.held) {
+    console.warn(
+      `Внимание: профиль может быть занят (${lock.owner}, pid=${lock.pid}). ` +
+        'Остановите батч/сбор и закройте лишнее окно Chromium с data/session/chromium-profile.'
+    );
+  }
+
+  const launchOpts = {
     headless,
     viewport: { width: 1280, height: 800 },
     locale: 'ru-RU',
-  });
-  const page = ctx.pages()[0] || (await ctx.newPage());
+  };
+  const ch = String(process.env.HH_PLAYWRIGHT_CHANNEL || '').trim();
+  if (ch) launchOpts.channel = ch;
 
+  let ctx;
+  try {
+    ctx = await launchPersistentContextSafe(profile, launchOpts, {
+      owner: 'apply-check',
+      retries: 4,
+      skipMinimize: !headless,
+      lockTimeoutMs: 60_000,
+    });
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (/has been closed|process did exit/i.test(msg)) {
+      const { removed } = repairChromiumProfileCaches(profile);
+      console.warn(`[apply] Chromium не стартовал — сброшены кэши (${removed} каталогов), повтор…`);
+      ctx = await launchPersistentContextSafe(profile, launchOpts, {
+        owner: 'apply-check',
+        retries: 4,
+        skipMinimize: !headless,
+        lockTimeoutMs: 60_000,
+      });
+    } else {
+      throw e;
+    }
+  }
+
+  const page = ctx.pages()[0] || (await ctx.newPage());
   await page.goto('https://hh.ru/applicant', {
     waitUntil: 'domcontentloaded',
     timeout: 60_000,
   });
-  await new Promise((r) => setTimeout(r, 1500));
 
-  const url = page.url();
-  if (looksLikeLoginUrl(url)) {
-    await ctx.close();
-    console.error('Сессия не активна (редирект на логин). Запустите: npm run login');
+  try {
+    await assertHhLoggedIn(page, {
+      log: (s) => console.log('[apply]', s),
+      captchaContext: 'проверка сессии',
+    });
+  } catch (e) {
+    await closeContextSafe(ctx, 'apply-check');
+    console.error(String(e?.message || e));
+    console.error('Запустите: npm run login');
     process.exit(1);
   }
 
-  console.log('Сессия активна. Текущий URL:', url);
+  console.log('Сессия активна. Текущий URL:', page.url());
   console.log(
-    'Дальше сюда можно добавить переход к вакансиям и отправку отклика (селекторы уточнять вручную).'
+    'Дальше: npm run dashboard — очередь и отклики; npm run open-hh — окно для капчи/входа.'
   );
 
   if (stayOpen) {
     await waitEnter('Нажмите Enter, чтобы закрыть браузер: ');
   }
 
-  await ctx.close();
+  await closeContextSafe(ctx, 'apply-check');
 }
 
 main().catch((e) => {
-  console.error(e);
+  console.error(formatBrowserLaunchError(e));
+  console.error(
+    '\nЕсли браузер сразу закрылся: закройте окно автоматизации hh (профиль data/session), не рабочий Chrome. Затем: npm run login'
+  );
   process.exit(1);
 });

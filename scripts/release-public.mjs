@@ -71,6 +71,13 @@ function main() {
   const zipPath = path.join(ROOT, 'releases', `hh-ai-public-v${version}.zip`);
   fs.mkdirSync(path.dirname(zipPath), { recursive: true });
   const archived = createZipFromDir(OUT, zipPath);
+  const portableAlias = path.join(ROOT, 'releases', `hh-ru-apply-win-x64-v${version}.zip`);
+  try {
+    fs.copyFileSync(archived, portableAlias);
+    console.log(`[release-public] Portable alias: ${portableAlias}`);
+  } catch (e) {
+    console.warn(`[release-public] Portable alias skip: ${e.message || e}`);
+  }
   const manifest = writeManifest(version);
   manifest.zip = archived;
 

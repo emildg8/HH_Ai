@@ -40,6 +40,7 @@ Ensure-Copy "config/profiles/devops.env.example" "config/profiles/devops.env" "c
 Ensure-Copy "config/cover-letter.example.txt" "config/cover-letter.txt" "config/cover-letter.txt"
 Ensure-Copy "config/cover-letter-style-examples.example.txt" "config/cover-letter-style-examples.txt" "config/cover-letter-style-examples.txt (опционально)"
 Ensure-Copy "config/resume-routing.example.json" "config/resume-routing.json" "config/resume-routing.json"
+Ensure-Copy "config/resume-raise-schedule.example.json" "config/resume-raise-schedule.json" "config/resume-raise-schedule.json"
 
 New-Item -ItemType Directory -Force -Path "data", "CV" | Out-Null
 

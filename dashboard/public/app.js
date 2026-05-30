@@ -21,6 +21,39 @@ import {
   normalizeChoiceOptionLabel,
 } from './questionnaire-choice.mjs';
 import { buildQuestionnaireAnswersMap } from './questionnaire-merge.mjs';
+import {
+  COPY,
+  UI_MODES,
+  SIDEBAR_PANELS,
+  SIDEBAR_PANEL_ORDER_DEFAULT,
+  LAYOUT_PRESET_KEYS,
+  batchScopeLabel,
+  defaultPanelsForMode,
+} from './dashboard-ux.mjs';
+import {
+  initWorkspaceDocks,
+  loadDockState,
+  applyDockState,
+  syncDockMiniActiveView,
+} from './workspace-docks.mjs';
+import { renderCardTile, currentBrowseMode } from './card-tiles.mjs';
+import { renderDailySparklineHtml } from './daily-sparkline.mjs';
+import { copyVacancyMarkdown, downloadVacancyMarkdown } from './vacancy-export.mjs';
+import {
+  registerCommandPaletteActions,
+  openCommandPalette,
+  closeCommandPalette,
+} from './command-palette.mjs';
+import { initKeyboardShortcuts } from './keyboard-shortcuts.mjs';
+import { buildListBreadcrumbItems, mountListBreadcrumbs } from './list-breadcrumbs.mjs';
+import { initListKeyboardNav } from './list-keyboard-nav.mjs';
+import { renderStatusChips } from './card-status.mjs';
+import { applyCopyToDom, syncFullscreenIcon } from './apply-copy-dom.mjs';
+import {
+  closeVacancyDetail,
+  configureVacancyDetailNav,
+  initVacancyDetailModal,
+} from './vacancy-detail.mjs';
 
 const listEl = document.getElementById('list');
 const tpl = document.getElementById('card-tpl');
@@ -37,8 +70,13 @@ const batchLimitEl = document.getElementById('batch-limit');
 const prefMaxHourEl = document.getElementById('pref-max-hour');
 const prefMaxDayEl = document.getElementById('pref-max-day');
 const prefMaxMonthEl = document.getElementById('pref-max-month');
+const settingsProfileSelectEl = document.getElementById('settings-profile-select');
+const settingsProfileQueueHintEl = document.getElementById('settings-profile-queue-hint');
 const settingsSaveHintEl = document.getElementById('settings-save-hint');
 const applyRateMetersEl = document.getElementById('apply-rate-meters');
+
+/** @type {((tabId: string) => void) | null} */
+let settingsTabSetter = null;
 
 let currentStatus = 'pending';
 let currentApplyView = 'queue';
@@ -46,19 +84,42 @@ let currentScoreBand = 'high';
 let currentAppliedFunnel = 'all';
 let chatTemplatesCache = null;
 let scoreThreshold = 50;
-let batchSizeCap = 100;
+let batchSizeCap = 1000;
 /** @type {Record<string, { min: number, max: number }>} */
 let prefBounds = {};
 let settingsHydrated = false;
+let profileOptionsLoaded = false;
+/** @type {string | null} */
+let lastBatchPauseReason = null;
+let batchCaptchaToastShown = false;
+/** @type {string | null} */
+let lastFocusedVacancyId = null;
 let preferencesSaveAvailable = null;
+/** @type {{ uiMode: string, sidebarMode: string, panels: Record<string, boolean>, panelOrder: string[] }} */
+let dashboardUi = {
+  uiMode: UI_MODES.simple,
+  sidebarMode: 'compact',
+  panels: defaultPanelsForMode(UI_MODES.simple),
+  panelOrder: [...SIDEBAR_PANEL_ORDER_DEFAULT],
+};
+let layoutSettingsHydrated = false;
 let lastHarvestTickSeq = 0;
 let applyLogPollTimer = null;
 let applyChatWasRunning = false;
 let harvestWasRunning = false;
+let batchWasRunning = false;
+let syncResponsesWasRunning = false;
+let resumeRaiseWasRunning = false;
+let syncChatsWasRunning = false;
+let dailyRoutineWasRunning = false;
 let cachedRawItems = [];
 let cachedCounts = null;
 /** Открыть первую анкету после перехода на вкладку «Анкета». */
 let openQuestionnaireOnNextLoad = false;
+const AUTO_REPROBE_COOLDOWN_MS = 30 * 60 * 1000;
+const AUTO_REPROBE_LS_KEY = 'hh-dashboard-auto-reprobe-ts';
+let autoReprobeInFlight = false;
+let questionnaireReprobeCandidateCount = 0;
 
 function debounce(fn, ms) {
   let t;
@@ -127,13 +188,22 @@ async function setHhSiteStateManual(item, state) {
   });
   showToast(
     state === 'invited'
-      ? 'Отмечено: приглашение — вакансия уйдёт из очереди батча'
+      ? 'Приглашение — сохранено для LLM и убрано из батча'
       : state === 'declined'
-        ? 'Отмечено: отказ'
+        ? 'Отказ — сохранён для LLM (учтётся в следующих письмах)'
         : 'Статус hh.ru сброшен',
     'good'
   );
   await loadItems();
+}
+
+/** Показать кнопки «Пригласили» / «Отказ» для обратной связи LLM. */
+function canMarkHhOutcome(item) {
+  const st = item.hhApply?.hhSiteState || 'none';
+  if (st === 'invited' || st === 'declined') return false;
+  if (vacancyHasHhApply(item) || item.status === 'responded') return true;
+  if (item.status === 'pending' && !vacancyHasHhApply(item)) return true;
+  return false;
 }
 
 function filterItemsForApplyView(items, view = currentApplyView) {
@@ -141,17 +211,53 @@ function filterItemsForApplyView(items, view = currentApplyView) {
   if (view === 'applied') {
     return items.filter((x) => vacancyShownInAppliedTab(x));
   }
+  if (view === 'deferred') {
+    return active.filter((x) => isVacancyDeferredClient(x));
+  }
   if (view === 'noQuestionnaire') {
     return active.filter(
-      (x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x) && !recordNeedsQuestionnaireWork(x)
+      (x) =>
+        !isVacancyDeferredClient(x) &&
+        !vacancyHasHhApply(x) &&
+        !vacancyHhSiteBlocked(x) &&
+        !recordNeedsQuestionnaireWork(x)
     );
   }
   if (view === 'questionnaire') {
     return active.filter(
-      (x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x) && recordNeedsQuestionnaireWork(x)
+      (x) =>
+        !isVacancyDeferredClient(x) &&
+        !vacancyHasHhApply(x) &&
+        !vacancyHhSiteBlocked(x) &&
+        recordNeedsQuestionnaireWork(x)
     );
   }
-  return active.filter((x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x));
+  if (view === 'hidden') {
+    return active.filter((x) => !isVacancyDeferredClient(x) && !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x));
+  }
+  return active.filter(
+    (x) => !isVacancyDeferredClient(x) && !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x)
+  );
+}
+
+function isVacancyDeferredClient(rec, nowMs = Date.now()) {
+  const until = Date.parse(String(rec?.deferUntil || ''));
+  return Number.isFinite(until) && until > nowMs;
+}
+
+function daysSinceApplyClient(item) {
+  const raw = item?.hhApply?.lastAt || item?.createdAt;
+  const t = Date.parse(String(raw || ''));
+  if (!Number.isFinite(t)) return null;
+  return Math.floor((Date.now() - t) / 86_400_000);
+}
+
+function isStaleFollowUpClient(item) {
+  const st = item?.hhApply?.hhSiteState;
+  if (st === 'invited' || st === 'declined' || st === 'viewed') return false;
+  if (!item?.hhApply?.responseSubmitted && st !== 'already_applied') return false;
+  const days = daysSinceApplyClient(item);
+  return days != null && days >= 7;
 }
 
 function applyClientFilters(items, filters) {
@@ -178,6 +284,7 @@ function applyClientFilters(items, filters) {
       if (currentAppliedFunnel === 'viewed') return st === 'viewed';
       if (currentAppliedFunnel === 'awaiting') return st === 'awaiting';
       if (currentAppliedFunnel === 'declined') return st === 'declined';
+      if (currentAppliedFunnel === 'stale') return isStaleFollowUpClient(it);
       return true;
     });
   }
@@ -241,12 +348,229 @@ function applyPreferencesToSettingsUI(preferences, bounds) {
   const defMin = Number(p.dashboardMinScoreFilter);
   if (Number.isFinite(defMin) && defMin >= 0) scoreThreshold = defMin;
   const batchN = Number(p.dashboardBatchSize);
-  batchSizeCap = Number.isFinite(batchN) && batchN >= 1 ? Math.min(100, batchN) : 100;
+  batchSizeCap = Number.isFinite(batchN) && batchN >= 1 ? Math.min(1000, batchN) : 1000;
   if (batchLimitEl && prefBounds.dashboardBatchSize) {
     batchLimitEl.max = String(prefBounds.dashboardBatchSize.max);
   }
   updateScoreBandTabLabels();
+  applyDashboardUiFromPreferences(p);
   settingsHydrated = true;
+}
+
+function applyProfileOptionsToSettingsUI(data) {
+  if (!settingsProfileSelectEl || !data?.profiles?.length) return;
+  const active = String(data.activeProfile || '').trim();
+  settingsProfileSelectEl.replaceChildren(
+    ...data.profiles.map((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.label || p.id;
+      if (p.id === active) opt.selected = true;
+      return opt;
+    })
+  );
+  if (settingsProfileQueueHintEl) {
+    settingsProfileQueueHintEl.textContent = data.queuePath
+      ? `Очередь: ${data.queuePath}`
+      : 'Очередь по умолчанию';
+  }
+  profileOptionsLoaded = true;
+}
+
+async function changeActiveProfile(profileId) {
+  const res = await api('/api/profile/select', {
+    method: 'POST',
+    body: JSON.stringify({ id: profileId }),
+  });
+  if (settingsProfileQueueHintEl && res.queuePath) {
+    settingsProfileQueueHintEl.textContent = `Очередь: ${res.queuePath}`;
+  }
+  showToast(`Профиль «${res.activeProfile}» — список перезагружен`, 'good');
+  await load();
+  return res;
+}
+
+function normalizeUiFromApi(ui, preferences) {
+  const p = preferences || {};
+  const uiMode =
+    ui?.uiMode === UI_MODES.expert || p.dashboardUiMode === UI_MODES.expert
+      ? UI_MODES.expert
+      : UI_MODES.simple;
+  const sidebarMode =
+    ui?.sidebarMode === 'full' || p.dashboardSidebarLayout === 'full' ? 'full' : 'compact';
+  const panels = { ...defaultPanelsForMode(uiMode) };
+  const src = ui?.panels || p.dashboardSidebarPanels;
+  if (src && typeof src === 'object') {
+    for (const id of Object.keys(SIDEBAR_PANELS)) {
+      if (typeof src[id] === 'boolean') panels[id] = src[id];
+    }
+  }
+  const order = Array.isArray(ui?.panelOrder)
+    ? ui.panelOrder.filter((id) => SIDEBAR_PANELS[id])
+    : Array.isArray(p.dashboardSidebarPanelOrder)
+      ? p.dashboardSidebarPanelOrder.filter((id) => SIDEBAR_PANELS[id])
+      : [...SIDEBAR_PANEL_ORDER_DEFAULT];
+  const seen = new Set(order);
+  for (const id of SIDEBAR_PANEL_ORDER_DEFAULT) {
+    if (!seen.has(id)) order.push(id);
+  }
+  return { uiMode, sidebarMode, panels, panelOrder: order };
+}
+
+function applyDashboardUiFromPreferences(preferences, uiFromApi) {
+  dashboardUi = normalizeUiFromApi(uiFromApi, preferences);
+  const shell = document.getElementById('app-shell');
+  if (shell) {
+    shell.dataset.uiMode = dashboardUi.uiMode;
+    shell.dataset.sidebarMode = dashboardUi.sidebarMode;
+  }
+  try {
+    localStorage.setItem('hh-sidebar-mode', dashboardUi.sidebarMode);
+  } catch {
+    /* ignore */
+  }
+  document.querySelectorAll('[data-sidebar-mode]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.sidebarMode === dashboardUi.sidebarMode);
+  });
+  document.querySelectorAll('[data-ui-mode-preset]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.uiModePreset === dashboardUi.uiMode);
+  });
+  applySidebarPanelVisibility();
+  reorderSidebarPanels();
+  syncSidebarPanelToggleInputs();
+}
+
+function applySidebarPanelVisibility() {
+  const { panels, uiMode } = dashboardUi;
+  document.querySelectorAll('.sidebar-panel[data-panel]').forEach((el) => {
+    const id = el.dataset.panel;
+    if (!id) return;
+    const visible = panels[id] !== false;
+    el.dataset.panelHidden = visible ? '0' : '1';
+    el.hidden = !visible;
+  });
+  const togglesWrap = document.getElementById('sidebar-panel-toggles-wrap');
+  if (togglesWrap) togglesWrap.hidden = uiMode === UI_MODES.simple;
+}
+
+function reorderSidebarPanels() {
+  const scroll = document.getElementById('sidebar-scroll');
+  const rightBody = document.querySelector('#dock-right .dock__body');
+  const footer = document.querySelector('#dock-right .sidebar-footer');
+  if (!scroll) return;
+  const order = dashboardUi.panelOrder || SIDEBAR_PANEL_ORDER_DEFAULT;
+  const leftIds = new Set([
+    'status',
+    'actionsPrimary',
+    'harvestPeriod',
+    'nav',
+    'quickSync',
+    'filters',
+    'serviceLink',
+  ]);
+  const panels = [...document.querySelectorAll('.sidebar-panel[data-panel]')];
+  const byId = Object.fromEntries(panels.map((el) => [el.dataset.panel, el]));
+  for (const id of order) {
+    if (!leftIds.has(id)) continue;
+    const el = byId[id];
+    if (el && el.closest('#sidebar-scroll')) scroll.appendChild(el);
+  }
+  if (footer && rightBody && dashboardUi.panels.jobFooter !== false) {
+    rightBody.appendChild(footer);
+  }
+  const kpi = byId.kpi;
+  if (kpi && rightBody && dashboardUi.panels.kpi !== false) {
+    rightBody.insertBefore(kpi, footer || null);
+  }
+}
+
+function syncSidebarPanelToggleInputs() {
+  document.querySelectorAll('[data-sidebar-panel-toggle]').forEach((input) => {
+    const id = input.dataset.sidebarPanelToggle;
+    if (!id) return;
+    input.checked = dashboardUi.panels[id] !== false;
+  });
+}
+
+function renderSidebarPanelToggles() {
+  const host = document.getElementById('sidebar-panel-toggles');
+  if (!host || host.dataset.built === '1') return;
+  host.dataset.built = '1';
+  host.innerHTML = Object.values(SIDEBAR_PANELS)
+    .map(
+      ({ id, label }) =>
+        `<label class="settings-panel-toggle"><input type="checkbox" data-sidebar-panel-toggle="${id}" checked /><span>${label}</span></label>`
+    )
+    .join('');
+  host.querySelectorAll('[data-sidebar-panel-toggle]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const id = input.dataset.sidebarPanelToggle;
+      if (!id) return;
+      dashboardUi.panels[id] = input.checked;
+      applySidebarPanelVisibility();
+      if (layoutSettingsHydrated) scheduleSaveLayoutSettings();
+    });
+  });
+}
+
+function readLayoutPatchFromUI() {
+  return {
+    dashboardUiMode: dashboardUi.uiMode,
+    dashboardSidebarLayout: dashboardUi.sidebarMode,
+    dashboardSidebarPanels: { ...dashboardUi.panels },
+    dashboardSidebarPanelOrder: [...dashboardUi.panelOrder],
+  };
+}
+
+const scheduleSaveLayoutSettings = debounce(() => {
+  if (!layoutSettingsHydrated || preferencesSaveAvailable === false) return;
+  patchPreferencesApi(readLayoutPatchFromUI())
+    .then((res) => {
+      if (res.ui) applyDashboardUiFromPreferences(res.preferences, res.ui);
+      else if (res.preferences) applyDashboardUiFromPreferences(res.preferences);
+      flashSettingsSaved();
+    })
+    .catch((e) => {
+      setSettingsHint(e.message || 'Ошибка сохранения интерфейса', 'err');
+    });
+}, 600);
+
+function applyLayoutPreset(name) {
+  const presets = {
+    simple: {
+      uiMode: UI_MODES.simple,
+      sidebarMode: 'compact',
+      panels: defaultPanelsForMode(UI_MODES.simple),
+    },
+    standard: {
+      uiMode: UI_MODES.expert,
+      sidebarMode: 'full',
+      panels: {
+        ...defaultPanelsForMode(UI_MODES.expert),
+        kpi: true,
+      },
+    },
+    expert: {
+      uiMode: UI_MODES.expert,
+      sidebarMode: 'full',
+      panels: Object.fromEntries(Object.keys(SIDEBAR_PANELS).map((k) => [k, true])),
+    },
+  };
+  const p = presets[name];
+  if (!p) return;
+  dashboardUi = { ...dashboardUi, ...p, panelOrder: [...SIDEBAR_PANEL_ORDER_DEFAULT] };
+  applyDashboardUiFromPreferences(
+    {
+      dashboardUiMode: p.uiMode,
+      dashboardSidebarLayout: p.sidebarMode,
+      dashboardSidebarPanels: p.panels,
+    },
+    dashboardUi
+  );
+  document.querySelectorAll('[data-layout-preset]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.layoutPreset === name);
+  });
+  if (layoutSettingsHydrated) scheduleSaveLayoutSettings();
 }
 
 function readSettingsPatchFromUI() {
@@ -258,7 +582,7 @@ function readSettingsPatchFromUI() {
     const n = Number(el.value);
     if (Number.isFinite(n)) patch[key] = n;
   }
-  return patch;
+  return { ...patch, ...readLayoutPatchFromUI() };
 }
 
 let settingsHintClearTimer = null;
@@ -321,6 +645,7 @@ async function saveSettingsFromUI() {
   try {
     const res = await patchPreferencesApi(patch);
     if (res.preferences) applyPreferencesToSettingsUI(res.preferences, prefBounds);
+    if (res.ui) applyDashboardUiFromPreferences(res.preferences, res.ui);
     if (res.applyRates) renderApplyRateMeters(res.applyRates);
     flashSettingsSaved();
     if (currentScoreBand !== 'all') load({ preserveScroll: true });
@@ -349,7 +674,9 @@ async function loadDashboardSettings() {
     const fromGet = data.apiFeatures?.preferencesSave === true;
     preferencesSaveAvailable = fromGet || (await probePreferencesSaveApi());
     applyPreferencesToSettingsUI(data.preferences, data.bounds);
+    if (data.ui) applyDashboardUiFromPreferences(data.preferences, data.ui);
     if (data.applyRates) renderApplyRateMeters(data.applyRates);
+    applyProfileOptionsToSettingsUI(data);
     if (!preferencesSaveAvailable) {
       setSettingsHint('Сохранение недоступно — перезапустите дашборд (npm run devops:dashboard)', 'err');
     }
@@ -368,9 +695,11 @@ function updateScoreBandTabLabels() {
     el.textContent = `<${t}`;
   });
   const autoBtn = document.getElementById('btn-batch-auto');
-  if (autoBtn) autoBtn.textContent = `Батч: авто (≥${t})`;
+  if (autoBtn) autoBtn.textContent = `${COPY.batchAuto} (≥${t})`;
   const manualBtn = document.getElementById('btn-batch-manual');
-  if (manualBtn) manualBtn.textContent = `Батч: ручной (<${t})`;
+  if (manualBtn) manualBtn.textContent = `${COPY.batchManual} (<${t})`;
+  const topAuto = document.getElementById('btn-top-batch-auto');
+  if (topAuto) topAuto.textContent = `${COPY.batchAuto} (≥${t})`;
 }
 
 /** Запасные фильтры ролей (если дашборд без актуального API). */
@@ -436,6 +765,13 @@ function hhApplyBadgeText(item) {
   else if (h.letterInForm) parts.push('письмо в форме');
   else if (h.chatSent) parts.push('письмо в чате');
   else if (h.responseSubmitted) parts.push('отклик без письма');
+  const roleLabel =
+    h.resumeTitleSelected || h.resumeTitlePlanned || item.resumeRouting?.label || h.resumeRole;
+  if (roleLabel) {
+    const rolePart = String(roleLabel).replace(/^Резюме:\s*/i, '');
+    if (h.resumeMatchOk === false) parts.push(`резюме ⚠ ${rolePart}`);
+    else parts.push(`резюме: ${rolePart}`);
+  }
   const when = new Date(h.lastAt).toLocaleString('ru-RU', {
     day: '2-digit',
     month: '2-digit',
@@ -542,6 +878,11 @@ function closeTopModal() {
     closeServiceDrawer();
     return true;
   }
+  const vacancyDetail = document.getElementById('vacancy-detail-modal');
+  if (vacancyDetail && !vacancyDetail.hidden) {
+    closeVacancyDetail();
+    return true;
+  }
   const settings = document.getElementById('settings-modal');
   if (settings && !settings.hidden) {
     closeModalEl(settings);
@@ -567,6 +908,11 @@ function closeTopModal() {
     closeApplyLogModal();
     return true;
   }
+  const shortcuts = document.getElementById('shortcuts-modal');
+  if (shortcuts && !shortcuts.hidden) {
+    closeModalEl(shortcuts);
+    return true;
+  }
   const draft = document.getElementById('draft-modal');
   if (draft && !draft.hidden) {
     closeDraftModal();
@@ -576,6 +922,10 @@ function closeTopModal() {
 }
 
 function closeModalById(modalId) {
+  if (modalId === 'vacancy-detail-modal') {
+    closeVacancyDetail();
+    return true;
+  }
   if (modalId === 'draft-modal') {
     closeDraftModal();
     return true;
@@ -602,6 +952,13 @@ function closeModalById(modalId) {
   if (modalId === 'funnel-modal') {
     closeFunnelModal();
     return true;
+  }
+  if (modalId === 'shortcuts-modal') {
+    const m = document.getElementById('shortcuts-modal');
+    if (m && !m.hidden) {
+      closeModalEl(m);
+      return true;
+    }
   }
   return closeTopModal();
 }
@@ -894,6 +1251,8 @@ function getApplyLogSource() {
 const APPLY_LOG_PIN_PX = 48;
 let applyLogFollowTail = true;
 let applyLogScrollBound = false;
+let applyLogFullscreen = false;
+let lastJobStatus = null;
 
 function applyLogPreEl() {
   return applyLogModalEl?.querySelector('.apply-log-pre') || null;
@@ -929,6 +1288,259 @@ function bindApplyLogScrollGuard() {
     },
     { passive: true }
   );
+}
+
+function extractApplyLogInsights(text, st) {
+  const lines = String(text || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const parts = [];
+  const skipCount = lines.filter((l) => /\[batch\]\s+Пропуск\s+\d+\/\d+:/i.test(l)).length;
+  const offTargetCount = lines.filter((l) => /\[batch\]\s+OFF-TARGET\s+\d+\/\d+:/i.test(l)).length;
+  const errorCount = lines.filter((l) => /\[batch\]\s+ОШИБКА\s+\d+\/\d+:/i.test(l)).length;
+  const lastSkipLine = [...lines].reverse().find((l) => /\[batch\]\s+Пропуск\s+\d+\/\d+:/i.test(l));
+  const lastSkipTag = [...lines].reverse().find((l) => /\[hh-apply-batch-skip\]\s+/i.test(l));
+  const lastErrorLine = [...lines].reverse().find((l) => /(^|\s)Error:\s+/i.test(l));
+  const bc = st?.batchControl || {};
+  const br = st?.batchLastReport;
+
+  if (br?.finishedAt) {
+    const resumeLine = Object.entries(br.resumeUsage || {})
+      .map(([k, v]) => `${k}:${v}`)
+      .join(', ');
+    const reportLine =
+      `Последняя серия: успешно ${br.done}/${br.planned}` +
+      (br.offTargetSkipped ? ` · нецелевых ${br.offTargetSkipped}` : '') +
+      (resumeLine ? ` · ${resumeLine}` : '');
+    parts.push(reportLine);
+  }
+
+  if (bc.planned || bc.done || bc.failed) {
+    parts.push(
+      `${COPY.batch}: ${bc.done || 0}/${bc.planned || '?'} · ошибок ${bc.failed || 0} · пропусков ${skipCount}` +
+        (offTargetCount ? ` · нецелевых ${offTargetCount}` : '')
+    );
+  } else if (skipCount || errorCount || offTargetCount) {
+    parts.push(
+      `По текущему логу: пропусков ${skipCount}` +
+        (offTargetCount ? `, нецелевых ${offTargetCount}` : '') +
+        `, ошибок ${errorCount}`
+    );
+  }
+
+  if (lastSkipLine) {
+    const rawReason = lastSkipLine.split(':').slice(1).join(':').trim();
+    const normalizedReason =
+      /hh-apply-chat exit 1/i.test(rawReason) && lastSkipTag
+        ? lastSkipTag.replace(/^.*\[hh-apply-batch-skip\]\s*/i, '')
+        : rawReason;
+    parts.push(`Последний пропуск: ${normalizedReason || 'без причины в строке'}`);
+  }
+
+  if (lastErrorLine) {
+    parts.push(`Последняя ошибка: ${lastErrorLine.replace(/^\[[^\]]+\]\s*/, '')}`);
+  }
+
+  const blob = parts.join('\n');
+  if (/капч|hh-captcha/i.test(blob)) {
+    parts.push(
+      'Капча: дождитесь — откроется окно Chromium, пройдите проверку. Батч продолжит сам. Затем при необходимости «Продолжить».'
+    );
+  }
+
+  return parts.slice(0, 6);
+}
+
+function renderApplyLogInsights(text, st = lastJobStatus) {
+  const el = document.getElementById('apply-log-insights');
+  const reportBtn = document.getElementById('btn-batch-report');
+  if (!el) return;
+  const parts = extractApplyLogInsights(text, st);
+  const hasReport = Boolean(st?.batchLastReport?.finishedAt);
+  if (reportBtn) reportBtn.hidden = !hasReport;
+
+  if (!parts.length) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = parts.map((p) => `<div class="apply-log-insight-line">${escapeHtml(p)}</div>`).join('');
+}
+
+function renderBatchReportModal(report) {
+  const modal = document.getElementById('batch-report-modal');
+  if (!modal || !report) return;
+  const summaryEl = document.getElementById('batch-report-summary');
+  const gridEl = document.getElementById('batch-report-grid');
+  const skipsSec = document.getElementById('batch-report-skips');
+  const skipsList = document.getElementById('batch-report-skips-list');
+  const itemsSec = document.getElementById('batch-report-items');
+  const itemsList = document.getElementById('batch-report-items-list');
+
+  const when = report.finishedAt
+    ? new Date(report.finishedAt).toLocaleString('ru-RU')
+    : '—';
+  if (summaryEl) {
+    summaryEl.innerHTML = `<p class="batch-report-meta">Завершено ${escapeHtml(when)} · scope: ${escapeHtml(report.batchScope || '—')}</p>`;
+  }
+
+  const metrics = [
+    { label: 'Успешно', value: report.done, tone: 'good' },
+    { label: 'Пропуск', value: report.skipped, tone: 'neutral' },
+    { label: 'Ошибки', value: report.failed, tone: report.failed ? 'warn' : 'neutral' },
+    { label: 'Нецелевые', value: report.offTargetSkipped || 0, tone: 'neutral' },
+  ];
+  if (gridEl) {
+    gridEl.innerHTML = metrics
+      .map(
+        (m) =>
+          `<div class="batch-report-metric batch-report-metric--${m.tone}"><span class="batch-report-metric__val">${m.value ?? 0}</span><span class="batch-report-metric__lab">${escapeHtml(m.label)}</span></div>`
+      )
+      .join('');
+    const resumeLine = Object.entries(report.resumeUsage || {})
+      .map(([k, v]) => `${escapeHtml(k)}: ${v}`)
+      .join(' · ');
+    if (resumeLine) {
+      gridEl.insertAdjacentHTML(
+        'beforeend',
+        `<div class="batch-report-metric batch-report-metric--wide"><span class="batch-report-metric__lab">Резюме</span><span class="batch-report-metric__val batch-report-metric__val--sm">${resumeLine}</span></div>`
+      );
+    }
+  }
+
+  const skipEntries = Object.entries(report.skipReasons || {}).sort((a, b) => b[1] - a[1]);
+  if (skipsSec && skipsList) {
+    if (skipEntries.length) {
+      skipsSec.hidden = false;
+      skipsList.replaceChildren(
+        ...skipEntries.map(([reason, count]) => {
+          const li = document.createElement('li');
+          li.textContent = `${reason} — ${count}`;
+          return li;
+        })
+      );
+    } else {
+      skipsSec.hidden = true;
+    }
+  }
+
+  const items = (report.items || []).slice().reverse();
+  if (itemsSec && itemsList) {
+    if (items.length) {
+      itemsSec.hidden = false;
+      itemsList.replaceChildren(
+        ...items.map((it) => {
+          const li = document.createElement('li');
+          const status = it.status === 'ok' ? '✓' : it.status === 'off-target' ? '⊘' : '—';
+          li.textContent = `${status} ${it.title || '—'}${it.resumeRole ? ` · ${it.resumeRole}` : ''}${it.resumeTitle ? ` · «${it.resumeTitle}»` : ''}${it.reason ? ` · ${it.reason}` : ''}`;
+          return li;
+        })
+      );
+    } else {
+      itemsSec.hidden = true;
+    }
+  }
+
+  openModalEl(modal);
+}
+
+async function openBatchReportModal() {
+  try {
+    const data = await api('/api/batch-report');
+    if (!data.ok || !data.report) {
+      showToast(data.message || 'Отчёт батча ещё не создан', 'neutral');
+      return;
+    }
+    renderBatchReportModal(data.report);
+  } catch (e) {
+    showToast(e.message || 'Не удалось загрузить отчёт', 'neutral');
+  }
+}
+
+function initOnboardingPanel(st) {
+  const panel = document.getElementById('onboarding-panel');
+  const stepsEl = document.getElementById('onboarding-steps');
+  if (!panel || !stepsEl) return;
+  if (localStorage.getItem('hh-dashboard-onboarding-dismissed') === '1') {
+    panel.hidden = true;
+    return;
+  }
+  const stats = st?.dashboardStats || {};
+  const queueTotal = stats.queue?.queueTotal ?? stats.queueTotal ?? 0;
+  const applied = stats.applied ?? 0;
+  const rhOk = st?.routingHealth?.ok !== false;
+  const steps = [
+    { done: rhOk, text: COPY.onboardingStepResume },
+    { done: queueTotal > 0, text: COPY.onboardingStepHarvest },
+    { done: applied > 0, text: COPY.onboardingStepApply },
+    { done: applied >= 3, text: COPY.onboardingStepSync },
+  ];
+  if (steps.every((s) => s.done)) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  const doneCount = steps.filter((s) => s.done).length;
+  let progressEl = panel.querySelector('.onboarding-progress');
+  if (!progressEl) {
+    progressEl = document.createElement('div');
+    progressEl.className = 'onboarding-progress';
+    progressEl.innerHTML =
+      '<div class="onboarding-progress__track" role="progressbar" aria-valuemin="0" aria-valuemax="100">' +
+      '<div class="onboarding-progress__bar"></div></div>' +
+      '<span class="onboarding-progress__label"></span>';
+    panel.querySelector('.onboarding-card__head')?.after(progressEl);
+  }
+  const pct = Math.round((doneCount / steps.length) * 100);
+  const bar = progressEl.querySelector('.onboarding-progress__bar');
+  const track = progressEl.querySelector('.onboarding-progress__track');
+  const label = progressEl.querySelector('.onboarding-progress__label');
+  if (bar) bar.style.width = `${pct}%`;
+  if (track) {
+    track.setAttribute('aria-valuenow', String(pct));
+    track.setAttribute('aria-label', `${doneCount} из ${steps.length} шагов`);
+  }
+  if (label) label.textContent = `${doneCount}/${steps.length}`;
+  stepsEl.replaceChildren(
+    ...steps.map((s) => {
+      const li = document.createElement('li');
+      li.className = s.done ? 'onboarding-step onboarding-step--done' : 'onboarding-step';
+      li.textContent = s.text;
+      return li;
+    })
+  );
+  const dismissBtn = panel.querySelector('.onboarding-dismiss');
+  if (dismissBtn && !dismissBtn.dataset.bound) {
+    dismissBtn.dataset.bound = '1';
+    dismissBtn.addEventListener('click', () => {
+      localStorage.setItem('hh-dashboard-onboarding-dismissed', '1');
+      panel.hidden = true;
+    });
+  }
+}
+
+function renderEmptyState(message, actions = []) {
+  const wrap = document.createElement('div');
+  wrap.className = 'empty empty--actions';
+  const p = document.createElement('p');
+  p.textContent = message;
+  wrap.appendChild(p);
+  if (actions.length) {
+    const row = document.createElement('div');
+    row.className = 'empty-actions';
+    for (const act of actions) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = act.primary ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+      btn.textContent = act.label;
+      btn.addEventListener('click', act.onClick);
+      row.appendChild(btn);
+    }
+    wrap.appendChild(row);
+  }
+  return wrap;
 }
 
 /**
@@ -994,6 +1606,7 @@ async function refreshApplyLogModal(opts = {}) {
     pre.dataset.logCacheKey = cacheKey;
     pre.dataset.logContent = newText;
     pre.textContent = newText;
+    renderApplyLogInsights(newText);
 
     const pinToEnd =
       opts.scrollToEnd === true || (opts.scrollToEnd !== false && followTail && wasAtBottom);
@@ -1004,6 +1617,7 @@ async function refreshApplyLogModal(opts = {}) {
     }
   } catch (e) {
     pre.textContent = `Ошибка: ${e.message}`;
+    renderApplyLogInsights(pre.textContent);
   }
 }
 
@@ -1011,9 +1625,25 @@ function openApplyLogModal() {
   const modal = document.getElementById('apply-log-modal');
   if (!modal) return;
   setApplyLogFollowTail(true);
+  modal.classList.toggle('modal--fullscreen', applyLogFullscreen);
   openModalEl(modal);
   refreshApplyLogModal({ showLoading: true, scrollToEnd: true });
   refreshJobStatus();
+}
+
+function openDailyDigestModal(digest) {
+  const modal = document.getElementById('daily-digest-modal');
+  const pre = document.getElementById('daily-digest-text');
+  if (!modal || !pre) return;
+  const text = String(digest?.text || '').trim() || 'Дайджест пуст';
+  pre.textContent = text;
+  const meta = document.getElementById('daily-digest-meta');
+  if (meta) {
+    const at = digest?.generatedAt ? new Date(digest.generatedAt).toLocaleString('ru-RU') : 'сейчас';
+    const tg = digest?.telegram?.ok ? ' · Telegram отправлен' : '';
+    meta.textContent = `Сформирован: ${at}${tg}`;
+  }
+  openModalEl(modal);
 }
 
 function openApprovedLetterModal(item) {
@@ -1025,11 +1655,25 @@ function openApprovedLetterModal(item) {
   openModalEl(modal);
 }
 
+/** @param {number} n */
+function draftVariantLetter(n) {
+  return String.fromCharCode(65 + n);
+}
+
+/** @param {string} text @param {number} max */
+function draftVariantPreview(text, max = 110) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
+}
+
 function openDraftModal(item) {
   const modal = document.getElementById('draft-modal');
   if (!modal) return;
   const body = modal.querySelector('.modal-draft-body');
   const vacEl = modal.querySelector('.modal-vacancy');
+  const titleEl = modal.querySelector('#draft-modal-title');
+  if (titleEl) titleEl.textContent = COPY.draftTitle || 'Черновик письма';
   vacEl.textContent = item.title || item.url || '';
   body.innerHTML = '';
 
@@ -1045,40 +1689,46 @@ function openDraftModal(item) {
     return;
   }
 
-  const name = `draft-v-${item.id}`;
-  let selectedIndex = 0;
+  const picker = document.createElement('div');
+  picker.className = 'draft-variant-picker';
 
-  const fieldset = document.createElement('fieldset');
-  fieldset.className = 'modal-draft-fieldset';
-  const legend = document.createElement('legend');
-  legend.textContent = 'Вариант';
-  fieldset.appendChild(legend);
+  const tabs = document.createElement('div');
+  tabs.className = 'segmented draft-variant-tabs crm-seg-tight';
+  tabs.setAttribute('role', 'tablist');
+  tabs.setAttribute('aria-label', COPY.draftVariantLabel || 'Вариант');
 
-  variants.forEach((_, i) => {
-    const row = document.createElement('div');
-    row.className = 'modal-draft-variant-row';
-    const input = document.createElement('input');
-    input.type = 'radio';
-    input.name = name;
-    input.id = `${name}-${i}`;
-    input.value = String(i);
-    if (i === 0) input.checked = true;
-    const label = document.createElement('label');
-    label.htmlFor = `${name}-${i}`;
-    label.textContent = `Вариант ${i + 1}`;
-    row.appendChild(input);
-    row.appendChild(label);
-    fieldset.appendChild(row);
+  const preview = document.createElement('p');
+  preview.className = 'draft-variant-preview';
+
+  const hint = document.createElement('p');
+  hint.className = 'draft-variant-hint';
+  hint.textContent =
+    variants.length > 1 ? COPY.draftVariantHint || '1–3 или ← → — переключить вариант' : '';
+
+  variants.forEach((text, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `seg-btn tab draft-variant-tab${i === 0 ? ' active' : ''}`;
+    btn.dataset.variantIndex = String(i);
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+    btn.title = draftVariantPreview(text, 200);
+    btn.textContent = draftVariantLetter(i);
+    tabs.appendChild(btn);
   });
+
+  picker.appendChild(tabs);
+  picker.appendChild(preview);
+  if (variants.length > 1) picker.appendChild(hint);
 
   const lbl = document.createElement('label');
   lbl.className = 'modal-letter-label';
-  lbl.htmlFor = `${name}-edit`;
-  lbl.textContent = 'Текст (правки сохраняются и учитываются при следующей генерации)';
+  lbl.htmlFor = `draft-v-${item.id}-edit`;
+  lbl.textContent = COPY.draftLetterLabel;
 
   const ta = document.createElement('textarea');
   ta.className = 'modal-letter-edit';
-  ta.id = `${name}-edit`;
+  ta.id = `draft-v-${item.id}-edit`;
   ta.rows = 12;
   ta.value = variants[0] || '';
 
@@ -1088,44 +1738,58 @@ function openDraftModal(item) {
   const btnSave = document.createElement('button');
   btnSave.type = 'button';
   btnSave.className = 'btn';
-  btnSave.textContent = 'Сохранить правки';
+  btnSave.textContent = COPY.draftSave;
 
   const btnApprove = document.createElement('button');
   btnApprove.type = 'button';
   btnApprove.className = 'btn ok';
-  btnApprove.textContent = 'Утвердить';
+  btnApprove.textContent = COPY.draftApprove;
 
   const btnDecline = document.createElement('button');
   btnDecline.type = 'button';
   btnDecline.className = 'btn bad';
-  btnDecline.textContent = 'Отклонить';
+  btnDecline.textContent = COPY.draftDecline;
 
-  actions.appendChild(btnSave);
-  actions.appendChild(btnApprove);
-  actions.appendChild(btnDecline);
-
-  body.appendChild(fieldset);
-  body.appendChild(lbl);
-  body.appendChild(ta);
-  body.appendChild(actions);
+  actions.append(btnSave, btnApprove, btnDecline);
+  body.append(picker, lbl, ta, actions);
 
   draftModalState = { id: item.id, variants, selectedIndex: 0 };
+
+  function updatePreview() {
+    preview.textContent = draftVariantPreview(ta.value);
+  }
 
   function syncTextareaToVariant() {
     if (!draftModalState) return;
     draftModalState.variants[draftModalState.selectedIndex] = ta.value;
   }
 
-  fieldset.addEventListener('change', (ev) => {
-    const t = ev.target;
-    if (t.name !== name || t.type !== 'radio') return;
-    syncTextareaToVariant();
-    const idx = Number(t.value);
+  function selectVariant(idx) {
+    if (!draftModalState) return;
     const max = draftModalState.variants.length - 1;
     if (!Number.isFinite(idx) || idx < 0 || idx > max) return;
+    syncTextareaToVariant();
     draftModalState.selectedIndex = idx;
     ta.value = draftModalState.variants[idx] ?? '';
+    tabs.querySelectorAll('.draft-variant-tab').forEach((b, i) => {
+      const on = i === idx;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    updatePreview();
+    ta.focus();
+  }
+
+  draftModalState.selectVariant = selectVariant;
+
+  tabs.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.draft-variant-tab');
+    if (!btn) return;
+    selectVariant(Number(btn.dataset.variantIndex));
   });
+
+  ta.addEventListener('input', updatePreview);
+  updatePreview();
 
   btnSave.addEventListener('click', async () => {
     syncTextareaToVariant();
@@ -1183,6 +1847,10 @@ function openDraftModal(item) {
     }
   });
 
+  draftModalState.triggerSave = () => btnSave.click();
+  draftModalState.triggerApprove = () => btnApprove.click();
+  draftModalState.triggerDecline = () => btnDecline.click();
+
   openModalEl(modal);
 }
 
@@ -1190,6 +1858,18 @@ const draftModalEl = document.getElementById('draft-modal');
 const approvedModalEl = document.getElementById('approved-letter-modal');
 const applyLogModalEl = document.getElementById('apply-log-modal');
 const questionnaireModalEl = document.getElementById('questionnaire-modal');
+
+function setApplyLogFullscreen(on) {
+  applyLogFullscreen = Boolean(on);
+  if (!applyLogModalEl) return;
+  applyLogModalEl.classList.toggle('modal--fullscreen', applyLogFullscreen);
+  const btn = applyLogModalEl.querySelector('.btn-apply-log-fullscreen');
+  if (btn) {
+    syncFullscreenIcon(btn, applyLogFullscreen);
+    btn.title = applyLogFullscreen ? 'Обычный размер' : 'Полноэкранный режим';
+    btn.setAttribute('aria-label', applyLogFullscreen ? 'Обычный размер' : 'Полноэкранный режим');
+  }
+}
 
 questionnaireModalEl?.querySelector('.btn-questionnaire-probe')?.addEventListener('click', () => {
   void runQuestionnaireProbe({ silentToast: false });
@@ -1363,6 +2043,39 @@ applyLogModalEl?.querySelector('.btn-refresh-apply-log')?.addEventListener('clic
 applyLogModalEl?.querySelector('.btn-apply-log-jump')?.addEventListener('click', () => {
   scrollApplyLogToEnd();
 });
+applyLogModalEl?.querySelector('.btn-apply-log-copy')?.addEventListener('click', async () => {
+  const pre = applyLogPreEl();
+  const insights = document.getElementById('apply-log-insights');
+  const path = applyLogModalEl?.querySelector('.apply-log-path')?.textContent?.trim() || '';
+  const meta = document.getElementById('apply-log-meta')?.textContent?.trim() || '';
+  const body = pre?.textContent || '';
+  const header = [path && `Файл: ${path}`, meta].filter(Boolean).join('\n');
+  const insightBlock =
+    insights && !insights.hidden && insights.textContent?.trim()
+      ? `\n---\n${insights.textContent.trim()}\n---\n`
+      : '\n';
+  const text = `${header}${insightBlock}${body}`.trim();
+  if (!text) {
+    showToast('Журнал пуст — нажмите «Обновить»', 'neutral');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Лог скопирован в буфер', 'good');
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    showToast('Лог скопирован', 'good');
+  }
+});
+applyLogModalEl?.querySelector('.btn-apply-log-fullscreen')?.addEventListener('click', () => {
+  setApplyLogFullscreen(!applyLogFullscreen);
+});
 document.getElementById('apply-log-follow-tail')?.addEventListener('change', (e) => {
   setApplyLogFollowTail(e.target.checked);
   if (applyLogFollowTail) scrollApplyLogToEnd();
@@ -1377,6 +2090,13 @@ document.getElementById('apply-log-last-run')?.addEventListener('change', () => 
   setApplyLogFollowTail(true);
   refreshApplyLogModal({ showLoading: true, scrollToEnd: true });
 });
+document.getElementById('apply-log-pause')?.addEventListener('click', () => sendJobControl('pause'));
+document.getElementById('apply-log-stop')?.addEventListener('click', () => {
+  const msg =
+    activeJobControl === 'harvest' ? COPY.confirmStopHarvest : COPY.confirmStopBatch;
+  if (confirm(msg)) sendJobControl('stop');
+});
+document.getElementById('apply-log-resume')?.addEventListener('click', () => sendJobControl('resume'));
 
 approvedModalEl?.querySelector('.btn-copy-approved')?.addEventListener('click', async () => {
   const pre = approvedModalEl.querySelector('.modal-approved-text');
@@ -1413,7 +2133,8 @@ function scoreOf(item) {
   return Number(item.scoreOverall ?? item.geminiScore ?? 0) || 0;
 }
 
-function renderCard(item) {
+function renderCard(item, options = {}) {
+  const inModal = Boolean(options.inModal);
   const node = tpl.content.firstElementChild.cloneNode(true);
   node.dataset.recordId = item.id;
   const s = scoreOf(item);
@@ -1476,7 +2197,14 @@ function renderCard(item) {
   a.href = item.url;
   a.textContent = item.title || item.url;
 
-  const density = readCardDensityMode();
+  const density = options.forceDensity ?? readCardDensityMode();
+  node.classList.add(`card--density-${density}`);
+  if (inModal) {
+    node.classList.add('card--in-modal', 'card--layout-expanded');
+  } else {
+    const layout = document.documentElement.dataset.cardLayout || 'expanded';
+    if (layout === 'expanded') node.classList.add('card--layout-expanded');
+  }
   const metaCompact = node.querySelector('.meta--compact');
   const metaDetail = node.querySelector('.card-meta-detail');
   const salaryLine =
@@ -1488,8 +2216,14 @@ function renderCard(item) {
   if (metaCompact) {
     const metaParts = [...new Set(parts)];
     if (item.resumeRouting?.label) metaParts.push(`Резюме: ${item.resumeRouting.label}`);
+    if (item.targeting?.eligible === false) {
+      metaParts.push(`⚠ ${item.targeting.skipReason || 'нецелевая'}`);
+      node.classList.add('card--off-target');
+    }
     metaCompact.textContent = metaParts.join(' · ');
   }
+
+  renderStatusChips(node.querySelector('.card-status-chips'), item);
 
   const setMetaLine = (sel, label, value) => {
     const el = node.querySelector(sel);
@@ -1510,6 +2244,20 @@ function renderCard(item) {
     setMetaLine('.meta-line--company', 'Компания', item.company);
     setMetaLine('.meta-line--salary', 'Зарплата', salaryLine);
     setMetaLine('.meta-line--search', 'Поиск', item.searchQuery);
+    const resumeLabel = item.resumeRouting?.label?.replace(/^Резюме:\s*/i, '') || '';
+    setMetaLine('.meta-line--resume', 'Резюме', resumeLabel);
+    const resumeLine = node.querySelector('.meta-line--resume');
+    if (resumeLine && item.hhApply?.resumeMatchOk === false) {
+      resumeLine.classList.add('meta-line--warn');
+    }
+    const metrics = item.coverLetter?.metrics;
+    if (metrics?.editRatioPct != null && item.coverLetter?.status === 'approved') {
+      const label =
+        metrics.editRatioPct <= 5 ? 'Письмо без правок' : `Правки письма ~${metrics.editRatioPct}%`;
+      setMetaLine('.meta-line--letter-metrics', '', label);
+    } else {
+      setMetaLine('.meta-line--letter-metrics', '', '');
+    }
   } else {
     if (metaCompact) metaCompact.hidden = false;
     if (metaDetail) metaDetail.hidden = true;
@@ -1759,9 +2507,30 @@ function renderCard(item) {
   const draftBtn = node.querySelector('.cover-draft-btn');
   const regenBtn = node.querySelector('.btn-regenerate-letter');
   const viewLetterBtn = node.querySelector('.btn-view-approved');
+  const exportBtn = node.querySelector('.btn-export-md');
+
+  node.addEventListener('focusin', () => {
+    lastFocusedVacancyId = item.id;
+  });
+
+  if (exportBtn) {
+    exportBtn.hidden = false;
+    exportBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await copyVacancyMarkdown(item);
+        showToast('Markdown в буфере обмена', 'good');
+      } catch {
+        downloadVacancyMarkdown(item);
+        showToast('Markdown сохранён в файл', 'good');
+      }
+    });
+  }
 
   if (cl?.status === 'pending' && (cl?.variants || []).length) {
     draftBtn.hidden = false;
+    const n = (cl.variants || []).filter(Boolean).length;
+    draftBtn.textContent = n > 1 ? `${COPY.draftButton} · ${n}` : COPY.draftButton;
     draftBtn.addEventListener('click', () => openDraftModal(item));
   }
 
@@ -1854,7 +2623,42 @@ function renderCard(item) {
 
   const invitedBtn = node.querySelector('.btn-hh-invited');
   const declinedBtn = node.querySelector('.btn-hh-declined');
-  if (item.status === 'pending' && !vacancyHasHhApply(item)) {
+  const deferBtn = node.querySelector('.btn-defer-vacancy');
+  const undeferBtn = node.querySelector('.btn-undefer-vacancy');
+
+  if (isVacancyDeferredClient(item)) {
+    if (undeferBtn) {
+      undeferBtn.hidden = false;
+      undeferBtn.addEventListener('click', async () => {
+        undeferBtn.disabled = true;
+        try {
+          await api('/api/vacancy/defer', { method: 'POST', body: JSON.stringify({ id: item.id, clear: true }) });
+          showToast('Вакансия снова в очереди', 'good');
+          await load();
+        } catch (e) {
+          alert(e.message);
+          undeferBtn.disabled = false;
+        }
+      });
+    }
+  } else if (item.status === 'pending' && !vacancyHasHhApply(item) && deferBtn) {
+    deferBtn.hidden = false;
+    deferBtn.title = 'Отложить до завтра 09:00 (Shift+клик — на 7 дней)';
+    deferBtn.addEventListener('click', async (ev) => {
+      deferBtn.disabled = true;
+      const days = ev.shiftKey ? 7 : 1;
+      try {
+        await api('/api/vacancy/defer', { method: 'POST', body: JSON.stringify({ id: item.id, days }) });
+        showToast(days === 7 ? 'Отложено на 7 дней' : 'Отложено до завтра 09:00', 'neutral');
+        await load();
+      } catch (e) {
+        alert(e.message);
+        deferBtn.disabled = false;
+      }
+    });
+  }
+
+  if (canMarkHhOutcome(item)) {
     if (invitedBtn) {
       invitedBtn.hidden = false;
       invitedBtn.addEventListener('click', async () => {
@@ -2078,11 +2882,7 @@ function batchScopeForCurrentView() {
 }
 
 function batchScopeUiLabel(scope) {
-  if (scope === 'hidden') return 'Скрытые';
-  if (scope === 'questionnaire') return 'Анкета';
-  if (scope === 'noQuestionnaire') return 'Без анкет';
-  if (scope === 'queue') return 'Очередь';
-  return '';
+  return batchScopeLabel(scope);
 }
 
 function updateBatchButtonsForView() {
@@ -2098,14 +2898,14 @@ function updateBatchButtonsForView() {
   if (autoBtn && scope) {
     autoBtn.dataset.tip =
       scope === 'hidden'
-        ? `Авто-батч по разделу «Скрытые» (≥${scoreThreshold}) — с предупреждением`
-        : `Авто-батч · раздел «${batchScopeUiLabel(scope)}» · балл ≥${scoreThreshold}`;
+        ? `${COPY.batchAuto} · «Скрытые» (≥${scoreThreshold}) — с предупреждением`
+        : `${COPY.batchAuto} · «${batchScopeUiLabel(scope)}» · балл ≥${scoreThreshold}`;
   }
   if (manualBtn && scope) {
     manualBtn.dataset.tip =
       scope === 'hidden'
-        ? `Ручной батч по разделу «Скрытые» (<${scoreThreshold}) — с предупреждением`
-        : `Ручной батч · раздел «${batchScopeUiLabel(scope)}» · балл <${scoreThreshold}`;
+        ? `${COPY.batchManual} · «Скрытые» (<${scoreThreshold}) — с предупреждением`
+        : `${COPY.batchManual} · «${batchScopeUiLabel(scope)}» · балл <${scoreThreshold}`;
   }
 }
 
@@ -2114,8 +2914,11 @@ function syncApplyViewTabs() {
   applyViewTabsEl.querySelectorAll('.tab').forEach((b) => {
     b.classList.toggle('active', b.dataset.applyView === currentApplyView);
   });
+  syncDockMiniActiveView(currentApplyView);
   const hideQueueFilters =
-    currentApplyView === 'applied' || currentApplyView === 'questionnaire';
+    currentApplyView === 'applied' ||
+    currentApplyView === 'questionnaire' ||
+    currentApplyView === 'deferred';
   const queueFiltersEl = document.getElementById('sidebar-queue-filters');
   if (queueFiltersEl) queueFiltersEl.hidden = hideQueueFilters;
 
@@ -2125,19 +2928,49 @@ function syncApplyViewTabs() {
   const onApplied = currentApplyView === 'applied';
   const prepBtn = document.getElementById('btn-questionnaire-prep-batch');
   const reprobeBtn = document.getElementById('btn-questionnaire-reprobe-batch');
+  const probeFilterBtn = document.getElementById('btn-questionnaire-probe-filter');
   const qActions = document.getElementById('context-questionnaire-actions');
   if (prepBtn) prepBtn.hidden = !onQ;
   if (reprobeBtn) reprobeBtn.hidden = !onQ;
+  if (probeFilterBtn) probeFilterBtn.hidden = !onQ;
   if (qActions) qActions.hidden = !onQ;
   document.querySelectorAll('[data-service-q-only]').forEach((el) => {
     el.hidden = !onQ;
   });
+  if (onQ) void refreshQuestionnaireReprobeStats();
 
   const funnelEl = document.getElementById('applied-funnel-tabs');
   if (funnelEl) funnelEl.hidden = !onApplied;
 
   const contextBar = document.getElementById('main-context-bar');
   if (contextBar) contextBar.hidden = !onApplied && !onQ;
+}
+
+const APPLY_VIEW_TAB_LABELS = {
+  queue: 'Очередь',
+  noQuestionnaire: 'Без анк.',
+  questionnaire: 'Анкета',
+  applied: 'Отклики',
+  hidden: 'Скрытые',
+  deferred: 'Отлож.',
+};
+
+function updateApplyViewTabCounts(counts) {
+  if (!applyViewTabsEl || !counts) return;
+  const map = {
+    queue: counts.queue,
+    noQuestionnaire: counts.noQuestionnaire,
+    questionnaire: counts.questionnaire,
+    applied: counts.applied,
+    hidden: counts.hiddenByRole,
+    deferred: counts.deferred,
+  };
+  applyViewTabsEl.querySelectorAll('.tab[data-apply-view]').forEach((btn) => {
+    const view = btn.dataset.applyView;
+    const base = APPLY_VIEW_TAB_LABELS[view] || view;
+    const n = map[view];
+    btn.textContent = n != null && Number(n) > 0 ? `${base} (${n})` : base;
+  });
 }
 
 function mergeBatchAndApplyProgress(st) {
@@ -2171,25 +3004,25 @@ function pickJobProgressPayload(st) {
   const batchActive = Boolean(st.batchActive ?? st.batch?.running ?? st.batchControl?.batchRunning);
   const batchMerged = batchActive ? mergeBatchAndApplyProgress(st) : st.batchProgress;
   if (batchActive && batchMerged) {
-    return { ...batchMerged, title: 'Батч откликов' };
+    return { ...batchMerged, title: COPY.batch };
   }
   if (st.batchProgress?.phase === 'running' || st.batchProgress?.phase === 'paused') {
-    return { ...st.batchProgress, title: 'Батч откликов' };
+    return { ...st.batchProgress, title: COPY.batch };
   }
   if (st.applyChat?.running && st.applyChatProgress) {
     return { ...st.applyChatProgress, title: 'Отклик в браузере' };
   }
   if (st.harvest?.running && st.harvestProgress) {
-    return { ...st.harvestProgress, title: 'Сбор вакансий' };
+    return { ...st.harvestProgress, title: COPY.harvest };
   }
   if (st.applyChatProgress?.phase === 'done' || st.applyChatProgress?.phase === 'error') {
     return { ...st.applyChatProgress, title: 'Отклик в браузере' };
   }
   if (st.harvestProgress?.phase === 'done' || st.harvestProgress?.phase === 'error') {
-    return { ...st.harvestProgress, title: 'Сбор вакансий' };
+    return { ...st.harvestProgress, title: COPY.harvest };
   }
   if (st.batchProgress?.phase === 'done' || st.batchProgress?.phase === 'error') {
-    return { ...st.batchProgress, title: 'Батч откликов' };
+    return { ...st.batchProgress, title: COPY.batch };
   }
   return null;
 }
@@ -2253,18 +3086,42 @@ function paintJobProgressBox(box, p, st, { scoped = false } = {}) {
   if (metaEl) metaEl.textContent = parts.join(' · ');
 
   if (!scoped) {
+    const batchActive = Boolean(st?.batchActive ?? st?.batch?.running ?? st?.batchControl?.batchRunning);
+    const isBatchBlock = p.title === COPY.batch;
+    const clickable = Boolean(
+      isBatchBlock &&
+        (batchActive || p.phase === 'running' || p.phase === 'paused' || p.phase === 'done' || p.phase === 'error')
+    );
+    box.classList.toggle('job-progress--clickable', clickable);
+    box.tabIndex = clickable ? 0 : -1;
+    if (track) track.setAttribute('role', clickable ? 'presentation' : 'progressbar');
+
     const logEl = document.getElementById('job-progress-log');
     if (logEl) {
-      const tail = st?.applyLog?.tail || '';
-      const batchActive = Boolean(st?.batchActive ?? st?.batch?.running ?? st?.batchControl?.batchRunning);
-      const showLog = (batchActive || st?.applyChat?.running) && tail.trim();
+      const tail = (st?.applyLog?.tail || '').trim();
+      const showLog = (batchActive || st?.applyChat?.running) && tail;
       logEl.hidden = !showLog;
       if (showLog) {
-        logEl.textContent = tail;
+        const lines = tail.split('\n').filter(Boolean);
+        logEl.textContent = lines.slice(-2).join('\n');
         logEl.scrollTop = logEl.scrollHeight;
       }
     }
   }
+}
+
+function initJobProgressOpenLog() {
+  const box = document.getElementById('job-progress');
+  if (!box) return;
+  const open = (e) => {
+    if (box.hidden || !box.classList.contains('job-progress--clickable')) return;
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.type === 'keydown') e.preventDefault();
+    openApplyLogModal();
+    startJobLogPoll();
+  };
+  box.addEventListener('click', open);
+  box.addEventListener('keydown', open);
 }
 
 function renderJobProgress(st) {
@@ -2279,12 +3136,78 @@ function renderJobProgress(st) {
 /** @type {'idle'|'harvest'|'batch'} */
 let activeJobControl = 'idle';
 
+function updateBrowserSideJobButtons(st) {
+  const busy = Boolean(st.browserBusy?.busy);
+  const ids = ['btn-daily-routine', 'btn-run-harvest'];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.disabled = busy;
+      el.title = busy ? st.browserBusy?.message || 'Дождитесь завершения батча' : el.dataset.tip || '';
+    }
+  }
+  document
+    .querySelectorAll(
+      '[data-service-action="sync-hh-responses"], [data-service-action="sync-hh-chats"], [data-service-action^="raise-resumes"]'
+    )
+    .forEach((el) => {
+      el.disabled = busy;
+      if (busy) el.title = st.browserBusy?.message || 'Недоступно — дождитесь завершения батча';
+      else if (el.dataset.tip) el.title = el.dataset.tip;
+    });
+}
+
+function renderRoutingHealthBanner(st) {
+  const el = document.getElementById('crm-health-banner');
+  if (!el) return;
+  const rh = st.routingHealth;
+  const nc = st.negotiationsCache;
+  const parts = [];
+  if (rh && !rh.ok) {
+    parts.push(
+      `Резюме: ${rh.issues.map((i) => i.label).join(', ')} — hash в config/resume-routing.json`
+    );
+  }
+  if (nc?.count != null) {
+    parts.push(`Кэш hh: ${nc.count} откликов`);
+  }
+  if (!parts.length) {
+    el.hidden = true;
+    el.textContent = '';
+    el.classList.remove('crm-health-banner--warn');
+    return;
+  }
+  el.hidden = false;
+  el.textContent = `${parts.join(' · ')} · нажмите для сервиса`;
+  el.classList.toggle('crm-health-banner--warn', Boolean(rh && !rh.ok));
+  if (!el.dataset.bound) {
+    el.dataset.bound = '1';
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      document.getElementById('btn-open-service')?.click();
+    });
+  }
+}
+
 function updateJobControlButtons(st) {
+  updateBrowserSideJobButtons(st);
+  renderRoutingHealthBanner(st);
   const row = document.getElementById('job-control-row');
   const labelEl = document.getElementById('job-control-label');
   const pauseBtn = document.getElementById('btn-job-pause');
   const stopBtn = document.getElementById('btn-job-stop');
   const resumeBtn = document.getElementById('btn-job-resume');
+  const logPauseBtn = document.getElementById('apply-log-pause');
+  const logStopBtn = document.getElementById('apply-log-stop');
+  const logResumeBtn = document.getElementById('apply-log-resume');
+  const mirrorToLogButtons = () => {
+    if (logPauseBtn) logPauseBtn.disabled = pauseBtn?.disabled ?? true;
+    if (logStopBtn) logStopBtn.disabled = stopBtn?.disabled ?? true;
+    if (logResumeBtn) {
+      logResumeBtn.disabled = resumeBtn?.disabled ?? true;
+      logResumeBtn.title = resumeBtn?.title || '';
+    }
+  };
   const bc = st.batchControl || {};
   const hc = st.harvestControl || {};
   const harvestRunning = Boolean(st.harvest?.running);
@@ -2294,13 +3217,14 @@ function updateJobControlButtons(st) {
     activeJobControl = 'harvest';
     const paused = hc.command === 'paused';
     if (row) row.hidden = false;
-    if (labelEl) labelEl.textContent = paused ? 'Сбор · пауза' : 'Сбор';
+    if (labelEl) labelEl.textContent = paused ? `${COPY.harvest} · пауза` : COPY.harvest;
     if (pauseBtn) pauseBtn.disabled = paused;
     if (stopBtn) stopBtn.disabled = false;
     if (resumeBtn) {
       resumeBtn.disabled = !paused;
       resumeBtn.title = paused ? 'Продолжить сбор' : 'Сбор не на паузе';
     }
+    mirrorToLogButtons();
     return;
   }
 
@@ -2308,7 +3232,7 @@ function updateJobControlButtons(st) {
     activeJobControl = 'batch';
     const paused = batchRunning && bc.command === 'paused';
     if (row) row.hidden = false;
-    if (labelEl) labelEl.textContent = paused ? 'Батч · пауза' : 'Батч';
+    if (labelEl) labelEl.textContent = paused ? `${COPY.batch} · пауза` : COPY.batchShort || COPY.batch;
     if (pauseBtn) pauseBtn.disabled = !batchRunning || paused;
     if (stopBtn) stopBtn.disabled = !batchRunning;
     if (resumeBtn) {
@@ -2319,11 +3243,13 @@ function updateJobControlButtons(st) {
           ? 'Продолжить прерванный батч'
           : 'Нет сохранённого батча';
     }
+    mirrorToLogButtons();
     return;
   }
 
   activeJobControl = 'idle';
   if (row) row.hidden = true;
+  mirrorToLogButtons();
 }
 
 async function postBatchControl(action) {
@@ -2395,7 +3321,7 @@ function formatHumanJobStatus(st) {
     const hp = st.harvestProgress;
     const hc = st.harvestControl || {};
     if (hc.command === 'paused') {
-      msgs.push(hp?.label?.trim() || 'Сбор на паузе');
+      msgs.push(hp?.label?.trim() || `${COPY.harvest} на паузе`);
     } else {
       msgs.push(hp?.label?.trim() || 'Собираем вакансии с hh.ru…');
     }
@@ -2406,19 +3332,33 @@ function formatHumanJobStatus(st) {
     const planned = Number(bc.planned) || 0;
     const progress = planned ? ` (${done} из ${planned})` : '';
     if (bc.command === 'paused') {
-      msgs.push(`Батч на паузе${progress}`);
+      const captcha =
+        bc.pauseReason === 'captcha'
+          ? ' — капча, пройдите проверку в Chromium'
+          : '';
+      msgs.push(`${COPY.batch} на паузе${progress}${captcha}`);
     } else {
       const bp = st.batchProgress;
       const fromProgress = bp?.label?.trim();
-      msgs.push(fromProgress || `Идёт батч откликов${progress}`);
+      msgs.push(fromProgress || `Идёт ${COPY.batch.toLowerCase()}${progress}`);
     }
   } else if (bc.canResume) {
     const done = Number(bc.done) || 0;
     const planned = Number(bc.planned) || 0;
     msgs.push(
       planned
-        ? `Батч не закончен (${done} из ${planned}) — «Продолжить» ниже`
-        : 'Есть незавершённый батч — «Продолжить» ниже'
+        ? `${COPY.batch} не завершена (${done} из ${planned}) — «Продолжить» ниже`
+        : `Есть незавершённая ${COPY.batch.toLowerCase()} — «Продолжить» ниже`
+    );
+  } else if (st.batchLastReport?.finishedAt && !batchAlive) {
+    const br = st.batchLastReport;
+    const resumeLine = Object.entries(br.resumeUsage || {})
+      .map(([k, v]) => `${k}:${v}`)
+      .join(', ');
+    msgs.push(
+      `Последняя серия: ${br.done}/${br.planned} успешно` +
+        (br.offTargetSkipped ? ` · нецелевых ${br.offTargetSkipped}` : '') +
+        (resumeLine ? ` · ${resumeLine}` : '')
     );
   }
 
@@ -2429,8 +3369,8 @@ function formatHumanJobStatus(st) {
 
   if (st.browserLock?.held && !msgs.length) {
     const ownerLabels = {
-      harvest: 'сбор вакансий',
-      batch: 'батч откликов',
+      harvest: COPY.harvest.toLowerCase(),
+      batch: COPY.batch.toLowerCase(),
       'hh-apply-chat': 'отклик',
       'hh-apply-batch': 'батч',
     };
@@ -2449,8 +3389,9 @@ function formatHumanJobStatus(st) {
 
 function formatJobStatusTooltip(st, { msgs = [] } = {}) {
   const lines = [];
-  if (st.harvest?.running && st.harvest.pid) lines.push(`Сбор вакансий (процесс ${st.harvest.pid})`);
-  if (st.batch?.running && st.batch.pid) lines.push(`Батч (процесс ${st.batch.pid})`);
+  if (st.harvest?.running && st.harvest.pid)
+    lines.push(`${COPY.harvest} (процесс ${st.harvest.pid})`);
+  if (st.batch?.running && st.batch.pid) lines.push(`${COPY.batchShort} (процесс ${st.batch.pid})`);
   if (st.applyChat?.running && st.applyChat.pid) lines.push(`Отклик (процесс ${st.applyChat.pid})`);
   if (st.queuePath) lines.push(`Файл очереди: ${st.queuePath}`);
   if (st.browserLock?.held) lines.push(`Блокировка браузера: ${st.browserLock.owner}`);
@@ -2466,7 +3407,7 @@ function formatJobStatusTooltip(st, { msgs = [] } = {}) {
 function formatHarvestStatsLine(h) {
   if (!h) return '';
   if (h.message) return h.message;
-  if (h.added != null) return `Сбор: +${h.added} в очередь`;
+  if (h.added != null) return `${COPY.harvest}: +${h.added} в очередь`;
   return '';
 }
 
@@ -2519,7 +3460,9 @@ function renderFunnelMini(stats) {
   ];
   el.hidden = false;
   const hhExtra = onHh > applied ? ` · hh ${onHh}` : '';
+  const sparkline = renderDailySparklineHtml(stats.applyTimelineLast7 || []);
   el.innerHTML = `
+    ${sparkline}
     <div class="funnel-mini__rates">${sinceLabel}: ${applied} откл.${hhExtra} · ${viewPct}% просм. · ${invitePct}% пригл. · ждём ${awaiting} · отказ ${declined}</div>
     <div class="funnel-mini__bars">
       ${steps
@@ -2548,6 +3491,42 @@ function readFunnelFiltersFromUI() {
     out.periodDays = Number.isFinite(n) ? n : 0;
   }
   return out;
+}
+
+function renderScoreBucketChart(buckets) {
+  const total = (buckets.high || 0) + (buckets.mid || 0) + (buckets.low || 0) + (buckets.none || 0);
+  if (!total) return '';
+  const segs = [
+    { cls: 'funnel-stack__seg--high', n: buckets.high || 0, label: '≥70' },
+    { cls: 'funnel-stack__seg--mid', n: buckets.mid || 0, label: '50–69' },
+    { cls: 'funnel-stack__seg--low', n: buckets.low || 0, label: '<50' },
+    { cls: 'funnel-stack__seg--none', n: buckets.none || 0, label: 'без' },
+  ].filter((s) => s.n > 0);
+  const bar = segs
+    .map((s) => `<span class="funnel-stack__seg ${s.cls}" style="flex:${s.n}" title="${s.label}: ${s.n}"></span>`)
+    .join('');
+  const legend = segs
+    .map((s) => `<span class="funnel-stack__legend-item"><i class="funnel-stack__dot ${s.cls}"></i>${s.label} ${s.n}</span>`)
+    .join('');
+  return `<div class="funnel-stack-chart" role="img" aria-label="Распределение по баллам">${bar}</div><div class="funnel-stack__legend">${legend}</div>`;
+}
+
+function renderHhStatusChart(hh) {
+  const total = Number(hh.total) || 0;
+  if (!total) return '';
+  const segs = [
+    { cls: 'funnel-stack__seg--viewed', n: hh.viewed || 0, label: 'просм.' },
+    { cls: 'funnel-stack__seg--invited', n: hh.invited || 0, label: 'пригл.' },
+    { cls: 'funnel-stack__seg--declined', n: hh.declined || 0, label: 'отказ' },
+    { cls: 'funnel-stack__seg--awaiting', n: hh.awaiting || 0, label: 'ждём' },
+  ].filter((s) => s.n > 0);
+  const bar = segs
+    .map((s) => `<span class="funnel-stack__seg ${s.cls}" style="flex:${s.n}" title="${s.label}: ${s.n}"></span>`)
+    .join('');
+  const legend = segs
+    .map((s) => `<span class="funnel-stack__legend-item"><i class="funnel-stack__dot ${s.cls}"></i>${s.label} ${s.n}</span>`)
+    .join('');
+  return `<div class="funnel-stack-chart funnel-stack-chart--hh" role="img" aria-label="Статусы в кэше hh">${bar}</div><div class="funnel-stack__legend">${legend}</div>`;
 }
 
 function funnelFilterQuery(filters) {
@@ -2632,16 +3611,31 @@ function renderFunnelModalBody(data) {
   const resumeRows = (byResume || [])
     .map(
       (r) =>
-        `<tr><td>${r.label}</td><td>${r.applied}</td><td>${r.viewed}</td><td>${r.invited}</td><td>${r.declined}</td><td>${r.viewPct}%</td><td>${r.invitePct}%</td></tr>`
+        `<tr><td>${escapeHtml(r.label)}</td><td>${r.applied}</td><td>${r.viewed}</td><td>${r.invited}</td><td>${r.declined}</td><td>${r.viewPct}%</td><td>${r.invitePct}%</td></tr>`
     )
     .join('');
   const resumeTable = resumeRows
     ? `<section class="funnel-panel funnel-panel--wide">
-        <h3 class="funnel-panel__title">По резюме (роль вакансии)</h3>
+        <h3 class="funnel-panel__title">По резюме (фактический выбор)</h3>
         <table class="funnel-resume-table">
           <thead><tr><th>Резюме</th><th>Откл.</th><th>Просм.</th><th>Пригл.</th><th>Отказ</th><th>% просм.</th><th>% пригл.</th></tr></thead>
           <tbody>${resumeRows}</tbody>
         </table>
+      </section>`
+    : `<section class="funnel-panel funnel-panel--wide"><p class="funnel-empty">Нет данных по резюме — сделайте отклики и синхронизируйте hh.ru</p></section>`;
+
+  const staleItems = data.staleFollowUp || [];
+  const staleSection = staleItems.length
+    ? `<section class="funnel-panel funnel-panel--wide">
+        <h3 class="funnel-panel__title">Follow-up: ${data.staleFollowUpDays || 7}+ дней без ответа (${staleItems.length})</h3>
+        <ul class="funnel-stale-list">${staleItems
+          .slice(0, 12)
+          .map(
+            (it) =>
+              `<li><strong>${escapeHtml(it.title || '—')}</strong>${it.company ? ` · ${escapeHtml(it.company)}` : ''} — ${it.days} дн.</li>`
+          )
+          .join('')}</ul>
+        <p class="funnel-period-note">В разделе «Отклики» → вкладка «7+ дн.» — полный список для напоминания работодателю.</p>
       </section>`
     : '';
 
@@ -2669,41 +3663,53 @@ function renderFunnelModalBody(data) {
     }</p>
     <div class="funnel-modal-grid">
       ${resumeTable}
-      <section class="funnel-panel">
-        <h3 class="funnel-panel__title">Воронка</h3>
-        <div class="funnel-chart">${funnelBars}</div>
-        <ul class="funnel-rates-list">
-          <li>Просмотр от откликов: <strong>${ratesSafe.viewFromApplied ?? 0}%</strong></li>
-          <li>Приглашения от откликов: <strong>${ratesSafe.inviteFromApplied ?? 0}%</strong></li>
-          <li>Приглашения от просмотров: <strong>${ratesSafe.inviteFromViewed ?? 0}%</strong></li>
-          <li>Отказы: ${countsSafe.declined ?? 0} (${ratesSafe.declineFromApplied ?? 0}%)</li>
-          <li>Ждём ответ: ${countsSafe.awaiting ?? 0} · без статуса: ${countsSafe.noResponseYet ?? 0}</li>
-        </ul>
-      </section>
-      <section class="funnel-panel funnel-panel--timeline">
-        <h3 class="funnel-panel__title">Динамика откликов</h3>
-        ${timelineHtml}
-      </section>
+      ${staleSection}
+      <div class="funnel-modal-row funnel-modal-row--pair">
+        <section class="funnel-panel funnel-panel--pair-funnel">
+          <h3 class="funnel-panel__title">Воронка</h3>
+          <div class="funnel-chart">${funnelBars}</div>
+          <ul class="funnel-rates-list funnel-rates-list--compact">
+            <li>Просмотр от откликов: <strong>${ratesSafe.viewFromApplied ?? 0}%</strong></li>
+            <li>Приглашения от откликов: <strong>${ratesSafe.inviteFromApplied ?? 0}%</strong></li>
+            <li>Приглашения от просмотров: <strong>${ratesSafe.inviteFromViewed ?? 0}%</strong></li>
+            <li>Отказы: ${countsSafe.declined ?? 0} (${ratesSafe.declineFromApplied ?? 0}%)</li>
+            <li>Ждём: ${countsSafe.awaiting ?? 0} · без статуса: ${countsSafe.noResponseYet ?? 0}</li>
+          </ul>
+        </section>
+        <section class="funnel-panel funnel-panel--timeline">
+          <h3 class="funnel-panel__title">Динамика откликов</h3>
+          <div class="funnel-timeline-wrap">${timelineHtml}</div>
+        </section>
+      </div>
       <section class="funnel-panel funnel-panel--half">
         <h3 class="funnel-panel__title">По баллам</h3>
+        ${renderScoreBucketChart(buckets)}
         <div class="funnel-buckets">
           <div class="funnel-bucket"><span>≥70</span><strong>${buckets.high}</strong></div>
           <div class="funnel-bucket"><span>50–69</span><strong>${buckets.mid}</strong></div>
           <div class="funnel-bucket"><span>&lt;50</span><strong>${buckets.low}</strong></div>
           <div class="funnel-bucket"><span>без</span><strong>${buckets.none}</strong></div>
         </div>
-        <h3 class="funnel-panel__title">Активность</h3>
-        <ul class="funnel-rates-list">
-          <li>Отклики за 7 дн.: <strong>${data.appliedRolling?.last7d ?? '—'}</strong></li>
-          <li>Отклики за 30 дн.: <strong>${data.appliedRolling?.last30d ?? '—'}</strong></li>
-          <li>Анкеты: ${countsSafe.withQuestionnaire ?? 0}</li>
-          <li>Чаты ждут ответ: ${countsSafe.chatNeedsReply ?? 0}</li>
-          <li>Отклонено в очереди: ${countsSafe.rejected ?? 0}</li>
-        </ul>
+        <div class="funnel-panel__section funnel-panel__section--tail">
+          <h3 class="funnel-panel__title">Активность</h3>
+          <ul class="funnel-rates-list">
+            <li>Отклики за 7 дн.: <strong>${data.appliedRolling?.last7d ?? '—'}</strong></li>
+            <li>Отклики за 30 дн.: <strong>${data.appliedRolling?.last30d ?? '—'}</strong></li>
+            <li>Анкеты: ${countsSafe.withQuestionnaire ?? 0}</li>
+            <li>Чаты ждут ответ: ${countsSafe.chatNeedsReply ?? 0}</li>
+            <li>Отклонено в очереди: ${countsSafe.rejected ?? 0}</li>
+            ${
+              data.feedbackStats?.total
+                ? `<li>Обратная связь LLM: пригл. <strong>${data.feedbackStats.invited ?? 0}</strong> · отказ <strong>${data.feedbackStats.declined ?? 0}</strong> · в файле ${data.feedbackStats.total}</li>`
+                : '<li>Обратная связь LLM: отметьте «Пригласили» / «Отказ» на карточках</li>'
+            }
+          </ul>
+        </div>
       </section>
       <section class="funnel-panel funnel-panel--half">
         <h3 class="funnel-panel__title">Кэш hh.ru (все переговоры)</h3>
         <p class="funnel-panel__meta">${hh.syncedAt ? `Синхр.: ${new Date(hh.syncedAt).toLocaleString('ru-RU')}` : 'Синхронизируйте отклики в «Сервис»'}</p>
+        ${renderHhStatusChart(hh)}
         <ul class="funnel-rates-list">
           <li>Всего: <strong>${hh.total}</strong></li>
           <li>Просмотр: ${hh.viewed} (${hhR.viewFromAll}%)</li>
@@ -2725,6 +3731,7 @@ async function loadFunnelAnalytics(filters) {
     funnel.queueOverview = dash.queue;
     funnel.harvestLast = dash.harvestLast;
     funnel.appliedRolling = dash.appliedRolling;
+    funnel.feedbackStats = dash.feedbackStats;
   }
   return funnel;
 }
@@ -2755,11 +3762,7 @@ function closeFunnelModal() {
 }
 
 function initFunnelUi() {
-  document.getElementById('btn-open-funnel')?.addEventListener('click', openFunnelModal);
-  document.getElementById('stats-panel')?.addEventListener('click', (e) => {
-    if (e.target.closest('#btn-open-funnel')) return;
-    openFunnelModal();
-  });
+  document.querySelector('.crm-kpi')?.addEventListener('click', openFunnelModal);
   document.querySelectorAll('[data-close-funnel]').forEach((el) => {
     el.addEventListener('click', closeFunnelModal);
   });
@@ -2815,6 +3818,7 @@ function renderDashboardStats(stats) {
         { label: '% приглашений', value: `${f.inviteRatePct ?? stats.rates?.invitePct ?? 0}%`, highlight: true },
         { label: 'Чаты: вопрос', value: stats.chatNeedsReply ?? 0 },
         { label: 'Анкеты', value: stats.withQuestionnaire ?? 0 },
+        { label: '7+ дн. без ответа', value: stats.staleFollowUp ?? f.staleFollowUp ?? 0, title: 'Follow-up: отклик без ответа работодателя' },
         {
           label: 'Воронка',
           value: `${f.viewRatePct ?? 0}% просмотр → ${f.inviteRatePct ?? 0}% пригл.`,
@@ -2866,8 +3870,10 @@ async function refreshJobStatus() {
   if (!el) return;
   try {
     const st = await api('/api/job-status');
+    lastJobStatus = st;
     renderJobProgress(st);
     updateJobControlButtons(st);
+    renderApplyLogInsights(applyLogPreEl()?.dataset.logContent || '', st);
     if (st.harvestTick?.sequence > lastHarvestTickSeq) {
       lastHarvestTickSeq = st.harvestTick.sequence;
       load();
@@ -2875,6 +3881,7 @@ async function refreshJobStatus() {
     const { main, msgs } = formatHumanJobStatus(st);
     if (st.applyRates) renderApplyRateMeters(st.applyRates);
     renderDashboardStats(st.dashboardStats || st.conversion);
+    initOnboardingPanel(st);
     el.textContent = main;
     el.title = formatJobStatusTooltip(st, { msgs });
     el.classList.toggle('job-status--busy', msgs.length > 0);
@@ -2906,6 +3913,69 @@ async function refreshJobStatus() {
       void load();
     }
     harvestWasRunning = Boolean(st.harvest?.running);
+
+    const batchAlive = Boolean(st.batchActive ?? st.batch?.running ?? st.batchControl?.batchRunning);
+    if (batchWasRunning && !batchAlive) {
+      const br = st.batchLastReport;
+      const bc = st.batchControl || {};
+      const skipped = br?.skipped ?? bc.skipped ?? 0;
+      const failed = br?.failed ?? bc.failed ?? 0;
+      if (br?.finishedAt) {
+        const msg = `Серия завершена: ${br.done}/${br.planned} успешно` +
+          (skipped ? `, пропуск ${skipped}` : '') +
+          (failed ? `, ошибок ${failed}` : '');
+        showToast(msg, failed ? 'neutral' : skipped ? 'neutral' : 'good');
+        if (skipped || failed) {
+          setTimeout(() => openBatchReportModal(), 400);
+        }
+      }
+    }
+    batchWasRunning = batchAlive;
+
+    const pauseReason = st.batchControl?.pauseReason || null;
+    if (
+      batchAlive &&
+      pauseReason === 'captcha' &&
+      st.batchControl?.command === 'paused' &&
+      !batchCaptchaToastShown
+    ) {
+      batchCaptchaToastShown = true;
+      showToast(
+        'Капча на hh.ru — пройдите проверку в Chromium. Батч продолжится автоматически.',
+        'neutral'
+      );
+    }
+    if (pauseReason !== 'captcha') batchCaptchaToastShown = false;
+    lastBatchPauseReason = pauseReason;
+
+    const side = st.sideJobs || {};
+    if (syncResponsesWasRunning && !side.syncResponses?.running) {
+      try {
+        await applyNegotiationsCacheToQueue();
+      } catch (e) {
+        showToast(e.message || 'Не удалось применить кэш откликов', 'neutral');
+      }
+    }
+    syncResponsesWasRunning = Boolean(side.syncResponses?.running);
+    syncChatsWasRunning = Boolean(side.syncChats?.running);
+    if (syncChatsWasRunning && !side.syncChats?.running) {
+      void loadItems();
+      showToast('Чаты синхронизированы', 'good');
+    }
+    if (dailyRoutineWasRunning && !side.dailyRoutine?.running) {
+      showToast('Утренний цикл завершён — проверьте вкладку «Отклики»', 'good');
+      void loadItems();
+    }
+    dailyRoutineWasRunning = Boolean(side.dailyRoutine?.running);
+    if (resumeRaiseWasRunning && !side.resumeRaise?.running) {
+      const lr = st.resumeRaiseSchedule?.lastResult;
+      const msg = lr
+        ? `Подъём резюме: +${lr.raised ?? 0}, пропуск ${lr.skipped ?? 0}`
+        : 'Подъём резюме завершён';
+      showToast(msg, lr?.ok !== false ? 'good' : 'neutral');
+    }
+    resumeRaiseWasRunning = Boolean(side.resumeRaise?.running);
+    renderResumeRaiseScheduleStatus(st.resumeRaiseSchedule);
 
     if (!st.applyChat?.running && !st.batch?.running && applyLogPollTimer) {
       clearInterval(applyLogPollTimer);
@@ -2942,36 +4012,37 @@ function restoreListScroll(state) {
 }
 
 function updateListCount(items, counts) {
+  const host = document.getElementById('list-breadcrumbs-host');
   const countEl = document.getElementById('list-count');
-  if (!countEl) return;
   const filters = readFiltersFromUI();
   const hasLocalFilter =
     filters.search || filters.company || filters.minScore || filters.onlySalary;
   const shown = items.length;
   const total = cachedRawItems.length;
-  const bandLabel =
-    currentScoreBand === 'high'
-      ? `Авто ≥${scoreThreshold}`
-      : currentScoreBand === 'low'
-        ? `Ручной <${scoreThreshold}`
-        : 'Все';
-  const filterNote =
-    hasLocalFilter && total !== shown ? ` · показано ${shown} из ${total}` : ` · ${shown} карточек`;
 
   if (!counts) {
-    countEl.textContent = `Загрузка…`;
+    if (host) host.innerHTML = '<span class="list-breadcrumbs__item">Загрузка…</span>';
+    if (countEl) countEl.textContent = 'Загрузка…';
     return;
   }
-  if (currentApplyView === 'applied') {
-    countEl.textContent = `${bandLabel}${filterNote} · откликов всего: ${counts.applied ?? '—'}`;
-  } else if (currentApplyView === 'hidden') {
-    countEl.textContent = `Скрытые${filterNote} · Senior/Lead, 1С, разработчик`;
-  } else if (currentApplyView === 'questionnaire') {
-    countEl.textContent = `С анкетой${filterNote} · ждут заполнения на hh.ru`;
-  } else if (currentApplyView === 'noQuestionnaire') {
-    countEl.textContent = `${bandLabel}${filterNote} · без анкеты · ≥${scoreThreshold}: ${counts.high ?? '—'}, <${scoreThreshold}: ${counts.low ?? '—'}`;
-  } else {
-    countEl.textContent = `${bandLabel}${filterNote} · ≥${scoreThreshold}: ${counts.high ?? '—'}, <${scoreThreshold}: ${counts.low ?? '—'} · откликов: ${counts.applied ?? 0}`;
+
+  mountListBreadcrumbs(
+    host,
+    buildListBreadcrumbItems({
+      applyView: currentApplyView,
+      scoreBand: currentScoreBand,
+      status: currentStatus,
+      count: shown,
+      total,
+      threshold: scoreThreshold,
+      appliedFunnel: currentAppliedFunnel,
+      hasLocalFilter: Boolean(hasLocalFilter),
+    })
+  );
+
+  if (countEl) {
+    countEl.hidden = true;
+    countEl.textContent = `${shown} карточек`;
   }
 }
 
@@ -2982,31 +4053,130 @@ function renderListFromCache(scrollState) {
   listEl.innerHTML = '';
   if (!items.length) {
     if (currentApplyView === 'applied') {
-      listEl.innerHTML =
-        '<p class="empty">Пока нет откликов через дашборд. После «Авто-отклик» или батча вакансии появятся здесь.</p>';
+      if (currentAppliedFunnel === 'stale') {
+        listEl.appendChild(
+          renderEmptyState('Нет откликов без ответа дольше 7 дней — хороший знак.', [
+            { label: 'Все отклики', onClick: () => document.getElementById('applied-funnel-tabs')?.querySelector('[data-applied-funnel="all"]')?.click() },
+          ])
+        );
+      } else {
+        listEl.appendChild(
+          renderEmptyState('Пока нет откликов через дашборд. После «Авто-отклики» или серии вакансии появятся здесь.', [
+            { label: COPY.batchAuto, primary: true, onClick: () => document.getElementById('btn-batch-auto')?.click() },
+          ])
+        );
+      }
     } else if (currentApplyView === 'hidden') {
-      listEl.innerHTML =
-        '<p class="empty">Нет скрытых вакансий в этой вкладке. Смените диапазон баллов или статус.</p>';
+      listEl.appendChild(renderEmptyState('Нет скрытых вакансий в этой вкладке. Смените диапазон баллов или статус.'));
     } else if (currentApplyView === 'questionnaire') {
-      listEl.innerHTML =
-        '<p class="empty">Нет вакансий с анкетой. На карточке: «Отклик + анкета» или «Загрузить с hh.ru» в модалке «Вопросы».</p>';
+      listEl.appendChild(
+        renderEmptyState('Нет вакансий с анкетой в этом разделе.', [
+          {
+            label: 'Probe анкет',
+            primary: true,
+            onClick: () => document.getElementById('btn-questionnaire-probe-filter')?.click(),
+          },
+          { label: 'Очередь', onClick: () => applyViewTabsEl?.querySelector('[data-apply-view="queue"]')?.click() },
+        ])
+      );
+    } else if (currentApplyView === 'deferred') {
+      listEl.appendChild(
+        renderEmptyState('Нет отложенных вакансий. На карточке — «Завтра», чтобы убрать из батча на сутки.', [
+          { label: 'Очередь', onClick: () => applyViewTabsEl?.querySelector('[data-apply-view="queue"]')?.click() },
+        ])
+      );
     } else if (currentApplyView === 'noQuestionnaire') {
-      listEl.innerHTML =
-        '<p class="empty">Нет вакансий без анкеты в этом диапазоне. С анкетой — раздел «Анкета», отфильтрованные роли — «Скрытые».</p>';
+      listEl.appendChild(
+        renderEmptyState('Нет вакансий без анкеты в этом диапазоне.', [
+          { label: COPY.batchAuto, primary: true, onClick: () => document.getElementById('btn-batch-auto')?.click() },
+          { label: 'Анкета', onClick: () => applyViewTabsEl?.querySelector('[data-apply-view="questionnaire"]')?.click() },
+        ])
+      );
     } else if (cachedCounts?.hiddenByRole > 0 && !filters.search) {
-      listEl.innerHTML = `<p class="empty">Все скрыты фильтрами роли или локальный поиск пуст. <button type="button" class="link-btn" data-goto-hidden>Скрытые (${cachedCounts.hiddenByRole})</button></p>`;
-      listEl.querySelector('[data-goto-hidden]')?.addEventListener('click', () => {
-        applyViewTabsEl?.querySelector('[data-apply-view="hidden"]')?.click();
-      });
+      listEl.appendChild(
+        renderEmptyState(`Все скрыты фильтрами роли (${cachedCounts.hiddenByRole}).`, [
+          { label: `Скрытые (${cachedCounts.hiddenByRole})`, onClick: () => applyViewTabsEl?.querySelector('[data-apply-view="hidden"]')?.click() },
+        ])
+      );
     } else {
-      listEl.innerHTML =
-        '<p class="empty">Ничего не найдено. Соберите вакансии или сбросьте фильтры слева.</p>';
+      listEl.appendChild(
+        renderEmptyState('Очередь пуста. Сначала соберите вакансии с hh.ru.', [
+          { label: COPY.harvestRun, primary: true, onClick: () => document.getElementById('btn-run-harvest')?.click() },
+          { label: COPY.openSettings, onClick: () => document.getElementById('btn-open-settings')?.click() },
+        ])
+      );
     }
     restoreListScroll(scrollState);
     return;
   }
-  items.forEach((it) => listEl.appendChild(renderCard(it)));
+  const browseMode = currentBrowseMode();
+  items.forEach((it) => {
+    if (browseMode) listEl.appendChild(renderCardTile(it, scoreThreshold, renderCard, bindDismiss));
+    else listEl.appendChild(renderCard(it));
+  });
+  listEl.querySelectorAll('.card, .card-tile').forEach((el) => {
+    if (!el.hasAttribute('tabindex')) el.tabIndex = 0;
+  });
   restoreListScroll(scrollState);
+  void refreshQuestionnaireReprobeStats().then(() => maybeAutoReprobeQuestionnaires());
+}
+
+async function refreshQuestionnaireReprobeStats() {
+  if (currentApplyView !== 'questionnaire') {
+    questionnaireReprobeCandidateCount = 0;
+    updateQuestionnaireReprobeUi();
+    return;
+  }
+  try {
+    const st = await api('/api/questionnaire/reprobe-candidates');
+    questionnaireReprobeCandidateCount = Number(st.count) || 0;
+  } catch {
+    questionnaireReprobeCandidateCount = cachedRawItems.filter((x) => itemQuestionnaireNeedsProbe(x)).length;
+  }
+  updateQuestionnaireReprobeUi();
+}
+
+function updateQuestionnaireReprobeUi() {
+  const reprobeBtn = document.getElementById('btn-questionnaire-reprobe-batch');
+  if (!reprobeBtn) return;
+  const n = questionnaireReprobeCandidateCount;
+  reprobeBtn.textContent = n > 0 ? `Обновить вопросы (${n})` : 'Обновить вопросы';
+  reprobeBtn.title =
+    n > 0
+      ? `${n} анкет с заглушками — загрузить реальные вопросы с hh.ru`
+      : 'Загрузить текст вопросов с hh.ru для карточек с заглушками';
+}
+
+async function maybeAutoReprobeQuestionnaires() {
+  if (autoReprobeInFlight) return;
+  if (navigator.webdriver) return;
+  if (currentApplyView !== 'questionnaire') return;
+  if (questionnaireReprobeCandidateCount <= 0) return;
+
+  const last = Number(localStorage.getItem(AUTO_REPROBE_LS_KEY) || 0);
+  if (Date.now() - last < AUTO_REPROBE_COOLDOWN_MS) return;
+
+  const st = lastJobStatus;
+  if (st?.harvest?.running || st?.batch?.running || st?.batchActive || st?.applyChat?.running) return;
+
+  autoReprobeInFlight = true;
+  localStorage.setItem(AUTO_REPROBE_LS_KEY, String(Date.now()));
+  showToast('Авто-reprobe: до 3 анкет с заглушками…', 'neutral');
+
+  try {
+    const res = await api('/api/questionnaire/reprobe-batch', {
+      method: 'POST',
+      body: JSON.stringify({ auto: true, limit: 3 }),
+    });
+    const kind = res.okCount > 0 ? 'good' : res.failed ? 'neutral' : 'good';
+    showToast(res.message || 'Auto-reprobe завершён', kind);
+    if (res.okCount > 0) await load({ preserveScroll: true });
+    else await refreshQuestionnaireReprobeStats();
+  } catch (e) {
+    if (e.status !== 409) showToast(e.message || 'Auto-reprobe не удался', 'bad');
+  } finally {
+    autoReprobeInFlight = false;
+  }
 }
 
 async function load(opts = {}) {
@@ -3038,6 +4208,7 @@ async function load(opts = {}) {
     items = filterItemsForApplyView(items);
     cachedRawItems = items;
     cachedCounts = counts;
+    updateApplyViewTabCounts(counts);
     renderListFromCache(scrollState);
   } catch (e) {
     listEl.innerHTML = `<p class="err">${e.message}</p>`;
@@ -3063,6 +4234,7 @@ applyViewTabsEl?.querySelectorAll('.tab').forEach((btn) => {
       view === 'hidden' ||
       view === 'questionnaire' ||
       view === 'noQuestionnaire' ||
+      view === 'deferred' ||
       view === 'queue'
         ? view
         : 'queue';
@@ -3085,7 +4257,7 @@ document.querySelectorAll('#panel-score-band .tab-band').forEach((btn) => {
 async function runBatch({ minScore, maxScore, label }) {
   const batchScope = batchScopeForCurrentView();
   if (!batchScope) {
-    showToast('Батч недоступен в разделе «Отклики»', 'neutral');
+    showToast(`${COPY.batch} недоступна в разделе «Отклики»`, 'neutral');
     return;
   }
   const limit = getBatchLimitForRun();
@@ -3103,14 +4275,35 @@ async function runBatch({ minScore, maxScore, label }) {
   } else if (batchScope === 'queue') {
     confirmMsg += '\n\nВ «Очереди» могут быть вакансии с анкетой — они тоже попадут в батч.';
   }
+  confirmMsg += '\n\nНецелевые вакансии (не IT) пропускаются автоматически до открытия браузера.';
   confirmMsg += '\n\nПродолжить?';
   if (!confirm(confirmMsg)) return;
   try {
+    const st0 = await api('/api/job-status');
+    if (st0.batchActive) {
+      showToast('Батч уже выполняется — дождитесь паузы или стопа', 'neutral');
+      return;
+    }
+    try {
+      const rh = await api('/api/routing-health');
+      if (!rh.ok) {
+        const detail = rh.issues.map((i) => `• ${i.label}: ${i.issue}`).join('\n');
+        if (
+          !confirm(
+            `В resume-routing не хватает hash:\n${detail}\n\nБатч может пропускать вакансии. Запустить всё равно?`
+          )
+        ) {
+          return;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
     const body = { limit, batchScope };
     if (minScore != null) body.minScore = minScore;
     if (maxScore != null) body.maxScore = maxScore;
     const res = await api('/api/hh-launch-apply-batch', { method: 'POST', body: JSON.stringify(body) });
-    showToast(res.message || 'Батч запущен', 'neutral');
+    showToast(res.message || `${COPY.batch} запущена`, 'neutral');
     openApplyLogModal();
     startJobLogPoll();
     refreshJobStatus();
@@ -3161,6 +4354,31 @@ document.getElementById('btn-questionnaire-reprobe-batch')?.addEventListener('cl
   }
 });
 
+document.getElementById('btn-questionnaire-probe-filter')?.addEventListener('click', async () => {
+  if (
+    !confirm(
+      'Загрузить анкеты с hh.ru для карточек раздела «Анкета»?\n\n' +
+        'До 5 вакансий за запуск (нужна сессия npm run login).'
+    )
+  ) {
+    return;
+  }
+  const btn = document.getElementById('btn-questionnaire-probe-filter');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api('/api/questionnaire/probe-batch', {
+      method: 'POST',
+      body: JSON.stringify({ limit: 5, scope: 'questionnaire' }),
+    });
+    showToast(res.message || `Probe: ${res.okCount}`, res.failed ? 'neutral' : 'good');
+    await loadItems();
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
 document.getElementById('btn-questionnaire-prep-batch')?.addEventListener('click', async () => {
   if (
     !confirm(
@@ -3183,10 +4401,31 @@ document.getElementById('btn-questionnaire-prep-batch')?.addEventListener('click
   }
 });
 
-async function launchBackgroundApi(path, toastMsg) {
-  const res = await api(path, { method: 'POST', body: '{}' });
-  showToast(res.message || toastMsg || 'Запущено', 'good');
-  refreshJobStatus();
+async function launchBackgroundApi(path, toastMsgOrOpts) {
+  const opts =
+    typeof toastMsgOrOpts === 'object' && toastMsgOrOpts !== null
+      ? toastMsgOrOpts
+      : { method: 'POST', body: '{}', toast: toastMsgOrOpts };
+  try {
+    const res = await api(path, {
+      method: opts.method || 'POST',
+      body: opts.body ?? '{}',
+    });
+    showToast(res.message || opts.toast || 'Запущено', 'good');
+    refreshJobStatus();
+  } catch (e) {
+    if (e.status === 409) {
+      showToast(e.message || 'Браузер занят — дождитесь завершения батча', 'neutral');
+      return;
+    }
+    throw e;
+  }
+}
+
+async function applyNegotiationsCacheToQueue() {
+  const res = await api('/api/apply-negotiations-cache', { method: 'POST', body: '{}' });
+  showToast(res.message || `Статусы hh: ${res.updated} карточек`, 'good');
+  await loadItems();
 }
 
 async function runServiceAction(action, triggerEl) {
@@ -3201,13 +4440,10 @@ async function runServiceAction(action, triggerEl) {
       case 'sync-hh-chats':
         await launchBackgroundApi('/api/launch-sync-hh-chats', 'Синхронизация чатов');
         break;
-      case 'apply-negotiations-cache': {
-        const res = await api('/api/apply-negotiations-cache', { method: 'POST', body: '{}' });
-        showToast(res.message || `Обновлено: ${res.updated}`, 'good');
-        await loadItems();
+      case 'apply-negotiations-cache':
+        await applyNegotiationsCacheToQueue();
         refreshJobStatus();
         break;
-      }
       case 'import-negotiations-queue': {
         const res = await api('/api/import-negotiations-queue', { method: 'POST', body: '{}' });
         showToast(res.message || `Импорт: ${res.imported}`, 'good');
@@ -3232,7 +4468,9 @@ async function runServiceAction(action, triggerEl) {
       case 'sync-resume-from-source':
         if (
           !confirm(
-            'Проверить завершённость всех резюме и дополнить опыт/«О себе» с эталона (L2/L3)?\n\nОткроется Chromium.'
+            'Синхронизировать резюме с эталона (техподдержка L2/L3)?\n\n' +
+              'Заполнит «О себе» и описание опыта на DevOps и других вариантах, если они пустее эталона.\n\n' +
+              'Откроется Chromium. Нужен config/resume-variants.json с hash.'
           )
         ) {
           return;
@@ -3249,9 +4487,50 @@ async function runServiceAction(action, triggerEl) {
         }
         await launchBackgroundApi('/api/launch-sync-resume-variants', 'Обновление резюме на hh.ru');
         break;
+      case 'raise-resumes-all':
+        if (
+          !confirm(
+            'Поднять все резюме в поиске на hh.ru?\n\nОткроется Chromium. Не чаще раза в 4 ч на резюме (лимит hh.ru).'
+          )
+        ) {
+          return;
+        }
+        await launchBackgroundApi('/api/resume-raise', {
+          method: 'POST',
+          body: JSON.stringify({ all: true }),
+        });
+        break;
+      case 'raise-resumes-routing':
+        if (
+          !confirm(
+            'Поднять резюме из config/resume-routing.json (все роли с hash)?\n\nОткроется Chromium.'
+          )
+        ) {
+          return;
+        }
+        await launchBackgroundApi('/api/resume-raise', { method: 'POST', body: '{}' });
+        break;
+      case 'raise-resumes-role': {
+        const role = document.getElementById('resume-raise-role')?.value;
+        if (!role) {
+          alert('Выберите роль');
+          return;
+        }
+        if (!confirm(`Поднять резюме для роли «${role}» на hh.ru?`)) return;
+        await launchBackgroundApi('/api/resume-raise', {
+          method: 'POST',
+          body: JSON.stringify({ role }),
+        });
+        break;
+      }
       case 'import-interview-notes': {
         const res = await api('/api/import-interview-notes', { method: 'POST', body: '{}' });
         showToast(res.ok ? `Импорт: ${res.count} файлов` : res.error, res.ok ? 'good' : 'bad');
+        break;
+      }
+      case 'daily-digest': {
+        const res = await api('/api/daily-digest', { method: 'POST', body: JSON.stringify({ sendTelegram: true }) });
+        openDailyDigestModal(res.digest);
         break;
       }
       case 'chat-reply-batch':
@@ -3278,7 +4557,63 @@ async function runServiceAction(action, triggerEl) {
   }
 }
 
+function renderResumeRaiseScheduleStatus(st) {
+  const el = document.getElementById('resume-raise-schedule-status');
+  const cb = document.getElementById('resume-raise-auto-enabled');
+  if (cb && st && typeof st.enabled === 'boolean' && document.activeElement !== cb) {
+    cb.checked = st.enabled;
+  }
+  if (!el || !st) return;
+  const slots = (st.slots || []).map((h) => `${h}:00`).join(', ');
+  const pending = st.pendingToday?.length
+    ? `осталось: ${st.pendingToday.map((p) => `${p.hour}:00`).join(', ')}`
+    : 'слоты на сегодня закрыты';
+  const last = st.lastRunAt ? ` · ${new Date(st.lastRunAt).toLocaleString('ru-RU')}` : '';
+  el.textContent = `${st.enabled ? 'Авто вкл' : 'Авто выкл'} · ${slots} (${st.timezone || 'MSK'}) · ${pending}${last}`;
+}
+
+async function fillResumeRaiseRoleSelect() {
+  const sel = document.getElementById('resume-raise-role');
+  if (!sel) return;
+  try {
+    const rh = await api('/api/routing-health');
+    const roles = rh.roles || [];
+    sel.replaceChildren(
+      ...roles.map((r) => {
+        const o = document.createElement('option');
+        o.value = r.role;
+        o.textContent = r.hash ? `${r.label}` : `${r.label} (нет hash)`;
+        o.disabled = !r.hash;
+        return o;
+      })
+    );
+    if (rh.defaultRole && sel.querySelector(`option[value="${rh.defaultRole}"]`)) {
+      sel.value = rh.defaultRole;
+    }
+  } catch {
+    sel.innerHTML = '<option value="devops">devops</option>';
+  }
+}
+
+function initResumeRaiseScheduleUi() {
+  fillResumeRaiseRoleSelect();
+  document.getElementById('resume-raise-auto-enabled')?.addEventListener('change', async (e) => {
+    try {
+      await api('/api/resume-raise-schedule', {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: e.target.checked }),
+      });
+      showToast(e.target.checked ? 'Авто-подъём включён' : 'Авто-подъём выключен', 'neutral');
+      refreshJobStatus();
+    } catch (err) {
+      alert(err.message);
+      e.target.checked = !e.target.checked;
+    }
+  });
+}
+
 function initServiceActions() {
+  initResumeRaiseScheduleUi();
   document.querySelectorAll('[data-service-action]').forEach((el) => {
     el.addEventListener('click', () => {
       const action = el.dataset.serviceAction;
@@ -3326,9 +4661,11 @@ document.getElementById('btn-daily-routine')?.addEventListener('click', async ()
       body: JSON.stringify({ withHarvest: !!withHarvest }),
     });
     showToast(res.message || 'Рутина запущена', 'good');
+    dailyRoutineWasRunning = true;
     refreshJobStatus();
   } catch (e) {
-    alert(e.message);
+    if (e.status === 409) showToast(e.message, 'neutral');
+    else alert(e.message);
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -3355,14 +4692,14 @@ document.getElementById('btn-run-harvest')?.addEventListener('click', async () =
       method: 'POST',
       body: JSON.stringify({ periodDays: period }),
     });
-    showToast(`Сбор запущен (${periodLabel}), pid ${res.pid}`, 'good');
+    showToast(`${COPY.harvest} запущен (${periodLabel}), pid ${res.pid}`, 'good');
     renderJobProgress({
       harvest: { running: true },
       harvestProgress: {
         phase: 'starting',
         percent: 0,
         label: 'Запуск…',
-        title: 'Сбор вакансий',
+        title: COPY.harvest,
       },
     });
     startJobLogPoll();
@@ -3378,7 +4715,7 @@ document.getElementById('btn-run-harvest')?.addEventListener('click', async () =
               phase: 'error',
               percent: 0,
               label: st.harvestLog.lastError.slice(0, 120),
-              title: 'Сбор вакансий',
+              title: COPY.harvest,
             },
           });
         }
@@ -3430,12 +4767,37 @@ for (const el of document.querySelectorAll('[data-pref]')) {
   });
 }
 
+settingsProfileSelectEl?.addEventListener('change', async () => {
+  const id = settingsProfileSelectEl.value;
+  if (!id || !profileOptionsLoaded) return;
+  settingsProfileSelectEl.disabled = true;
+  try {
+    await changeActiveProfile(id);
+  } catch (e) {
+    showToast(e.message || 'Не удалось сменить профиль', 'bad');
+    try {
+      const data = await api('/api/profiles');
+      applyProfileOptionsToSettingsUI(data);
+    } catch {
+      /* ignore */
+    }
+  } finally {
+    settingsProfileSelectEl.disabled = false;
+  }
+});
+
 await applyLocalDashboardDefaults();
 initUiScaleControls();
 initThemeControls();
 initCardTuningControls();
 window.addEventListener('hh-card-density-change', () => renderListFromCache(null));
+window.addEventListener('hh-card-layout-change', () => renderListFromCache(null));
 initFloatingTooltips();
+configureVacancyDetailNav({
+  getItems: () => applyClientFilters(cachedRawItems, readFiltersFromUI()),
+  renderCard,
+});
+initVacancyDetailModal();
 initModalLayer({
   onEscape: (modalId) => {
     if (modalId) return closeModalById(modalId);
@@ -3457,11 +4819,101 @@ async function ensureChatTemplates() {
   return chatTemplatesCache;
 }
 
+function openDashboardSettings(tabId = 'apply', { focusId } = {}) {
+  closeServiceDrawer();
+  const settingsModal = document.getElementById('settings-modal');
+  if (!settingsModal) return;
+  let tab = tabId;
+  if (!tab) {
+    try {
+      tab = sessionStorage.getItem('hh-settings-tab') || 'apply';
+    } catch {
+      tab = 'apply';
+    }
+  }
+  settingsTabSetter?.(tab);
+  settingsModal.hidden = false;
+  openModalEl(settingsModal);
+  if (focusId) {
+    requestAnimationFrame(() => {
+      const el = document.getElementById(focusId);
+      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      const input = el?.querySelector('input');
+      if (input && typeof input.focus === 'function') input.focus({ preventScroll: true });
+    });
+  }
+}
+
+function hardReloadDashboard() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('_', String(Date.now()));
+  window.location.replace(url.toString());
+}
+
+function initBrandHardReload() {
+  document.getElementById('crm-brand-reload')?.addEventListener('click', hardReloadDashboard);
+}
+
+function initLimitsStatusLink() {
+  const box = document.getElementById('crm-status-limits');
+  if (!box) return;
+  const open = () => openDashboardSettings('apply', { focusId: 'settings-limits-hh' });
+  box.addEventListener('click', open);
+  box.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    open();
+  });
+}
+
+function initTopCtaBar() {
+  const mirror = (fromId, toId) => {
+    document.getElementById(fromId)?.addEventListener('click', () => {
+      document.getElementById(toId)?.click();
+    });
+  };
+  mirror('btn-top-harvest', 'btn-run-harvest');
+  mirror('btn-top-batch-auto', 'btn-batch-auto');
+  mirror('btn-daily-routine-menubar', 'btn-daily-routine');
+  mirror('btn-run-harvest-menubar', 'btn-run-harvest');
+  mirror('btn-batch-auto-menubar', 'btn-batch-auto');
+  mirror('btn-batch-manual-menubar', 'btn-batch-manual');
+}
+
+function initLayoutSettingsUi() {
+  renderSidebarPanelToggles();
+  document.querySelectorAll('[data-ui-mode-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.uiModePreset === UI_MODES.expert ? UI_MODES.expert : UI_MODES.simple;
+      dashboardUi.uiMode = mode;
+      if (mode === UI_MODES.simple) {
+        dashboardUi.panels = { ...dashboardUi.panels, ...defaultPanelsForMode(UI_MODES.simple) };
+      }
+      applyDashboardUiFromPreferences(
+        { dashboardUiMode: mode, dashboardSidebarPanels: dashboardUi.panels },
+        dashboardUi
+      );
+      document.querySelectorAll('[data-ui-mode-preset]').forEach((b) => {
+        b.classList.toggle('active', b.dataset.uiModePreset === mode);
+      });
+      if (layoutSettingsHydrated) scheduleSaveLayoutSettings();
+    });
+  });
+  document.querySelectorAll('[data-layout-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const name = btn.dataset.layoutPreset;
+      if (LAYOUT_PRESET_KEYS.includes(name)) applyLayoutPreset(name);
+    });
+  });
+  layoutSettingsHydrated = true;
+}
+
 function initCrmUi() {
   const shell = document.getElementById('app-shell');
   const sidebarModeBtns = document.querySelectorAll('[data-sidebar-mode]');
   function setSidebarMode(mode) {
     const m = mode === 'compact' ? 'compact' : 'full';
+    dashboardUi.sidebarMode = m;
     if (shell) shell.dataset.sidebarMode = m;
     try {
       localStorage.setItem('hh-sidebar-mode', m);
@@ -3469,12 +4921,14 @@ function initCrmUi() {
       /* ignore */
     }
     sidebarModeBtns.forEach((b) => b.classList.toggle('active', b.dataset.sidebarMode === m));
-  }
-  try {
-    const saved = localStorage.getItem('hh-sidebar-mode');
-    if (saved === 'compact' || saved === 'full') setSidebarMode(saved);
-  } catch {
-    /* ignore */
+    if (shell && shell.dataset.dockLeftHidden !== '1' && shell.dataset.dockLeftCollapsed !== '1') {
+      if (m === 'compact') shell.style.setProperty('--dock-left-w', '11.5rem');
+      else {
+        shell.style.removeProperty('--dock-left-w');
+        applyDockState(loadDockState());
+      }
+    }
+    if (layoutSettingsHydrated) scheduleSaveLayoutSettings();
   }
   sidebarModeBtns.forEach((btn) => {
     btn.addEventListener('click', () => setSidebarMode(btn.dataset.sidebarMode));
@@ -3523,31 +4977,20 @@ function initCrmUi() {
     btn.addEventListener('click', () => setSettingsTab(btn.dataset.settingsTab));
   });
 
-  const openSettings = (tabId) => {
-    closeServiceDrawer();
-    if (!settingsModal) return;
-    let tab = tabId;
-    if (!tab) {
-      try {
-        tab = sessionStorage.getItem('hh-settings-tab') || 'apply';
-      } catch {
-        tab = 'apply';
-      }
-    }
-    setSettingsTab(tab);
-    settingsModal.hidden = false;
-    openModalEl(settingsModal);
-  };
+  settingsTabSetter = setSettingsTab;
   const closeSettings = () => {
     if (!settingsModal) return;
     settingsModal.hidden = true;
     closeModalEl(settingsModal);
   };
-  document.getElementById('btn-open-settings')?.addEventListener('click', () => openSettings());
+  document.getElementById('btn-open-settings')?.addEventListener('click', () => openDashboardSettings());
   settingsModal?.querySelector('[data-close-settings]')?.addEventListener('click', closeSettings);
   settingsModal?.querySelector('.modal-close--settings')?.addEventListener('click', closeSettings);
 
   initServiceDrawer();
+  initTopCtaBar();
+  initLayoutSettingsUi();
+  initWorkspaceDocks();
 }
 
 function closeServiceDrawer() {
@@ -3564,6 +5007,10 @@ function openServiceDrawer() {
   const drawer = document.getElementById('service-drawer');
   const panel = drawer?.querySelector('.service-drawer__panel');
   if (!drawer || !panel) return;
+  void fillResumeRaiseRoleSelect();
+  api('/api/resume-raise-schedule')
+    .then(renderResumeRaiseScheduleStatus)
+    .catch(() => {});
   drawer.hidden = false;
   drawer.setAttribute('aria-hidden', 'false');
   requestAnimationFrame(() => {
@@ -3586,10 +5033,125 @@ function initServiceDrawer() {
   });
 }
 
+function openShortcutsModal() {
+  const modal = document.getElementById('shortcuts-modal');
+  if (!modal) return;
+  modal.hidden = false;
+  openModalEl(modal);
+}
+
+function initShortcutsModal() {
+  const modal = document.getElementById('shortcuts-modal');
+  document.getElementById('btn-open-shortcuts')?.addEventListener('click', openShortcutsModal);
+  modal?.querySelectorAll('[data-close-shortcuts]').forEach((el) => {
+    el.addEventListener('click', () => {
+      modal.hidden = true;
+      closeModalEl(modal);
+    });
+  });
+}
+
+function initCommandPaletteAndShortcuts() {
+  registerCommandPaletteActions([
+    {
+      id: 'daily-routine',
+      label: 'Утренний цикл',
+      hint: 'Синхронизация откликов и чатов',
+      keywords: 'sync routine утро',
+      run: () => document.getElementById('btn-daily-routine')?.click(),
+    },
+    {
+      id: 'harvest',
+      label: COPY.harvestRun || 'Запустить поиск',
+      hint: 'Harvest вакансий',
+      keywords: 'поиск harvest',
+      run: () => document.getElementById('btn-run-harvest')?.click(),
+    },
+    {
+      id: 'batch-auto',
+      label: COPY.batchAuto,
+      hint: 'Серия ≥ порога',
+      keywords: 'batch auto серия',
+      run: () => document.getElementById('btn-batch-auto')?.click(),
+    },
+    {
+      id: 'settings',
+      label: COPY.openSettings,
+      keywords: 'настройки limits',
+      run: () => openDashboardSettings('apply'),
+    },
+    {
+      id: 'service',
+      label: COPY.openService,
+      keywords: 'сервис sync',
+      run: () => openServiceDrawer(),
+    },
+    {
+      id: 'funnel',
+      label: 'Воронка и конверсия',
+      keywords: 'stats funnel график',
+      run: () => openFunnelModal(),
+    },
+    {
+      id: 'log',
+      label: COPY.openLog,
+      keywords: 'журнал log',
+      run: () => document.querySelector('.btn-log-apply')?.click(),
+    },
+    {
+      id: 'shortcuts',
+      label: 'Горячие клавиши',
+      hint: '?',
+      run: () => openShortcutsModal(),
+    },
+  ]);
+
+  initKeyboardShortcuts({
+    openShortcutsHelp: openShortcutsModal,
+    isDraftModalOpen: () => draftModalEl && !draftModalEl.hidden,
+    onDraftApprove: () => draftModalState?.triggerApprove?.(),
+    onDraftDecline: () => draftModalState?.triggerDecline?.(),
+    onDraftSave: () => draftModalState?.triggerSave?.(),
+    onDraftSelectVariant: (idx) => draftModalState?.selectVariant?.(idx),
+    onDraftPrevVariant: () => {
+      if (!draftModalState) return;
+      const n = draftModalState.variants.length;
+      draftModalState.selectVariant?.((draftModalState.selectedIndex + n - 1) % n);
+    },
+    onDraftNextVariant: () => {
+      if (!draftModalState) return;
+      const n = draftModalState.variants.length;
+      draftModalState.selectVariant?.((draftModalState.selectedIndex + 1) % n);
+    },
+    onExportFocused: () => {
+      const id = lastFocusedVacancyId;
+      const item = id ? cachedRawItems.find((x) => x.id === id) : cachedRawItems[0];
+      if (!item) {
+        showToast('Выберите карточку в списке', 'neutral');
+        return;
+      }
+      copyVacancyMarkdown(item)
+        .then(() => showToast('Markdown в буфере', 'good'))
+        .catch(() => {
+          downloadVacancyMarkdown(item);
+          showToast('Markdown сохранён', 'good');
+        });
+    },
+  });
+}
+
 loadDailyRoutineSteps();
+applyCopyToDom();
 initServiceActions();
 initFunnelUi();
+initJobProgressOpenLog();
+document.getElementById('btn-batch-report')?.addEventListener('click', () => openBatchReportModal());
 initCrmUi();
+initBrandHardReload();
+initLimitsStatusLink();
+initShortcutsModal();
+initCommandPaletteAndShortcuts();
+initListKeyboardNav(listEl, () => [...listEl.querySelectorAll('.card, .card-tile')]);
 loadDashboardSettings().then(() => load());
 refreshJobStatus();
 setInterval(refreshJobStatus, 2000);

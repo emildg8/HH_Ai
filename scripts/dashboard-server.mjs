@@ -6,13 +6,14 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
+import { spawnBackground } from '../lib/spawn-background.mjs';
 import { fileURLToPath } from 'url';
 import { loadEnv } from '../lib/load-env.mjs';
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { applyStoredProfile, getStoredProfileId, listProfiles, saveStoredProfileId } from '../lib/profile-prefs.mjs';
 import { parseHarvestPeriodDays, harvestPeriodLabel } from '../lib/hh-search-period.mjs';
 import { getBrowserLockInfo, clearStaleBrowserLock } from '../lib/chromium-session.mjs';
 loadEnv();
-loadDevOpsEnv();
+applyStoredProfile();
 
 const cliPort = process.argv.find((a) => a.startsWith('--port='));
 if (cliPort) process.env.DASHBOARD_PORT = cliPort.slice('--port='.length);
@@ -39,6 +40,7 @@ import {
 } from '../lib/hh-apply-rate.mjs';
 import {
   patchDashboardPreferences,
+  getDashboardUiConfig,
   getDashboardBatchSizeCap,
   DASHBOARD_PREF_BOUNDS,
 } from '../lib/dashboard-preferences.mjs';
@@ -70,6 +72,15 @@ import {
   mergeNegotiationsIntoQueue,
   parseNegotiationStatusText,
 } from '../lib/hh-negotiations-sync.mjs';
+import { getBrowserBusyState, getSideJobsStatus } from '../lib/browser-guard.mjs';
+import { getResumeRoutingHealth } from '../lib/routing-health.mjs';
+import { spawnSideJob } from '../lib/side-job-runner.mjs';
+import {
+  getResumeRaiseScheduleStatus,
+  shouldRunScheduledRaise,
+  saveResumeRaiseScheduleConfig,
+  loadResumeRaiseScheduleConfig,
+} from '../lib/resume-raise-schedule.mjs';
 import { generateVariantTexts } from '../lib/resume-variants.mjs';
 import { pruneRespondedFromActiveQueue, QUEUE_STATUS_RESPONDED } from '../lib/queue-prune.mjs';
 import { recordNeedsQuestionnaireWork } from '../lib/questionnaire-labels.mjs';
@@ -98,6 +109,7 @@ import {
   normalizeVariants,
 } from '../lib/cover-letter-openrouter.mjs';
 import { appendCoverLetterUserEditSnippet } from '../lib/cover-letter-user-edits.mjs';
+import { computeLetterEditMetrics } from '../lib/cover-letter-metrics.mjs';
 import { fetchVacancyTextFromHh } from '../lib/refresh-vacancy-from-hh.mjs';
 import {
   generateQuestionnaireAnswers,
@@ -109,12 +121,20 @@ import {
   patchClearCaptchaQuestionnaire,
 } from '../lib/questionnaire-labels.mjs';
 import { resolveResumeForVacancy } from '../lib/resume-routing.mjs';
+import { assessVacancyForApply } from '../lib/vacancy-targeting.mjs';
+import { readBatchRunReport } from '../lib/batch-run-report.mjs';
+import { isVacancyDeferred, deferVacancyForDays, clearVacancyDefer } from '../lib/vacancy-defer.mjs';
+import { buildDailyDigest, readDailyDigest } from '../lib/daily-digest.mjs';
 import { remapQuestionnaireAnswers } from '../lib/questionnaire-merge.mjs';
 import {
   prepQuestionnaireAnswersBatch,
   filterQuestionnairePrepCandidates,
   filterQuestionnaireReprobeCandidates,
 } from '../lib/questionnaire-pipeline.mjs';
+import {
+  AUTO_REPROBE_LIMIT,
+  pickAutoReprobeBatch,
+} from '../lib/questionnaire-auto-reprobe.mjs';
 import { captureQuestionnaireEditsOnSave } from '../lib/questionnaire-user-edits.mjs';
 import { getJobStatus, setHarvestPid, setBatchPid, isProcessAlive } from '../lib/job-pids.mjs';
 import {
@@ -139,6 +159,41 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATIC_DIR = path.join(ROOT, 'dashboard', 'public');
 const PORT = Number(process.env.DASHBOARD_PORT || 3849) || 3849;
 let activeApplyChatPid = null;
+
+/** @param {object[]} records */
+async function runQuestionnaireProbeRecords(records) {
+  const scriptPath = path.join(ROOT, 'scripts', 'probe-questionnaire.mjs');
+  let okCount = 0;
+  let failed = 0;
+  /** @type {Array<{ id: string, title?: string, error: string }>} */
+  const errors = [];
+  for (const rec of records) {
+    const exitCode = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [scriptPath, `--id=${rec.id}`], {
+        cwd: ROOT,
+        env: { ...process.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let errText = '';
+      child.stderr?.on('data', (d) => {
+        errText += d.toString();
+      });
+      child.on('close', (code) => resolve({ code: code ?? 1, errText }));
+    });
+    if (exitCode.code === 0) okCount++;
+    else {
+      failed++;
+      errors.push({ id: rec.id, title: rec.title, error: exitCode.errText.slice(0, 200) });
+    }
+  }
+  return { okCount, failed, errors, ran: records.length };
+}
+
+function questionnaireReprobeCandidatePool() {
+  return filterQuestionnaireReprobeCandidates(
+    loadQueue().filter((x) => x.status === 'pending' || x.status === 'approved')
+  );
+}
 
 function scoreThreshold(prefs) {
   const n = Number(prefs?.dashboardMinScoreFilter ?? prefs?.dashboardHighScoreThreshold);
@@ -333,8 +388,23 @@ const server = http.createServer(async (req, res) => {
       return null;
     };
     const applyLogTail = readApplyChatLogTail(14, { lastRunOnly: true });
+    let negotiationsCache = { count: 0, syncedAt: null };
+    try {
+      const nc = loadNegotiationsCache();
+      negotiationsCache = {
+        count: (nc.items || []).length,
+        syncedAt: nc.syncedAt || nc.fetchedAt || null,
+      };
+    } catch {
+      /* ignore */
+    }
     return sendJson(res, 200, {
       ...st,
+      sideJobs: getSideJobsStatus(),
+      negotiationsCache,
+      routingHealth: getResumeRoutingHealth(),
+      resumeRaiseSchedule: getResumeRaiseScheduleStatus(),
+      browserBusy: getBrowserBusyState(),
       harvestTick,
       queuePath,
       browserLock,
@@ -354,7 +424,10 @@ const server = http.createServer(async (req, res) => {
       },
       batchControl: batchControlSummary,
       harvestControl: harvestControlSummary,
+      batchLastReport: readBatchRunReport(),
       batchActive: batchAlive,
+      activeProfile: getStoredProfileId(),
+      queuePathEffective: process.env.HH_VACANCIES_QUEUE_FILE || queuePath,
       applyRates: applyRateLimitsSnapshot(),
       conversion: computeConversionStats(),
       dashboardStats: computeDashboardStats(),
@@ -431,7 +504,9 @@ const server = http.createServer(async (req, res) => {
             ? 'questionnaire'
             : applyViewRaw === 'noQuestionnaire'
               ? 'noQuestionnaire'
-              : 'queue';
+              : applyViewRaw === 'deferred'
+                ? 'deferred'
+                : 'queue';
     let prefs = {};
     try {
       prefs = loadPreferences();
@@ -452,8 +527,11 @@ const server = http.createServer(async (req, res) => {
       .filter((x) => recordPassesLlmList(x))
       .filter((x) => recordPassesMinSalary(x, prefs));
     if (applyView === 'hidden') {
+      q = q.filter((x) => !isVacancyDeferred(x));
       q = q.filter((x) => !vacancyHasHhApply(x));
       q = q.filter((x) => recordIsHiddenByRoleFilters(x, prefs));
+    } else if (applyView === 'deferred') {
+      q = q.filter((x) => isVacancyDeferred(x));
     } else if (applyView === 'questionnaire') {
       q = q.filter((x) => !vacancyHasHhApply(x));
       q = q.filter((x) => recordNeedsQuestionnaireWork(x));
@@ -471,6 +549,9 @@ const server = http.createServer(async (req, res) => {
         .filter((x) => recordPassesNotDeveloper(x, prefs))
         .filter((x) => recordPassesNotSenior(x, prefs))
         .filter((x) => recordPassesNot1C(x, prefs));
+      if (applyView !== 'deferred') {
+        q = q.filter((x) => !isVacancyDeferred(x));
+      }
       if (applyView === 'applied') {
         q = q.filter((x) => vacancyShownInAppliedTab(x));
       } else {
@@ -557,6 +638,12 @@ const server = http.createServer(async (req, res) => {
           title: pick.title,
           reason: pick.reason,
         };
+        const targeting = assessVacancyForApply(x);
+        row.targeting = {
+          eligible: targeting.eligible,
+          category: targeting.category || null,
+          skipReason: targeting.skipReason || null,
+        };
       } catch {
         /* ignore */
       }
@@ -578,6 +665,7 @@ const server = http.createServer(async (req, res) => {
         queue: queueBase.length,
         questionnaire: questionnaireBase.length,
         noQuestionnaire: queueBase.length,
+        deferred: loadQueue().filter((x) => isVacancyDeferred(x)).length,
         rawInBand,
         hiddenByRole,
         totalPending: loadQueue().filter((x) => x.status === status).length,
@@ -633,11 +721,50 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         preferences: p,
         bounds: DASHBOARD_PREF_BOUNDS,
+        ui: getDashboardUiConfig(p),
         applyRates: applyRateLimitsSnapshot(),
-        apiFeatures: { preferencesSave: true },
+        activeProfile: getStoredProfileId(),
+        profiles: listProfiles(),
+        queuePath: process.env.HH_VACANCIES_QUEUE_FILE || 'data/vacancies-devops.json',
+        apiFeatures: { preferencesSave: true, profileSelect: true },
       });
     } catch (e) {
       return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  if (req.method === 'GET' && pathname === '/api/profiles') {
+    return sendJson(res, 200, {
+      activeProfile: getStoredProfileId(),
+      profiles: listProfiles(),
+      queuePath: process.env.HH_VACANCIES_QUEUE_FILE || 'data/vacancies-devops.json',
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/profile/select') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const id = String(body?.id || '').trim();
+    if (!id) return sendJson(res, 400, { error: 'Нужен id профиля' });
+    const known = listProfiles();
+    if (!known.some((p) => p.id === id)) {
+      return sendJson(res, 400, { error: `Неизвестный профиль: ${id}` });
+    }
+    try {
+      saveStoredProfileId(id);
+      const applied = applyStoredProfile();
+      return sendJson(res, 200, {
+        ok: true,
+        activeProfile: applied.id,
+        envPath: applied.envPath,
+        queuePath: process.env.HH_VACANCIES_QUEUE_FILE || 'data/vacancies-devops.json',
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
     }
   }
 
@@ -657,11 +784,12 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 400, { error: 'Нужен объект настроек (patch)' });
     }
     try {
-      const { preferences, updated } = patchDashboardPreferences(patch);
+      const { preferences, updated, ui } = patchDashboardPreferences(patch);
       return sendJson(res, 200, {
         ok: true,
         preferences,
         updated,
+        ui: ui || getDashboardUiConfig(preferences),
         applyRates: applyRateLimitsSnapshot(),
         apiFeatures: { preferencesSave: true },
       });
@@ -685,11 +813,12 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 400, { error: 'Нужен объект настроек (patch)' });
     }
     try {
-      const { preferences, updated } = patchDashboardPreferences(patch);
+      const { preferences, updated, ui } = patchDashboardPreferences(patch);
       return sendJson(res, 200, {
         ok: true,
         preferences,
         updated,
+        ui: ui || getDashboardUiConfig(preferences),
         applyRates: applyRateLimitsSnapshot(),
       });
     } catch (e) {
@@ -897,10 +1026,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     const now = new Date().toISOString();
+    const primaryGenerated = (result.variants && result.variants[0]) || '';
     const coverLetter = {
       status: 'pending',
       variants: result.variants,
       approvedText: '',
+      generatedText: primaryGenerated,
       openRouterModel: result.providerModel || null,
       updatedAt: now,
     };
@@ -1068,6 +1199,14 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { ok: true, questionnaire, learnedEdits: learned });
   }
 
+  if (req.method === 'GET' && pathname === '/api/questionnaire/reprobe-candidates') {
+    const candidates = questionnaireReprobeCandidatePool();
+    return sendJson(res, 200, {
+      count: candidates.length,
+      sample: candidates.slice(0, 8).map((r) => ({ id: r.id, title: r.title || r.url || '' })),
+    });
+  }
+
   if (req.method === 'POST' && pathname === '/api/questionnaire/reprobe-batch') {
     let body = {};
     try {
@@ -1076,16 +1215,19 @@ const server = http.createServer(async (req, res) => {
     } catch {
       return sendJson(res, 400, { error: 'Invalid JSON' });
     }
-    const limit = Math.min(20, Math.max(1, Number(body.limit) || 5));
-    const candidates = filterQuestionnaireReprobeCandidates(
-      loadQueue().filter((x) => x.status === 'pending' || x.status === 'approved')
+    const auto = Boolean(body.auto);
+    const limit = Math.min(
+      20,
+      Math.max(1, Number(body.limit) || (auto ? AUTO_REPROBE_LIMIT : 5))
     );
+    const candidates = questionnaireReprobeCandidatePool();
     if (!candidates.length) {
       return sendJson(res, 200, {
         ok: true,
         okCount: 0,
         failed: 0,
         total: 0,
+        auto,
         message: 'Нет карточек с заглушками — probe не нужен.',
       });
     }
@@ -1093,37 +1235,67 @@ const server = http.createServer(async (req, res) => {
     if (harvestSt.harvest.running) {
       return sendJson(res, 409, { error: 'Идёт сбор вакансий — дождитесь завершения.' });
     }
-    const scriptPath = path.join(ROOT, 'scripts', 'probe-questionnaire.mjs');
-    let okCount = 0;
-    let failed = 0;
-    const errors = [];
-    for (const rec of candidates.slice(0, limit)) {
-      const exitCode = await new Promise((resolve) => {
-        const child = spawn(process.execPath, [scriptPath, `--id=${rec.id}`], {
-          cwd: ROOT,
-          env: { ...process.env },
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        let errText = '';
-        child.stderr?.on('data', (d) => {
-          errText += d.toString();
-        });
-        child.on('close', (code) => resolve({ code: code ?? 1, errText }));
-      });
-      if (exitCode.code === 0) okCount++;
-      else {
-        failed++;
-        errors.push({ id: rec.id, title: rec.title, error: exitCode.errText.slice(0, 200) });
-      }
+    if (auto && (harvestSt.batch?.running || harvestSt.batchActive)) {
+      return sendJson(res, 409, { error: 'Идёт серия откликов — auto-reprobe отложен.' });
     }
+    const batch = auto ? pickAutoReprobeBatch(candidates, { limit }) : candidates.slice(0, limit);
+    const { okCount, failed, errors, ran } = await runQuestionnaireProbeRecords(batch);
     return sendJson(res, 200, {
       ok: true,
       okCount,
       failed,
       total: candidates.length,
-      ran: Math.min(limit, candidates.length),
+      ran,
+      auto,
       errors: errors.slice(0, 10),
-      message: `Probe: ${okCount} OK, ${failed} ошибок (из ${Math.min(limit, candidates.length)} за запуск)`,
+      message: auto
+        ? `Авто-reprobe: ${okCount} OK, ${failed} ошибок (из ${ran})`
+        : `Probe: ${okCount} OK, ${failed} ошибок (из ${ran})`,
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/questionnaire/probe-batch') {
+    let body = {};
+    try {
+      const raw = await readBody(req);
+      if (raw.trim()) body = JSON.parse(raw);
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const limit = Math.min(15, Math.max(1, Number(body.limit) || 5));
+    const scope = String(body.scope || 'questionnaire').trim();
+    let candidates = loadQueue().filter((x) => !x.hidden && (x.status === 'pending' || x.status === 'approved'));
+    if (scope === 'questionnaire') {
+      candidates = candidates.filter((x) => vacancyQuestionnairePending(x) && !vacancyHasHhApply(x));
+    } else if (scope === 'needs-probe') {
+      candidates = candidates.filter(
+        (x) => vacancyQuestionnairePending(x) && !(x.hhApply?.questionnaire?.questions?.length > 0)
+      );
+    }
+    if (!candidates.length) {
+      return sendJson(res, 200, {
+        ok: true,
+        okCount: 0,
+        failed: 0,
+        total: 0,
+        message: 'Нет карточек для probe в текущем фильтре.',
+      });
+    }
+    const harvestSt = getJobStatus();
+    if (harvestSt.harvest.running) {
+      return sendJson(res, 409, { error: 'Идёт сбор вакансий — дождитесь завершения.' });
+    }
+    const batch = candidates.slice(0, limit);
+    const { okCount, failed, errors, ran } = await runQuestionnaireProbeRecords(batch);
+    return sendJson(res, 200, {
+      ok: true,
+      okCount,
+      failed,
+      total: candidates.length,
+      ran,
+      scope,
+      errors: errors.slice(0, 10),
+      message: `Probe (${scope}): ${okCount} OK, ${failed} ошибок`,
     });
   }
 
@@ -1281,12 +1453,19 @@ const server = http.createServer(async (req, res) => {
     if (action === 'approve') {
       const t = String(text || '').trim();
       if (!t) return sendJson(res, 400, { error: 'Для approve нужен непустой text' });
+      const generated =
+        rec.coverLetter?.generatedText ||
+        (Array.isArray(rec.coverLetter?.variants) ? rec.coverLetter.variants[0] : '') ||
+        '';
+      const metrics = computeLetterEditMetrics(generated, t);
       const coverLetter = {
         status: 'approved',
         variants: [],
         approvedText: t,
+        generatedText: generated || rec.coverLetter?.generatedText || '',
         openRouterModel: model,
         updatedAt: now,
+        ...(metrics ? { metrics: { ...metrics, approvedAt: now } } : {}),
       };
       updateVacancyRecord(id, { coverLetter });
       return sendJson(res, 200, { ok: true, coverLetter });
@@ -1378,7 +1557,7 @@ const server = http.createServer(async (req, res) => {
         childArgs.push('--questionnaire-auto');
       }
       loadDevOpsEnv();
-      child = spawn(process.execPath, childArgs, {
+      child = spawnBackground(process.execPath, childArgs, {
         cwd: ROOT,
         detached: true,
         // Лог только через appendApplyChatLog в скрипте — иначе каждая строка дублируется.
@@ -1457,15 +1636,16 @@ const server = http.createServer(async (req, res) => {
       `\n======== HARVEST ${new Date().toISOString()} period=${harvestPeriodLabel(periodDays)} ========\n`
     );
     loadDevOpsEnv();
-    const child = spawn(process.execPath, [harvestScript], {
+    const child = spawnBackground(process.execPath, [harvestScript], {
       cwd: ROOT,
       detached: true,
       stdio: ['ignore', logFd, logFd],
       env: {
         ...process.env,
         HH_SEARCH_PERIOD: periodDays === 0 ? '0' : String(periodDays),
-        // Headed Chromium на Windows часто падает сразу после launch; сбор — в headless.
-        HH_HEADLESS: process.env.HH_HEADLESS ?? '1',
+        // Из дашборда сбор всегда без окна: это стабильнее и не крадёт фокус.
+        HH_HEADLESS: '1',
+        HH_BROWSER_BACKGROUND: '1',
         PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(ROOT, '.playwright-browsers'),
       },
     });
@@ -1570,14 +1750,16 @@ const server = http.createServer(async (req, res) => {
       args.push(`--batch-scope=${batchScope}`);
     }
     loadDevOpsEnv();
-    const child = spawn(process.execPath, args, {
+    const child = spawnBackground(process.execPath, args, {
       cwd: ROOT,
       detached: true,
       stdio: ['ignore', 'ignore', 'ignore'],
       env: {
         ...process.env,
         PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(ROOT, '.playwright-browsers'),
+        HH_HEADLESS: process.env.HH_BATCH_HEADLESS === '1' ? '1' : '0',
         HH_FAST: String(process.env.HH_FAST ?? '1'),
+        HH_BROWSER_BACKGROUND: process.env.HH_BROWSER_BACKGROUND ?? '1',
       },
     });
     fs.closeSync(logFd);
@@ -1663,7 +1845,9 @@ const server = http.createServer(async (req, res) => {
     const args = [script];
     if (body.probeOnly) args.push('--probe-only');
     if (body.dryRun) args.push('--dry-run');
-    const child = spawn(process.execPath, args, {
+    if (body.force) args.push('--force');
+    if (body.role) args.push(`--role=${String(body.role).trim()}`);
+    const child = spawnBackground(process.execPath, args, {
       cwd: ROOT,
       detached: true,
       stdio: 'ignore',
@@ -1681,6 +1865,31 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && pathname === '/api/daily-routine') {
     return sendJson(res, 200, { steps: DAILY_ROUTINE_STEPS });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/resume-sync-report') {
+    const reportPath = path.join(DATA_DIR, 'resume-sync-report.json');
+    if (!fs.existsSync(reportPath)) {
+      return sendJson(res, 200, { ok: false, message: 'Отчёт ещё не создан — запустите синхронизацию или probe' });
+    }
+    try {
+      const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+      return sendJson(res, 200, { ok: true, report });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'GET' && pathname === '/api/routing-health') {
+    return sendJson(res, 200, getResumeRoutingHealth());
+  }
+
+  if (req.method === 'GET' && pathname === '/api/batch-report') {
+    const report = readBatchRunReport();
+    if (!report) {
+      return sendJson(res, 200, { ok: false, message: 'Отчёт батча ещё не создан — запустите авто-отклики' });
+    }
+    return sendJson(res, 200, { ok: true, report });
   }
 
   if (req.method === 'POST' && pathname === '/api/apply-negotiations-cache') {
@@ -1703,22 +1912,18 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && pathname === '/api/daily-routine-run') {
+    const busy = getBrowserBusyState();
+    if (busy.busy) {
+      return sendJson(res, 409, { error: busy.message, reason: busy.reason });
+    }
     let body = {};
     try {
       if (req.headers['content-length']) body = JSON.parse(await readBody(req));
     } catch {
       /* */
     }
-    const script = path.join(ROOT, 'scripts', 'daily-routine.mjs');
-    const args = [script];
-    if (body.withHarvest) args.push('--with-harvest');
-    const child = spawn(process.execPath, args, {
-      cwd: ROOT,
-      detached: true,
-      stdio: 'ignore',
-      env: { ...process.env, HH_HEADLESS: process.env.HH_HEADLESS || '1' },
-    });
-    child.unref();
+    const extra = body.withHarvest ? ['--with-harvest'] : [];
+    const child = spawnSideJob('dailyRoutine', 'daily-routine.mjs', extra);
     return sendJson(res, 200, {
       ok: true,
       pid: child.pid,
@@ -1811,29 +2016,70 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && pathname === '/api/launch-sync-hh-responses') {
-    const script = path.join(ROOT, 'scripts', 'sync-hh-responses.mjs');
-    if (!fs.existsSync(script)) return sendJson(res, 500, { error: 'sync-hh-responses.mjs не найден' });
-    const child = spawn(process.execPath, [script], {
-      cwd: ROOT,
-      detached: true,
-      stdio: 'ignore',
-      env: { ...process.env },
-    });
-    child.unref();
+    const busy = getBrowserBusyState();
+    if (busy.busy) {
+      return sendJson(res, 409, { error: busy.message, reason: busy.reason });
+    }
+    const child = spawnSideJob('syncResponses', 'sync-hh-responses.mjs');
     return sendJson(res, 200, { ok: true, pid: child.pid, message: 'Синхронизация откликов hh.ru запущена' });
   }
 
   if (req.method === 'POST' && pathname === '/api/launch-sync-hh-chats') {
-    const script = path.join(ROOT, 'scripts', 'sync-hh-chats.mjs');
-    if (!fs.existsSync(script)) return sendJson(res, 500, { error: 'sync-hh-chats.mjs не найден' });
-    const child = spawn(process.execPath, [script], {
-      cwd: ROOT,
-      detached: true,
-      stdio: 'ignore',
-      env: { ...process.env },
-    });
-    child.unref();
+    const busy = getBrowserBusyState();
+    if (busy.busy) {
+      return sendJson(res, 409, { error: busy.message, reason: busy.reason });
+    }
+    const child = spawnSideJob('syncChats', 'sync-hh-chats.mjs');
     return sendJson(res, 200, { ok: true, pid: child.pid, message: 'Синхронизация чатов запущена' });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/resume-raise-schedule') {
+    return sendJson(res, 200, getResumeRaiseScheduleStatus());
+  }
+
+  if (req.method === 'PATCH' && pathname === '/api/resume-raise-schedule') {
+    let body = {};
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const patch = {};
+    if (typeof body.enabled === 'boolean') patch.enabled = body.enabled;
+    if (Array.isArray(body.slots)) patch.slots = body.slots.map((h) => Number(h)).filter((h) => h >= 0 && h < 24);
+    if (body.timezone) patch.timezone = String(body.timezone);
+    if (typeof body.raiseAll === 'boolean') patch.raiseAll = body.raiseAll;
+    const cfg = saveResumeRaiseScheduleConfig(patch);
+    return sendJson(res, 200, { ok: true, config: cfg, status: getResumeRaiseScheduleStatus() });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/resume-raise') {
+    const busy = getBrowserBusyState();
+    if (busy.busy) {
+      return sendJson(res, 409, { error: busy.message, reason: busy.reason });
+    }
+    let body = {};
+    try {
+      if (req.headers['content-length']) body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const extra = [];
+    if (body.all) extra.push('--all');
+    if (body.role) extra.push(`--role=${String(body.role).trim()}`);
+    if (body.hash) extra.push(`--hash=${String(body.hash).trim()}`);
+    const child = spawnSideJob('resumeRaise', 'raise-resumes.mjs', extra);
+    const cfg = loadResumeRaiseScheduleConfig();
+    const label = body.all
+      ? 'Подъём всех резюме'
+      : body.role
+        ? `Подъём резюме (${body.role})`
+        : 'Подъём резюме из routing';
+    return sendJson(res, 200, {
+      ok: true,
+      pid: child.pid,
+      message: `${label} запущен (слоты авто: ${cfg.slots.join(', ')}:00 ${cfg.timezone})`,
+    });
   }
 
   if (req.method === 'POST' && pathname === '/api/launch-sync-resume-variants') {
@@ -1848,7 +2094,7 @@ const server = http.createServer(async (req, res) => {
     const args = [script];
     if (body.role) args.push(`--role=${body.role}`);
     if (body.generateOnly) args.push('--generate-only');
-    const child = spawn(process.execPath, args, {
+    const child = spawnBackground(process.execPath, args, {
       cwd: ROOT,
       detached: true,
       stdio: 'ignore',
@@ -1883,7 +2129,69 @@ const server = http.createServer(async (req, res) => {
       source: 'dashboard-manual',
     });
     updateVacancyRecord(id, { hhApply });
+    if (st === 'invited' || st === 'declined') {
+      appendFeedback({
+        at: new Date().toISOString(),
+        action: st,
+        reason: st === 'invited' ? 'приглашение на hh.ru' : 'отказ работодателя',
+        vacancyId: rec.vacancyId,
+        title: rec.title,
+        recordId: id,
+        url: rec.url,
+        letterExcerpt: String(rec.coverLetter?.approvedText || '').replace(/\s+/g, ' ').trim().slice(0, 220),
+        resumeRole: rec.hhApply?.resumeRole || rec.resumeRouting?.role,
+      });
+    }
     return sendJson(res, 200, { ok: true, hhApply });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/vacancy/defer') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const { id, days, clear } = body;
+    if (!id) return sendJson(res, 400, { error: 'Нужен id' });
+    const rec = getVacancyRecord(id);
+    if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+    if (clear) {
+      clearVacancyDefer(id);
+      return sendJson(res, 200, { ok: true, deferUntil: null });
+    }
+    const d = Math.max(1, Math.min(90, Number(days) || 1));
+    deferVacancyForDays(id, d);
+    const updated = getVacancyRecord(id);
+    return sendJson(res, 200, { ok: true, deferUntil: updated?.deferUntil || null });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/daily-digest') {
+    const fresh = url.searchParams.get('refresh') === '1';
+    if (fresh) {
+      return sendJson(res, 200, { ok: true, digest: buildDailyDigest() });
+    }
+    const digest = readDailyDigest();
+    if (!digest) {
+      return sendJson(res, 200, { ok: false, message: 'Дайджест ещё не создан — npm run devops:daily-digest' });
+    }
+    return sendJson(res, 200, { ok: true, digest });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/daily-digest') {
+    let body = {};
+    try {
+      if (req.headers['content-length']) body = JSON.parse(await readBody(req));
+    } catch {
+      /* */
+    }
+    try {
+      const { writeDailyDigest } = await import('../lib/daily-digest.mjs');
+      const digest = await writeDailyDigest({ sendTelegram: body.sendTelegram !== false });
+      return sendJson(res, 200, { ok: true, digest });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
   }
 
   if (req.method === 'POST' && pathname === '/api/dismiss') {
@@ -1925,7 +2233,34 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
+let resumeRaiseSchedulerBusy = false;
+
+function tickResumeRaiseSchedule() {
+  if (resumeRaiseSchedulerBusy) return;
+  const check = shouldRunScheduledRaise();
+  if (!check.run) return;
+  const busy = getBrowserBusyState();
+  if (busy.busy) return;
+  const side = getSideJobsStatus();
+  if (side.resumeRaise?.running) return;
+  resumeRaiseSchedulerBusy = true;
+  try {
+    spawnSideJob('resumeRaise', 'raise-resumes.mjs', ['--scheduled']);
+    console.log(`[dashboard] Авто-подъём резюме (слот ${check.slotKey})`);
+  } catch (e) {
+    console.warn('[dashboard] resume-raise schedule:', e.message || e);
+  } finally {
+    resumeRaiseSchedulerBusy = false;
+  }
+}
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Дашборд: http://127.0.0.1:${PORT}`);
   console.log('  API: batch-control, POST /api/preferences/save (лимиты из UI)');
+  setInterval(tickResumeRaiseSchedule, 60_000);
+  tickResumeRaiseSchedule();
+  const cfg = loadResumeRaiseScheduleConfig();
+  console.log(
+    `  Авто-подъём резюме: ${cfg.enabled ? 'вкл' : 'выкл'} · ${cfg.slots.join(', ')}:00 (${cfg.timezone})`
+  );
 });

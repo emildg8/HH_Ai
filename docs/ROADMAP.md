@@ -62,12 +62,12 @@
 
 | ID | Задача | Детали | Статус |
 |----|--------|--------|--------|
-| R2.1 | Тег `invited` в дашборде | Кнопка «Пригласили» → в эталоны писем | [ ] |
-| R2.2 | Экспорт invited/declined в `feedback.jsonl` | Контекст для следующего generate | [ ] |
-| R2.3 | Few-shot по типу вакансии | SRE / DBA / platform — теги из `geminiTags` | [ ] |
-| R2.4 | Анкета: авто-reprobe при generic labels | Дашборд + уведомление | [ ] |
-| R2.5 | A/B 2 варианта письма | Выбор в UI до утверждения | [ ] |
-| R2.6 | Метрики в карточке | % правок письма, дата отклика | [ ] |
+| R2.1 | Тег `invited` в дашборде | Кнопка «Пригласили» → в эталоны писем | [x] |
+| R2.2 | Экспорт invited/declined в `feedback.jsonl` | Контекст для следующего generate | [x] |
+| R2.3 | Few-shot по типу вакансии | SRE / DBA / platform — теги из `geminiTags` | [x] |
+| R2.4 | Анкета: авто-reprobe при generic labels | Дашборд + уведомление | [x] |
+| R2.5 | A/B 2 варианта письма | Выбор в UI до утверждения | [x] |
+| R2.6 | Метрики в карточке | % правок письма, дата отклика | [x] |
 
 ---
 
@@ -77,10 +77,10 @@
 |----|--------|--------|--------|
 | R3.1 | Фоновые задачи (бэкап, verify) | Локальный планировщик ОС, вне git | [ ] |
 | R3.2 | `verify-local` + `smoke:release` в CI | [.github/workflows/ci.yml](../.github/workflows/ci.yml) | [x] |
-| R3.3 | Telegram: «harvest готов N≥50» | Bot token в .env | [ ] |
-| R3.4 | Умный batch: стоп при капче | Детект + пауза (2.0: wait в Chromium) | [~] |
-| R3.5 | Очередь «отложить до завтра» | Поле `deferUntil` | [ ] |
-| R3.6 | Ночной rescore только pending | `npm run rescore-queue` | [ ] |
+| R3.3 | Telegram: «harvest готов N≥50» | Bot token в .env | [x] |
+| R3.4 | Умный batch: стоп при капче | Детект + пауза (2.0: wait в Chromium) | [x] |
+| R3.5 | Очередь «отложить до завтра» | Поле `deferUntil` | [x] |
+| R3.6 | Ночной rescore только pending | `npm run rescore-queue` | [x] |
 | R3.7 | Pre-push hook секретов | `npm run secrets:check` + `hooks:install` | [x] |
 
 ---
@@ -89,11 +89,11 @@
 
 | ID | Задача | Статус |
 |----|--------|--------|
-| R4.1 | Выбор профиля HH_PROFILE в UI | [ ] |
-| R4.2 | Массовый probe анкет по фильтру | [ ] |
-| R4.3 | Статистика откликов/день | [ ] |
-| R4.4 | Экспорт карточки в markdown | [ ] |
-| R4.5 | Горячие клавиши (approve/reject) | [ ] |
+| R4.1 | Выбор профиля HH_PROFILE в UI | [x] |
+| R4.2 | Массовый probe анкет по фильтру | [x] |
+| R4.3 | Статистика откликов/день | [x] |
+| R4.4 | Экспорт карточки в markdown | [x] |
+| R4.5 | Горячие клавиши (approve/reject) | [x] |
 
 ---
 
@@ -155,8 +155,8 @@ flowchart LR
 | Версия | Фокус | Статус |
 |--------|--------|--------|
 | **2.0.1** | CI, QA, CRM-дашборд, воронка, роутинг резюме, hh-search url-safe | [x] срез 2026-05-22 |
-| **2.1.0** | Feedback invited/declined, HH_PROFILE в UI, резюме в батче | [ ] |
-| **2.2.0** | deferUntil, Telegram, метрики, portable zip | [ ] |
+| **2.1.0** | Feedback invited/declined, HH_PROFILE в UI, резюме в батче | [x] срез 2026-05-30 |
+| **2.2.0** | deferUntil, Telegram, portable zip, rescore pending | [x] срез 2026-05-30 |
 | **3.0.0** | *(опционально)* Tauri / portable-only | [ ] backlog |
 
 ---

@@ -364,8 +364,5 @@ export function itemQuestionnaireNeedsProbe(item) {
 export function itemQuestionnaireShouldAutoProbe(item) {
   if (!item?.hhApply?.questionnaire) return false;
   if (itemHasMeaningfulQuestionnaire(item)) return false;
-  const q = item.hhApply.questionnaire;
-  if (q.status === 'pending_manual') return true;
-  if (q.likelyFromVacancyText) return true;
-  return false;
+  return itemQuestionnaireNeedsProbe(item);
 }

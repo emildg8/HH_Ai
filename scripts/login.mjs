@@ -46,6 +46,7 @@ async function main() {
     owner: 'login',
     retries: 4,
     lockTimeoutMs: 30_000,
+    skipMinimize: true,
   });
   const page = ctx.pages()[0] || (await ctx.newPage());
   await page.goto('https://hh.ru/', { waitUntil: 'domcontentloaded', timeout: 60_000 });

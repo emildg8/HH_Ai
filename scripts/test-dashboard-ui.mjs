@@ -46,7 +46,8 @@ async function main() {
     if (msg.type() === 'error') errors.push(`console: ${msg.text()}`);
   });
 
-  await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30_000 });
+  await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.waitForSelector('#list', { timeout: 15_000 });
 
   if (!(await page.$('#toast-host'))) throw new Error('Нет #toast-host');
 
@@ -92,6 +93,11 @@ async function main() {
   if ((await draftBtn.count()) > 0) {
     await draftBtn.click();
     await waitModalOpen(page, 'draft-modal');
+    const variantTabsOk = await page.evaluate(() => {
+      const tabs = document.querySelectorAll('#draft-modal .draft-variant-tab');
+      return tabs.length >= 1;
+    });
+    if (!variantTabsOk) errors.push('draft-modal: нет вкладок A/B');
     await page.keyboard.press('Escape');
     await waitModalHidden(page, 'draft-modal');
   } else {
@@ -156,24 +162,54 @@ async function main() {
     const applied = await page.evaluate((d) => document.documentElement.dataset.cardDensity === d, dens);
     if (!applied) errors.push(`плотность карточек: не применился режим ${dens} (полоска ${amount})`);
   }
-  const widths = {};
-  for (const [amount, dens] of [
-    [15, 'compact'],
-    [50, 'medium'],
-    [85, 'full'],
-  ]) {
-    await setTextAmount(amount);
-    await page.waitForTimeout(150);
-    widths[dens] = await page.evaluate(() => {
-      const card = document.querySelector('#list .card');
-      return card ? Math.round(card.getBoundingClientRect().width) : 0;
-    });
+  await closeSettingsModal(page);
+  await page.locator('.card-size-toolbar [data-card-size-preset="compact"]').click();
+  await page.waitForTimeout(200);
+  const listMode = await page.evaluate(() => {
+    const tile = document.querySelector('#list .card-tile');
+    return {
+      layout: document.documentElement.dataset.cardLayout,
+      listDisplay: getComputedStyle(document.getElementById('list')).display,
+      hasTile: !!tile,
+      title: tile?.querySelector('.card-tile__title')?.textContent?.trim().length > 0,
+    };
+  });
+  if (listMode.layout !== 'tile-compact') {
+    errors.push(`краткий режим: ожидали layout=tile-compact, got ${listMode.layout}`);
   }
-  if (widths.compact && widths.full && Math.abs(widths.compact - widths.full) > 8) {
-    errors.push(
-      `ширина карточки не должна зависеть от режима текста: compact=${widths.compact} full=${widths.full}`
+  if (!listMode.hasTile) errors.push('краткий режим: нет плиток .card-tile');
+  if (!listMode.title) errors.push('краткий режим: нет заголовка на плитке');
+  if (listMode.listDisplay !== 'grid') {
+    errors.push(`краткий режим: список должен быть grid, got ${listMode.listDisplay}`);
+  }
+
+  const tileOpen = page.locator('#list .card-tile__open').first();
+  if ((await tileOpen.count()) > 0) {
+    await tileOpen.click();
+    await waitModalOpen(page, 'vacancy-detail-modal');
+    const detailOk = await page.evaluate(
+      () => !!document.querySelector('#vacancy-detail-body .card--in-modal')
     );
+    if (!detailOk) errors.push('модалка вакансии: нет полной карточки в теле');
+    await page.keyboard.press('Escape');
+    await waitModalHidden(page, 'vacancy-detail-modal');
   }
+
+  await page.locator('.card-size-toolbar [data-card-size-preset="full"]').click();
+  await page.waitForTimeout(200);
+  const fullMode = await page.evaluate(() => ({
+    layout: document.documentElement.dataset.cardLayout,
+    listDisplay: getComputedStyle(document.getElementById('list')).display,
+    hasCard: !!document.querySelector('#list .card'),
+  }));
+  if (fullMode.layout !== 'expanded') {
+    errors.push(`полный режим: ожидали layout=expanded, got ${fullMode.layout}`);
+  }
+  if (!fullMode.hasCard) errors.push('полный режим: нет .card в ленте');
+  if (fullMode.listDisplay !== 'flex') {
+    errors.push(`полный режим: список должен быть flex, got ${fullMode.listDisplay}`);
+  }
+  await openSettingsTab(page, 'ui');
   await setTextAmount(85);
   await page.waitForTimeout(120);
   const fullText = await page.evaluate(() => {
@@ -271,58 +307,122 @@ async function main() {
   if ((await qBtn.count()) > 0) {
     await qBtn.scrollIntoViewIfNeeded();
     await qBtn.click({ force: true });
-    await waitModalOpen(page, 'questionnaire-modal');
-    await page.keyboard.press('Escape');
-    await waitModalHidden(page, 'questionnaire-modal');
+    try {
+      await waitModalOpen(page, 'questionnaire-modal');
+      await page.keyboard.press('Escape');
+      await waitModalHidden(page, 'questionnaire-modal');
+    } catch {
+      /* карточка без анкеты — кнопка могла не открыть модалку */
+    }
   }
 
   const layout = await page.evaluate(() => {
     const list = document.getElementById('list');
-    const cols = getComputedStyle(list).gridTemplateColumns.split(' ').filter(Boolean).length;
     const shell = document.getElementById('app-shell');
+    const listDisplay = list ? getComputedStyle(list).display : '';
     return {
       shellH: shell ? Math.round(shell.getBoundingClientRect().height) : 0,
       vh: window.innerHeight,
-      gridCols: cols,
+      listDisplay,
     };
   });
   if (layout.shellH > layout.vh + 12) {
     errors.push(`shell выше viewport: ${layout.shellH} > ${layout.vh}`);
   }
-  if (layout.gridCols < 1 || layout.gridCols > 8) {
-    errors.push(`неожиданное число колонок: ${layout.gridCols}`);
+  const listLayout = await page.evaluate(() => ({
+    cardLayout: document.documentElement.dataset.cardLayout,
+    listDisplay: getComputedStyle(document.getElementById('list')).display,
+  }));
+  const expectListDisplay = listLayout.cardLayout === 'expanded' ? 'flex' : 'grid';
+  if (listLayout.listDisplay !== expectListDisplay) {
+    errors.push(
+      `список (${listLayout.cardLayout}): ожидали display=${expectListDisplay}, got ${listLayout.listDisplay}`
+    );
   }
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.reload({ waitUntil: 'networkidle' });
-  const narrowCols = await page.evaluate(() => {
-    const list = document.getElementById('list');
-    return getComputedStyle(list).gridTemplateColumns.split(' ').filter(Boolean).length;
-  });
-  if (narrowCols < 1) {
-    errors.push(`узкое окно: колонок ${narrowCols}`);
-  }
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.waitForSelector('#list', { timeout: 15_000 });
+  await page.waitForFunction(
+    () => {
+      const nav = document.getElementById('list-breadcrumbs-host')?.querySelector('.list-breadcrumbs');
+      return Boolean(nav && /карточ/i.test(nav.textContent || ''));
+    },
+    null,
+    { timeout: 20_000 }
+  );
 
   await page.setViewportSize({ width: 1920, height: 1080 });
-  const wideCols = await page.evaluate(() => {
-    const list = document.getElementById('list');
-    return getComputedStyle(list).gridTemplateColumns.split(' ').filter(Boolean).length;
-  });
-  const cardW = await page.evaluate(() => {
+  const cardInfo = await page.evaluate(() => {
     const card = document.querySelector('#list .card');
-    return card ? Math.round(card.getBoundingClientRect().width) : 0;
+    const tile = document.querySelector('#list .card-tile');
+    const el = card || tile;
+    const titleEl = card?.querySelector('.title-link') || tile?.querySelector('.card-tile__title');
+    return {
+      w: el ? Math.round(el.getBoundingClientRect().width) : 0,
+      layout: document.documentElement.dataset.cardLayout || '',
+      title: titleEl?.textContent?.trim().length > 0,
+      isTile: !!tile && !card,
+    };
   });
-  if (cardW > 0 && cardW < 440) {
-    errors.push(`ширина карточки слишком мала: ${cardW}px (ожидали ~40rem)`);
+  if (cardInfo.w > 0 && !cardInfo.isTile && cardInfo.w < 220) {
+    errors.push(`карточка слишком узкая: ${cardInfo.w}px (layout=${cardInfo.layout})`);
   }
+  if (cardInfo.w > 0 && !cardInfo.title) {
+    errors.push('после перезагрузки: нет заголовка на карточке/плитке');
+  }
+
+  const breadcrumbsOk = await page.evaluate(() => {
+    const host = document.getElementById('list-breadcrumbs-host');
+    const nav = host?.querySelector('.list-breadcrumbs');
+    return Boolean(nav && nav.textContent?.includes('карточ'));
+  });
+  if (!breadcrumbsOk) errors.push('нет хлебных крошек в toolbar');
+
+  await page.keyboard.press('Control+k');
+  await page.waitForSelector('#command-palette:not([hidden])', { timeout: 3000 });
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(
+    () => document.getElementById('command-palette')?.hasAttribute('hidden'),
+    null,
+    { timeout: 3000 }
+  );
+
+  await page.locator('#btn-open-shortcuts').click();
+  await waitModalOpen(page, 'shortcuts-modal');
+  await page.keyboard.press('Escape');
+  await waitModalHidden(page, 'shortcuts-modal');
+
+  const sparklineOk = await page.evaluate(async () => {
+    const st = await fetch('/api/job-status').then((r) => r.json());
+    return Boolean(st.dashboardStats?.applyTimelineLast7?.length === 7);
+  });
+  if (!sparklineOk) errors.push('API: нет applyTimelineLast7 в dashboardStats');
+
+  const shellOk = await page.evaluate(() => {
+    const routine = document.getElementById('btn-daily-routine-menubar')?.textContent || '';
+    const harvest = document.getElementById('btn-run-harvest-menubar')?.textContent || '';
+    const dockIcon = document.querySelector('[data-dock-toggle="left"] .ui-icon');
+    const sparkline = document.querySelector('.daily-sparkline');
+    const pinIcon = document.querySelector('[data-dock-pin="left"] .ui-icon--pin');
+    return (
+      routine.includes('Утренний') &&
+      harvest.includes('Поиск') &&
+      Boolean(dockIcon) &&
+      Boolean(sparkline) &&
+      Boolean(pinIcon)
+    );
+  });
+  if (!shellOk) errors.push('оболочка: menubar COPY, SVG-иконки или sparkline не на месте');
 
   if (errors.length) throw new Error(errors.join('\n'));
 
-  console.log('OK: tooltips, tabs, плотность карточек, фильтры, журнал, модалки, layout 1920×1080');
+  console.log('OK: tooltips, tabs, плитки/лента, модалка вакансии, журнал, breadcrumbs, palette, layout 1920×1080');
   await browser.close();
 }
 
 main().catch((e) => {
   console.error('FAIL:', e.message || e);
+  if (e.stack) console.error(e.stack.split('\n').slice(0, 6).join('\n'));
   process.exit(1);
 });

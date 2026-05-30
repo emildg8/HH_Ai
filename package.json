@@ -1,6 +1,6 @@
 {
   "name": "hh-ai",
-  "version": "2.0.1",
+  "version": "2.2.0",
   "description": "HH Ai — локальная автоматизация откликов на hh.ru (дашборд, LLM, батч, анкеты). https://github.com/emildg8/HH_Ai",
   "private": true,
   "repository": {
@@ -14,6 +14,8 @@
   "type": "module",
   "scripts": {
     "login": "node scripts/login.mjs",
+    "open-hh": "node scripts/open-hh-session.mjs",
+    "repair-profile": "node scripts/repair-chromium-profile.mjs",
     "apply": "node scripts/apply.mjs",
     "scan-tg": "node scripts/scan-telegram.mjs",
     "vacancies": "node scripts/open-vacancies.mjs",
@@ -28,6 +30,7 @@
     "dashboard": "node scripts/dashboard-server.mjs",
     "devops:dashboard": "node scripts/dashboard-server.mjs",
     "devops:test-dashboard-ui": "node scripts/test-dashboard-ui.mjs",
+    "devops:test-ux": "node scripts/test-apply-session.mjs && node scripts/test-outcome-feedback.mjs && node scripts/test-ux-lib.mjs && node scripts/test-list-breadcrumbs.mjs && node scripts/test-apply-copy-dom.mjs && node scripts/test-questionnaire-auto-reprobe.mjs",
     "devops:probe-questionnaire": "node scripts/probe-questionnaire.mjs",
     "devops:questionnaire-prep-batch": "node scripts/questionnaire-prep-batch.mjs",
     "devops:questionnaire-reprobe-batch": "node scripts/questionnaire-reprobe-batch.mjs",
@@ -40,6 +43,7 @@
     "devops:regenerate-letters": "node scripts/run-devops-regenerate-letters.mjs",
     "ollama:pull": "ollama pull llama3.2",
     "rescore-queue": "node scripts/rescore-queue.mjs",
+    "devops:rescore-pending": "node scripts/rescore-queue.mjs --all-pending",
     "score-openrouter-quota": "node scripts/score-openrouter-until-quota.mjs",
     "hh-fill-letter": "node scripts/hh-fill-response-letter.mjs",
     "hh-apply-chat": "node scripts/hh-apply-chat-letter.mjs",
@@ -57,6 +61,10 @@
     "devops:analyze-interviews": "node scripts/analyze-interviews.mjs",
     "devops:apply-negotiations-cache": "node scripts/apply-negotiations-cache.mjs",
     "devops:daily-routine": "node scripts/daily-routine.mjs",
+    "devops:daily-digest": "node scripts/daily-digest.mjs",
+    "devops:raise-resumes": "node scripts/raise-resumes.mjs",
+    "devops:raise-resumes:all": "node scripts/raise-resumes.mjs --all",
+    "devops:raise-resumes:scheduled": "node scripts/raise-resumes.mjs --scheduled",
     "devops:sync-resume-from-source": "node scripts/sync-resume-from-source.mjs",
     "devops:sync-resume-from-source:force": "node scripts/sync-resume-from-source.mjs --force",
     "devops:probe-resume-completeness": "node scripts/sync-resume-from-source.mjs --probe-only",
@@ -73,6 +81,7 @@
     "secrets:check": "node scripts/pre-push-secrets-check.mjs",
     "hooks:install": "node scripts/install-git-hooks-runner.mjs",
     "smoke:release": "node scripts/smoke-release.mjs",
+    "qa:public": "node scripts/qa-public-check.mjs",
     "docs:screenshots": "node scripts/capture-demo-screenshots.mjs",
     "postinstall": "node -e \"console.log('HH Ai: npm run login && npm run dashboard  |  docs/QUICKSTART.md')\""
   },

@@ -1,9 +1,9 @@
 # HH Ai — локальный помощник откликов на hh.ru
 
-[![Release](https://img.shields.io/github/v/release/emildg8/HH_Ai?label=2.0.1)](https://github.com/emildg8/HH_Ai/releases)
+[![Release](https://img.shields.io/github/v/release/emildg8/HH_Ai?label=2.2.0)](https://github.com/emildg8/HH_Ai/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Версия:** 2.0.1 · [**Быстрый старт**](docs/QUICKSTART.md) · [Документация](docs/README.md) · [Скачать zip](https://github.com/emildg8/HH_Ai/releases/latest) · [Changelog](CHANGELOG.md)
+**Версия:** 2.2.0 · [**Быстрый старт**](docs/QUICKSTART.md) · [Документация](docs/README.md) · [Скачать zip](https://github.com/emildg8/HH_Ai/releases/latest) · [Changelog](CHANGELOG.md)
 
 Автоматизация [hh.ru](https://hh.ru): сбор вакансий, LLM-оценка, сопроводительные, отклик через Playwright, дашборд с анкетой и батч-откликами.
 
@@ -91,6 +91,8 @@ npm run dashboard
 | `npm run devops:sync-responses` | Статусы откликов с hh.ru → карточки и конверсия |
 | `npm run devops:sync-chats` | Переписки: вопросы / автоответы |
 | `npm run devops:sync-resume-variants` | «О себе» и опыт на до 5 резюме hh.ru |
+| `npm run devops:raise-resumes -- --all` | Поднять резюме в поиске hh.ru (раз в ~4 ч) |
+| `npm run devops:raise-resumes:scheduled` | Авто-слот (если дашборд закрыт — в Планировщике задач) |
 | `npm run setup` | Мастер: пресет LLM + профиль |
 | `npm run setup:check` | Что настроить перед первым запуском |
 | `npm run verify:local` | Проверка установки |

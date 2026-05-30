@@ -1,6 +1,6 @@
 # Решение проблем
 
-**Версия:** 2.0.1 · **Репозиторий:** [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai)
+**Версия:** 2.0.2 · **Репозиторий:** [emildg8/HH_Ai](https://github.com/emildg8/HH_Ai)
 
 ## Личный Chrome и автоматизация
 
@@ -18,8 +18,8 @@
 
 | Симптом | Решение |
 |---------|---------|
-| Редирект на логин | `npm run login`, затем Enter после входа |
-| `npm run apply` падает | Удалить устаревшую сессию не нужно — просто повторить login |
+| `npm run apply` падает с «browser closed» | Закройте батч/harvest; удалите устаревший `data/session/browser.lock`; `npm run open-hh` или `npm run login`. С 2.0.2 `apply` использует общий lock Chromium |
+| Редирект на логин после apply | `npm run login`, затем Enter после входа |
 
 ## Капча / «не робот»
 

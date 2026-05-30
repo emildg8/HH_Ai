@@ -34,6 +34,8 @@ data/harvest-progress.json
 data/harvest-dashboard-tick.json
 data/apply-chat-progress.json
 data/batch-control.json
+data/batch-state.json
+data/harvest.pid
 data/verify-last.json
 data/autopilot-log.jsonl
 data/autopilot-state.json
@@ -70,6 +72,12 @@ releases/RELEASE-public-v*.json
 releases/.staging/
 data/apply-batch.lock
 data/apply-batch.pid
+data/sync-responses.pid
+data/sync-chats.pid
+data/daily-routine.pid
+data/resume-raise.pid
+data/resume-raise-state.json
+config/resume-raise-schedule.json
 data/harvest-control.json
 data/cover-letter-regen-state.json
 data/resume-sync-report.json

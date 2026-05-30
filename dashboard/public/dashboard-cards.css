@@ -1,0 +1,325 @@
+/**
+ * Карточки v7 — одна колонка, без сжатия flex-стопкой.
+ */
+
+/* ——— Список: лента полных карточек (режим «Полный») ——— */
+#list.vacancy-grid--expanded,
+#list.vacancy-grid:not(.vacancy-grid--tiles) {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 0.55rem;
+  grid-template-columns: unset !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0.65rem var(--main-pad-x, 0.75rem) 1rem !important;
+}
+
+#list > .card {
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+  width: 100%;
+  min-height: auto !important;
+  min-width: 0;
+}
+
+/* Сброс конфликтов style.css */
+html[data-card-layout] .card {
+  min-height: auto !important;
+  height: auto !important;
+}
+
+html[data-card-layout] .card-head {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+  flex-shrink: 0;
+}
+
+html[data-card-layout] .card-slot--questionnaire:not(.card-slot--questionnaire-active),
+html[data-card-layout] .card-slot--risks:not(.card-slot--risks-active) {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+html[data-card-layout] .card-tail-align {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  flex-shrink: 0;
+}
+
+html[data-card-layout] .card-tail-align:not(:has(.card-slot--questionnaire-active, .card-slot--risks-active)) {
+  display: none !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* legacy row — не используется (краткий = плитки) */
+html[data-card-layout='row'] .card {
+  display: grid !important;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 0.75rem;
+  row-gap: 0.15rem;
+  align-items: center;
+  padding: 0.55rem 2rem 0.55rem 0.55rem;
+  overflow: visible !important;
+  border-radius: 10px;
+}
+
+html[data-card-layout='row'] .card-head {
+  display: contents !important;
+}
+
+html[data-card-layout='row'] .card-head-top {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  justify-self: center;
+}
+
+html[data-card-layout='row'] .title-link {
+  grid-column: 2;
+  grid-row: 1;
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: calc(0.88rem * var(--cfs, var(--card-font-scale, 1)));
+  font-weight: 600;
+  line-height: 1.32;
+  color: var(--text-primary, #f2f2f7) !important;
+  text-decoration: none;
+}
+
+html[data-card-layout='row'] .card-body,
+html[data-card-layout='row'] .card-scroll {
+  display: contents !important;
+}
+
+html[data-card-layout='row'] .meta--compact {
+  grid-column: 2;
+  grid-row: 2;
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--text-muted, rgba(235, 235, 245, 0.55));
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
+
+html[data-card-layout='row'] .card-meta-detail,
+html[data-card-layout='row'] .card-desc-block,
+html[data-card-layout='row'] .card-facts,
+html[data-card-layout='row'] .card-tail-align,
+html[data-card-layout='row'] .card-tail-rest,
+html[data-card-layout='row'] .card-foot {
+  display: none !important;
+}
+
+/* ═══ Полный: карточка-блок в ленте ═══ */
+html[data-card-layout='expanded'] .card {
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0.7rem 2rem 0.65rem 0.7rem;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+html[data-card-layout='expanded'] .card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+html[data-card-layout='expanded'] .card-head-top {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+html[data-card-layout='expanded'] .title-link {
+  display: block !important;
+  font-size: calc(0.95rem * var(--cfs, var(--card-font-scale, 1)));
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-primary, #f2f2f7) !important;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html[data-card-layout='expanded'] .title-link:hover {
+  color: var(--accent, #0a84ff) !important;
+  text-decoration: underline;
+}
+
+html[data-card-layout='expanded'] .card-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: visible;
+  display: block;
+}
+
+html[data-card-layout='expanded'] .card-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  overflow: visible;
+  max-height: none;
+}
+
+html[data-card-layout='expanded'] .meta--compact {
+  display: block !important;
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-muted, rgba(235, 235, 245, 0.55));
+}
+
+html[data-card-layout='expanded'][data-card-density='medium'] .card {
+  min-height: 5.5rem;
+  max-height: 15rem;
+}
+
+html[data-card-layout='expanded'][data-card-density='medium'] .card-scroll {
+  max-height: 9.5rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+html[data-card-layout='expanded'][data-card-density='medium'] .title-link {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+html[data-card-layout='expanded'][data-card-density='medium'] .meta--compact {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+html[data-card-layout='expanded'][data-card-density='medium'] .summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0;
+  color: var(--text-primary, #e8e8ed);
+}
+
+html[data-card-density='medium'] .card-meta-detail,
+html[data-card-density='medium'] .card-desc-block {
+  display: none !important;
+}
+
+html[data-card-layout='expanded'][data-card-density='full'] .card {
+  min-height: 7rem;
+}
+
+html[data-card-layout='expanded'][data-card-density='full'] .card-scroll {
+  max-height: 32rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+html[data-card-density='full'] .meta--compact {
+  display: none !important;
+}
+
+html[data-card-density='full'] .card-meta-detail:not([hidden]) {
+  display: flex !important;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.76rem;
+  line-height: 1.38;
+}
+
+html[data-card-density='full'] .card-meta-detail .meta-line {
+  margin: 0;
+}
+
+html[data-card-density='full'] .card-desc-block:not([hidden]) {
+  display: block !important;
+}
+
+html[data-card-density='full'] .summary {
+  display: block;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0.15rem 0 0;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+html[data-card-density='full'] .card-facts:not([hidden]) {
+  display: block;
+  font-size: 0.75rem;
+  margin: 0.2rem 0;
+  padding-left: 1.1rem;
+}
+
+/* ═══ Общий вид ═══ */
+.card {
+  background: var(--panel-bg-elevated, #18181e);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+}
+
+.card:hover,
+.card:focus-within {
+  border-color: rgba(10, 132, 255, 0.45);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.card--score-high {
+  border-left: 3px solid var(--good, #30d158);
+}
+
+.card--score-low {
+  border-left: 3px solid var(--warn, #ffd60a);
+}
+
+.card-dismiss {
+  z-index: 3;
+  opacity: 0.65;
+}
+
+.card-dismiss:hover {
+  opacity: 1;
+}
+
+/* Visual hierarchy: score → title → chips → actions */
+html[data-card-layout='expanded'] .card-head-top .score {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+html[data-card-layout='expanded'] .card-head-top .title-link {
+  font-weight: 650;
+}
+
+html[data-card-layout='expanded'] .status-chips {
+  font-size: 0.72rem;
+  opacity: 0.92;
+}
+
+html[data-card-layout='expanded'] .card-actions,
+html[data-card-layout='expanded'] .card-foot {
+  margin-top: 0.35rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+}

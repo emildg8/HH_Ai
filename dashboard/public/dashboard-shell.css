@@ -1,0 +1,378 @@
+/**
+ * Оболочка дашборда v2: доки, сайдбар, центр, типографика.
+ */
+
+:root {
+  --shell-bg: #0a0a0c;
+  --panel-bg: #121216;
+  --panel-bg-elevated: #18181e;
+  --panel-border: rgba(255, 255, 255, 0.07);
+  --panel-radius: 10px;
+  --accent-soft: rgba(10, 132, 255, 0.14);
+  --text-primary: #f2f2f7;
+  --text-muted: rgba(235, 235, 245, 0.55);
+}
+
+html[data-theme='light'] {
+  --shell-bg: #ececf0;
+  --panel-bg: #ffffff;
+  --panel-bg-elevated: #f7f7fa;
+  --panel-border: rgba(0, 0, 0, 0.08);
+  --text-primary: #1c1c1e;
+  --text-muted: rgba(60, 60, 67, 0.72);
+}
+
+body {
+  background: var(--shell-bg);
+}
+
+#app-shell.workspace-shell {
+  background: var(--shell-bg);
+}
+
+.workspace-menubar {
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--panel-border);
+  padding: 0.35rem 0.65rem;
+}
+
+.workspace-menubar__brand .brand-mark {
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 9px;
+}
+
+.workspace-menubar__nav .btn {
+  font-size: 0.72rem;
+  padding: 0.32rem 0.55rem;
+  border-radius: 8px;
+}
+
+.dock {
+  background: var(--panel-bg);
+  border-color: var(--panel-border);
+}
+
+.dock__chrome {
+  background: var(--panel-bg-elevated);
+  border-bottom: 1px solid var(--panel-border);
+  padding: 0.35rem 0.5rem;
+}
+
+.dock__title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.dock__body--expanded {
+  padding: 0.45rem 0.5rem 0.55rem;
+}
+
+.dock-section {
+  margin-bottom: 0.65rem;
+}
+
+.dock-section:last-child {
+  margin-bottom: 0;
+}
+
+.dock-section__label {
+  display: block;
+  margin: 0 0 0.35rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+#dock-left .crm-status {
+  padding: 0.45rem 0.5rem;
+  background: var(--panel-bg-elevated);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--panel-radius);
+}
+
+#dock-left .job-status {
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+#dock-left .crm-actions-primary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+#dock-left .crm-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+}
+
+#dock-left .crm-action-grid .btn-batch-manual {
+  grid-column: 1 / -1;
+}
+
+#dock-left .btn-routine-hero {
+  font-size: 0.8rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 9px;
+}
+
+#dock-left .crm-nav .crm-seg--nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+
+#dock-left .crm-nav .seg-btn {
+  flex: 1 1 calc(50% - 0.15rem);
+  min-width: 0;
+  font-size: 0.68rem;
+  padding: 0.35rem 0.25rem;
+}
+
+#dock-left .sidebar-quick__grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+#dock-left .sidebar-filters .segmented {
+  width: 100%;
+}
+
+.workspace-center {
+  background: var(--shell-bg);
+}
+
+.workspace-toolbar {
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--panel-border);
+  padding: 0.45rem var(--main-pad-x) 0.4rem;
+}
+
+.workspace-toolbar .crm-toolbar {
+  gap: 0.5rem 0.65rem;
+}
+
+.workspace-toolbar .field-input {
+  background: var(--panel-bg-elevated);
+  border-color: var(--panel-border);
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.workspace-toolbar .crm-search-input {
+  min-width: 12rem;
+}
+
+.card-size-toolbar {
+  padding: 0.15rem;
+  background: var(--panel-bg-elevated);
+  border: 1px solid var(--panel-border);
+  border-radius: 9px;
+}
+
+.card-size-toolbar__label {
+  display: none;
+}
+
+.card-size-presets .seg-btn {
+  font-size: 0.68rem;
+  padding: 0.3rem 0.5rem;
+  min-width: 3.4rem;
+}
+
+.card-size-presets .seg-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+#dock-right .stats-panel--crm {
+  background: var(--panel-bg-elevated);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--panel-radius);
+  padding: 0.45rem;
+}
+
+#dock-right .sidebar-footer {
+  border-top: none;
+  padding-top: 0.35rem;
+}
+
+#dock-right .job-progress {
+  background: var(--panel-bg-elevated);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--panel-radius);
+  padding: 0.45rem 0.5rem;
+}
+
+#list {
+  padding: 0.65rem var(--main-pad-x) 1rem;
+}
+
+.btn {
+  border-radius: 8px;
+}
+
+.btn-primary {
+  font-weight: 600;
+}
+
+.segmented .seg-btn.active {
+  font-weight: 600;
+}
+
+/* ——— Меню (не перебивать grid-row у #app-shell) ——— */
+.workspace-shell > .workspace-menubar {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.workspace-menubar__brand {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem 0.15rem 0;
+}
+
+.workspace-menubar__brand .brand-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.workspace-menubar__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-start;
+}
+
+.workspace-menubar__tools {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.workspace-menubar__dock-toggle {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 7px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg-elevated);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.workspace-menubar__dock-toggle[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: rgba(10, 132, 255, 0.35);
+  background: var(--accent-soft);
+}
+
+#dock-left,
+#dock-right {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.dock--hidden {
+  display: none !important;
+}
+
+.workspace-stage {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.segmented {
+  background: var(--panel-bg-elevated);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.segmented .seg-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.segmented .seg-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.segmented .seg-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: none;
+}
+
+#dock-left .btn-secondary {
+  font-size: 0.72rem;
+  padding: 0.4rem 0.45rem;
+}
+
+#dock-left .btn-ghost {
+  font-size: 0.68rem;
+}
+
+.card-size-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.card-size-toolbar__label {
+  display: inline;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding-left: 0.25rem;
+}
+
+.list-count--toolbar {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin: 0;
+  white-space: nowrap;
+}
+
+#dock-right .stats-grid .stat-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+#dock-right .stats-grid .stat-label {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+#dock-right .job-progress-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+#dock-right .job-progress-bar {
+  background: linear-gradient(90deg, var(--accent), #5ac8fa);
+}
+
+.workspace-stage {
+  min-height: 0;
+}

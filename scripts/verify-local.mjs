@@ -128,9 +128,28 @@ async function checkDashboard(child) {
   if (child) child.kill();
 }
 
+function checkUxAndApply() {
+  const steps = [
+    ['scripts/test-apply-session.mjs', 'test-apply-session'],
+    ['scripts/test-outcome-feedback.mjs', 'test-outcome-feedback'],
+    ['scripts/test-apply-view-deferred.mjs', 'test-apply-view-deferred'],
+    ['scripts/test-export-portable.mjs', 'test-export-portable'],
+    ['scripts/test-ux-lib.mjs', 'test-ux-lib'],
+    ['scripts/test-list-breadcrumbs.mjs', 'test-list-breadcrumbs'],
+    ['scripts/test-apply-copy-dom.mjs', 'test-apply-copy-dom'],
+    ['scripts/test-questionnaire-auto-reprobe.mjs', 'test-questionnaire-auto-reprobe'],
+  ];
+  for (const [script, label] of steps) {
+    const r = spawnSync(process.execPath, [script], { cwd: ROOT, encoding: 'utf8' });
+    if (r.status === 0) pass(label);
+    else fail(label);
+  }
+}
+
 async function main() {
   console.log('[verify-local] старт\n');
   checkSyntax();
+  checkUxAndApply();
   checkExport();
 
   let child = null;

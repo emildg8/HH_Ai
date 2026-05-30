@@ -12,6 +12,73 @@ const DEFAULTS = {
   fontScale: 100,
 };
 
+/** Пресеты размера карточки: ширина сетки + объём текста. */
+export const CARD_LAYOUTS = ['tile-compact', 'tile-medium', 'expanded'];
+
+export const CARD_SIZE_PRESETS = {
+  compact: {
+    id: 'compact',
+    label: 'Краткий',
+    layout: 'tile-compact',
+    colW: 40,
+    minH: 0,
+    textAmount: 18,
+    fontScale: 96,
+  },
+  medium: {
+    id: 'medium',
+    label: 'Средний',
+    layout: 'tile-medium',
+    colW: 40,
+    minH: 0,
+    textAmount: 50,
+    fontScale: 100,
+  },
+  full: {
+    id: 'full',
+    label: 'Полный',
+    layout: 'expanded',
+    colW: 40,
+    minH: 0,
+    textAmount: 88,
+    fontScale: 100,
+  },
+};
+
+/** @param {string} layout */
+export function normalizeCardLayout(layout) {
+  const ly = String(layout || '').trim();
+  if (ly === 'list' || ly === 'row') return 'tile-compact';
+  if (ly === 'grid' || ly === 'grid-wide' || ly === 'column') return 'tile-medium';
+  if (CARD_LAYOUTS.includes(ly)) return ly;
+  return 'expanded';
+}
+
+export function isTileBrowseLayout(layout) {
+  const v = normalizeCardLayout(layout);
+  return v === 'tile-compact' || v === 'tile-medium';
+}
+
+/** @param {string} layout */
+export function applyCardLayout(layout) {
+  const v = normalizeCardLayout(layout);
+  document.documentElement.dataset.cardLayout = v;
+  const list = document.getElementById('list');
+  if (!list) return;
+  list.dataset.cardLayout = v;
+  const tiles = isTileBrowseLayout(v);
+  list.classList.toggle('vacancy-grid--tiles', tiles);
+  list.classList.toggle('vacancy-grid--expanded', !tiles);
+}
+
+export function layoutForDensity(density) {
+  if (density === 'compact') return 'tile-compact';
+  if (density === 'medium') return 'tile-medium';
+  return 'expanded';
+}
+
+export const CARD_SIZE_PRESET_IDS = ['compact', 'medium', 'full'];
+
 let activeDefaults = { ...DEFAULTS };
 
 export function setCardTuningDefaults(partial) {
@@ -78,7 +145,7 @@ export function densityToTextAmount(density) {
 
 export function normalizeCardTuning(raw) {
   const o = raw && typeof raw === 'object' ? raw : {};
-  return {
+  const out = {
     colW: clamp(o.colW ?? DEFAULTS.colW, LIMITS.colW.min, LIMITS.colW.max, LIMITS.colW.step),
     minH: clamp(o.minH ?? DEFAULTS.minH, LIMITS.minH.min, LIMITS.minH.max, LIMITS.minH.step),
     textAmount: clamp(
@@ -94,6 +161,11 @@ export function normalizeCardTuning(raw) {
       LIMITS.fontScale.step
     ),
   };
+  const sp = String(o.sizePreset || '').trim();
+  if (CARD_SIZE_PRESET_IDS.includes(sp)) out.sizePreset = sp;
+  const ly = String(o.layout || '').trim();
+  if (ly) out.layout = normalizeCardLayout(ly);
+  return out;
 }
 
 export function readCardTuning() {
@@ -134,6 +206,58 @@ export function readCardDensity() {
   return textAmountToDensity(readCardTuning().textAmount);
 }
 
+/** @param {ReturnType<typeof normalizeCardTuning>} tuning */
+export function detectCardSizePreset(tuning) {
+  const t = normalizeCardTuning(tuning);
+  if (t.sizePreset && CARD_SIZE_PRESET_IDS.includes(t.sizePreset)) return t.sizePreset;
+  for (const id of CARD_SIZE_PRESET_IDS) {
+    const p = CARD_SIZE_PRESETS[id];
+    if (
+      Math.abs(t.colW - p.colW) < 2.5 &&
+      Math.abs(t.textAmount - p.textAmount) < 12 &&
+      Math.abs(t.fontScale - p.fontScale) < 8
+    ) {
+      return id;
+    }
+  }
+  return null;
+}
+
+/** @param {'compact'|'medium'|'full'|string} sizeId */
+export function applyCardSizePreset(sizeId) {
+  const id = CARD_SIZE_PRESET_IDS.includes(sizeId) ? sizeId : 'medium';
+  const p = CARD_SIZE_PRESETS[id];
+  return writeCardTuning({
+    colW: p.colW,
+    minH: p.minH,
+    textAmount: p.textAmount,
+    fontScale: p.fontScale,
+    sizePreset: id,
+    layout: p.layout,
+  });
+}
+
+export function cardLayoutForTuning(tuning) {
+  const t = normalizeCardTuning(tuning);
+  const presetId = t.sizePreset || detectCardSizePreset(t);
+  if (t.layout) return normalizeCardLayout(t.layout);
+  if (presetId && CARD_SIZE_PRESETS[presetId]) return CARD_SIZE_PRESETS[presetId].layout;
+  return layoutForDensity(textAmountToDensity(t.textAmount));
+}
+
+let lastLayout = null;
+
+function syncCardSizePresetButtons(tuning) {
+  const t = tuning && typeof tuning === 'object' ? normalizeCardTuning(tuning) : readCardTuning();
+  const active = t.sizePreset || detectCardSizePreset(t);
+  document.documentElement.dataset.cardSize = active || 'custom';
+  document.querySelectorAll('[data-card-size-preset]').forEach((btn) => {
+    const id = btn.getAttribute('data-card-size-preset');
+    btn.classList.toggle('active', Boolean(active && id === active));
+    btn.setAttribute('aria-pressed', active && id === active ? 'true' : 'false');
+  });
+}
+
 
 export function applyCardTuning(tuning) {
   const t = normalizeCardTuning(tuning);
@@ -147,8 +271,15 @@ export function applyCardTuning(tuning) {
 
   const density = textAmountToDensity(t.textAmount);
   applyCardDensity(density);
+  const layout = cardLayoutForTuning(t);
+  applyCardLayout(layout);
   root.dataset.cardTextAmount = String(t.textAmount);
   if (list) list.dataset.cardTextAmount = String(t.textAmount);
+
+  if (lastLayout !== null && lastLayout !== layout) {
+    window.dispatchEvent(new CustomEvent('hh-card-layout-change', { detail: { layout } }));
+  }
+  lastLayout = layout;
 
   const controls = [
     { rangeId: 'card-col-w-range', labelId: 'card-col-w-value', key: 'colW', label: formatRem(t.colW) },
@@ -178,6 +309,8 @@ export function applyCardTuning(tuning) {
     if (labelEl) labelEl.textContent = label;
   }
 
+  syncCardSizePresetButtons(t);
+
   if (lastDensity !== density) {
     lastDensity = density;
     window.dispatchEvent(new CustomEvent('hh-card-density-change', { detail: { density } }));
@@ -195,7 +328,17 @@ export function applyCardTuningFlash(tuning) {
   root.style.setProperty('--card-font-scale', String(t.fontScale / 100));
   const density = textAmountToDensity(t.textAmount);
   root.dataset.cardDensity = density;
+  applyCardLayout(cardLayoutForTuning(t));
+  if (t.sizePreset) root.dataset.cardSize = t.sizePreset;
   root.dataset.cardTextAmount = String(t.textAmount);
+}
+
+function initCardSizePresetControls() {
+  document.querySelectorAll('[data-card-size-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      applyCardSizePreset(btn.getAttribute('data-card-size-preset'));
+    });
+  });
 }
 
 export function initCardTuningControls() {
@@ -203,11 +346,12 @@ export function initCardTuningControls() {
   const t = readCardTuning();
   lastDensity = textAmountToDensity(t.textAmount);
   applyCardTuning(t);
+  initCardSizePresetControls();
 
   const bind = (rangeId, key) => {
     const range = document.getElementById(rangeId);
     range?.addEventListener('input', () => {
-      writeCardTuning({ [key]: Number(range.value) });
+      writeCardTuning({ [key]: Number(range.value), sizePreset: undefined });
     });
   };
 

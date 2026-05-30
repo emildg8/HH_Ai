@@ -2,6 +2,70 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версии — [SemVer](https://semver.org/lang/ru/).
 
+## [2.2.0] — 2026-05-30
+
+«Умный фон»: portable-релиз, вкладка «Отлож.», дайджест, rescore pending.
+
+### Added
+
+- **Portable zip:** `hh-ru-apply-win-x64-v*.zip` (alias публичного архива) + `start-dashboard.bat` в экспорте.
+- **install-portable.ps1** в smoke/verify; инструкция в `EXPORT-README.md`.
+- **Модалка «Дайджест дня»** в «Сервис» (Telegram опционально).
+- **Отложить на 7 дней:** Shift+клик «Завтра» на карточке.
+- **Счётчики на вкладках** очереди (Очередь, Отлож., …).
+- **Команда** `npm run devops:rescore-pending` — пересчёт всех pending.
+- **Тесты:** `test-export-portable`, `test-apply-view-deferred`.
+
+### Fixed
+
+- **Вкладка «Отлож.»** не переключалась (отсутствовала в обработчике клика).
+
+### Changed
+
+- **release.yml** — оба zip на GitHub Releases.
+- **verify:local** — portable + deferred тесты.
+
+## [2.1.0] — 2026-05-30
+
+«Меньше ручной возни»: обратная связь по исходам откликов, профиль в UI, метрики писем, стабильнее батч.
+
+### Added
+
+- **Кнопки «Пригласили» / «Отказ»** на карточках (в т.ч. вкладка «Отклики») → `data/feedback.jsonl` → few-shot в генерации писем (`lib/outcome-feedback.mjs`, `lib/cover-letter-openrouter.mjs`).
+- **Few-shot по роли вакансии** — SRE / DBA / platform / devops / support (`lib/cover-letter-style-by-role.mjs`).
+- **Выбор HH_PROFILE** в настройках дашборда (`POST /api/profile/select`).
+- **Метрики письма** на карточке: % правок, дата отклика (`lib/cover-letter-metrics.mjs`, `card-status.mjs`).
+- **A/B/C варианты письма** до утверждения (вкладки в модалке черновика).
+- **Сводка feedback** в модалке «Аналитика» (`computeFeedbackStats`).
+- **Тесты:** `test-outcome-feedback.mjs`, `test-apply-session.mjs`.
+
+### Fixed
+
+- **Кнопка «Пригласили»** отсутствовала в шаблоне карточки — добавлена в `index.html`.
+- **`npm run apply`** — общий Chromium lock (2.0.2).
+- **UI-тест дашборда** — стабильнее без `networkidle`.
+
+### Changed
+
+- **Батч:** в отчёте журнала — фактическое резюме hh.ru (`resumeTitleSelected`).
+- **Browser guard:** sync/рутина доступны на паузе батча.
+
+## [2.0.2] — 2026-05-30
+
+Стабилизация перед следующим функциональным срезом: проверка сессии через общий Chromium lock, UX-дашборд v3, расширенный `verify:local`.
+
+### Added
+
+- **Дашборд UX v3:** design tokens/components, плитки карточек (`card-tiles.mjs`), command palette, breadcrumbs, keyboard nav, модалка вакансии, sparkline откликов/день, экспорт markdown.
+- **Browser guard:** sync/рутина/подъём резюме доступны на паузе батча (`lib/browser-guard.mjs`).
+- **Подъём резюме:** `lib/hh-resume-raise.mjs`, расписание `config/resume-raise-schedule.example.json`, блок в «Сервис».
+- **Тесты:** `scripts/test-apply-session.mjs`; UX-тесты включены в `npm run verify:local`.
+
+### Fixed
+
+- **`npm run apply`:** единый `launchPersistentContextSafe` + lock + `assertHhLoggedIn` — меньше «browser closed» после перезагрузки ПК ([#4](docs/issues/002-apply-browser-closed.md)).
+- **Выбор резюме в батче:** дополнительные попытки и match по hash (`lib/hh-resume-picker.mjs`, `lib/hh-response-modal.mjs`).
+
 ## [2.0.1] — 2026-05-22
 
 Срез после публикации **2.0.0**: CRM-дашборд, воронка по всем очередям, роутинг резюме, pipeline анкет, безопасный URL поиска на hh.ru, инфраструктура мейнтейнера и CI. Публичный zip: `npm run release:public` → `releases/hh-ai-public-v2.0.1.zip`. Тег: `v2.0.1`.

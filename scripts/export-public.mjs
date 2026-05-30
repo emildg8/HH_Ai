@@ -93,10 +93,14 @@ function writeExportReadme() {
 **Подробно:** docs/QUICKSTART.md · **Настройка LLM:** docs/CONFIG-GUIDE.md
 
 \`\`\`powershell
-# Windows
+# Windows (git clone)
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 npm run login
 npm run dashboard
+
+# Windows (скачали zip с Releases)
+powershell -ExecutionPolicy Bypass -File scripts/install-portable.ps1
+# или двойной клик start-dashboard.bat после install-portable
 \`\`\`
 
 \`\`\`bash
@@ -168,6 +172,14 @@ function main() {
   }
 
   writeExportReadme();
+
+  const bat = `@echo off\r\n` +
+    `cd /d "%~dp0"\r\n` +
+    `echo HH Ai dashboard — http://127.0.0.1:3849\r\n` +
+    `npm run dashboard\r\n` +
+    `pause\r\n`;
+  fs.writeFileSync(path.join(OUT, 'start-dashboard.bat'), bat, 'utf8');
+
   console.log(`[export-public] OK: ${OUT}`);
 }
 

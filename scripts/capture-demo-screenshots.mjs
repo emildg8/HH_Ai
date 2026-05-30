@@ -66,7 +66,7 @@ async function capture() {
 
     await page.screenshot({ path: path.join(OUT_DIR, 'dashboard-queue.png'), fullPage: false });
 
-    const funnelBtn = page.locator('#btn-open-funnel');
+    const funnelBtn = page.locator('.crm-kpi');
     if (await funnelBtn.count()) {
       await funnelBtn.click({ timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(2000);

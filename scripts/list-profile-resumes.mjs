@@ -21,7 +21,11 @@ async function main() {
     process.exit(1);
   }
 
-  const launchOpts = { headless: false, viewport: { width: 1280, height: 900 }, locale: 'ru-RU' };
+  const launchOpts = {
+    headless: process.env.HH_HEADLESS === '1',
+    viewport: { width: 1280, height: 900 },
+    locale: 'ru-RU',
+  };
   const ch = String(process.env.HH_PLAYWRIGHT_CHANNEL || '').trim();
   if (ch) launchOpts.channel = ch;
 

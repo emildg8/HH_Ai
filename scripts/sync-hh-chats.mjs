@@ -18,6 +18,7 @@ import { scrapeChatsFromNegotiations } from '../lib/hh-chat-sync.mjs';
 import { summarizeChatThread } from '../lib/chat-message-classify.mjs';
 import { loadQueue, updateVacancyRecord } from '../lib/store.mjs';
 import { saveNegotiationsCache, loadNegotiationsCache } from '../lib/hh-negotiations-sync.mjs';
+import { setSideJobPid, assertBrowserFreeForSideJob } from '../lib/browser-guard.mjs';
 
 const limit = Math.max(
   1,
@@ -25,11 +26,14 @@ const limit = Math.max(
 );
 
 async function main() {
-  const profile = sessionProfilePath();
-  if (!fs.existsSync(profile)) {
-    console.error('npm run login');
-    process.exit(1);
-  }
+  setSideJobPid('syncChats', process.pid);
+  try {
+    assertBrowserFreeForSideJob('синхронизация чатов');
+    const profile = sessionProfilePath();
+    if (!fs.existsSync(profile)) {
+      console.error('npm run login');
+      process.exit(1);
+    }
 
   const launchOpts = { headless: process.env.HH_HEADLESS !== '0', viewport: { width: 1280, height: 900 }, locale: 'ru-RU' };
   const ch = String(process.env.HH_PLAYWRIGHT_CHANNEL || '').trim();
@@ -65,9 +69,13 @@ async function main() {
   } finally {
     await closeContextSafe(ctx, 'sync-chats');
   }
+  } finally {
+    setSideJobPid('syncChats', null);
+  }
 }
 
 main().catch((e) => {
+  setSideJobPid('syncChats', null);
   console.error(e);
   process.exit(1);
 });

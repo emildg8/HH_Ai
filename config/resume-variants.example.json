@@ -1,6 +1,7 @@
 {
   "maxVariants": 5,
-  "comment": "Скопируйте в config/resume-variants.json. hash — из npm run devops:list-resumes. Костяк (образование, навыки, контакты) не трогаем — меняем только «О себе» и описание последнего места работы.",
+  "sourceRole": "support",
+  "comment": "Скопируйте в config/resume-variants.json. hash — из npm run devops:list-resumes. sourceRole — эталон (техподдержка L2/L3); devops и др. получают «О себе» и опыт через npm run devops:sync-resume-from-source.",
   "variants": [
     {
       "role": "devops",

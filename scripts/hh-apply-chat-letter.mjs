@@ -46,14 +46,21 @@ import {
   openVacancyResponseFlow,
 } from '../lib/hh-response-modal.mjs';
 import { assertHhLoggedIn, looksLikeLoginUrl } from '../lib/hh-session-check.mjs';
-import { ensureNoCaptchaBlocking } from '../lib/hh-captcha-wait.mjs';
+import {
+  ensureNoCaptchaBlocking,
+  registerCaptchaVisibleEscalation,
+  unregisterCaptchaVisibleEscalation,
+} from '../lib/hh-captcha-wait.mjs';
+import { escalateHeadlessToVisibleBrowser } from '../lib/hh-captcha-escalate.mjs';
 import { ensureTailoredResumePdf } from '../lib/tailor-resume.mjs';
 import { resolveResumeForVacancy } from '../lib/resume-routing.mjs';
+import { resumeSelectionMatches } from '../lib/vacancy-targeting.mjs';
 import { loadCoverLetterPool, pickCoverLetterFromPool } from '../lib/cover-letter-pool.mjs';
 import {
   launchPersistentContextSafe,
   closeContextSafe,
   waitForActivePage,
+  bringBrowserToFront,
 } from '../lib/chromium-session.mjs';
 import { appendApplyChatLog } from '../lib/apply-chat-log.mjs';
 import { createApplyChatProgressTracker, clearApplyChatProgress } from '../lib/job-progress.mjs';
@@ -398,7 +405,30 @@ async function main() {
   };
   const ch = String(process.env.HH_PLAYWRIGHT_CHANNEL || '').trim();
   if (ch) launchOpts.channel = ch;
-  const ctx = await launchPersistentContextSafe(profile, launchOpts, { owner: BROWSER_OWNER });
+  let ctx = await launchPersistentContextSafe(profile, launchOpts, { owner: BROWSER_OWNER });
+
+  if (headless) {
+    let escalatedOnce = false;
+    registerCaptchaVisibleEscalation(async (p) => {
+      if (escalatedOnce) return p;
+      escalatedOnce = true;
+      const r = await escalateHeadlessToVisibleBrowser(p, ctx, {
+        profile,
+        owner: BROWSER_OWNER,
+        log: logLine,
+        launchBase: { viewport: launchOpts.viewport, locale: launchOpts.locale },
+      });
+      ctx = r.ctx;
+      return r.page;
+    });
+  } else {
+    registerCaptchaVisibleEscalation(async (p) => {
+      logLine('[hh-captcha] Капча: разворачиваю окно Chromium…');
+      await bringBrowserToFront(p.context());
+      return p;
+    });
+  }
+
   const openPages = ctx.pages();
   for (let i = 1; i < openPages.length; i++) {
     await openPages[i].close().catch(() => {});
@@ -445,7 +475,11 @@ async function main() {
     await betweenMajorSteps(page);
     step('open_vacancy', 'Страница вакансии открыта', 22);
 
-    await assertHhLoggedIn(page, { log: logLine, captchaContext: 'страница вакансии' });
+    page = await assertHhLoggedIn(page, { log: logLine, captchaContext: 'страница вакансии' });
+    const { ensureApplicantOnboardingDismissed, detectApplicantProfileOnboarding } = await import(
+      '../lib/hh-applicant-onboarding.mjs'
+    );
+    await ensureApplicantOnboardingDismissed(page, { log: logLine });
 
     const siteDet = await syncHhSiteStateFromPage(page, rec);
     if (!siteDet.canApply) {
@@ -487,7 +521,7 @@ async function main() {
     step('click_response', 'Форма отклика', 32);
     page = await focusVacancyResponsePage(ctx, page, { log: logLine, closeOtherTabs: true });
     await page.waitForTimeout(600);
-    await ensureNoCaptchaBlocking(page, { log: logLine, context: 'форма отклика' });
+    page = (await ensureNoCaptchaBlocking(page, { log: logLine, context: 'форма отклика' })).page;
 
     const siteAfterOpen = await syncHhSiteStateFromPage(page, rec);
     if (!siteAfterOpen.canApply) {
@@ -748,9 +782,20 @@ async function main() {
             'Проверьте config/resume-routing.json (npm run devops:preview-resume-routing) и hash: npm run devops:list-resumes.'
         );
       }
-      const hint = needResume
-        ? ` Не выбрано резюме «${needResume}» (${resumePick.label}) — config/resume-routing.json`
-        : '';
+      const hint =
+        formResult.resumeMismatch ||
+        (needResume &&
+          formResult.profileResume &&
+          !(
+            formResult.profileResume.toLowerCase().includes(needResume.toLowerCase()) ||
+            (resumePick.role === 'devops' && /\bdevops\b/i.test(formResult.profileResume)) ||
+            (resumePick.role === 'data' && /data engineer/i.test(formResult.profileResume)) ||
+            (resumePick.role === 'support' && /поддержк/i.test(formResult.profileResume))
+          ))
+          ? ` Не выбрано резюме «${needResume}» (${resumePick.label}) — config/resume-routing.json`
+          : /form-still-open/i.test(String(formResult.label || ''))
+            ? ' Форма отклика не закрылась после «Откликнуться».'
+            : '';
       throw new Error(
         `Не удалось отправить отклик: мастер не дошёл до кнопки «Отправить».${hint}`
       );
@@ -899,6 +944,7 @@ async function main() {
 
     if (responseSubmitted) {
       const prevHh = getVacancyRecord(rec.id)?.hhApply || rec.hhApply || {};
+      const resumeMatchOk = resumeSelectionMatches(formResult.profileResume, resumePick);
       updateVacancyRecord(rec.id, {
         hhApply: buildHhApplyAfterSuccess(prevHh, {
           lastAt: new Date().toISOString(),
@@ -908,9 +954,19 @@ async function main() {
           letterDelivered: letterFilledInForm || chatStepOk || verifiedInChat,
           letterPreview: letter ? String(letter).replace(/\s+/g, ' ').trim().slice(0, 120) : undefined,
           resumeRole: resumePick.role,
+          resumeRolePlanned: resumePick.role,
+          resumeTitlePlanned: resumePick.title,
           resumeTitleSelected: formResult.profileResume || resumePick.title,
+          resumeHashPlanned: resumePick.hash || undefined,
+          resumeHashSelected: formResult.profileResumeHash || undefined,
+          resumeMatchOk: resumeMatchOk !== false,
         }),
       });
+      if (resumeMatchOk === false && formResult.profileResume) {
+        logLine(
+          `[hh-apply-chat] ⚠ Резюме в форме «${formResult.profileResume}» ≠ план «${resumePick.title}» (${resumePick.label})`
+        );
+      }
       logCoverLetterOutcome(logLine, {
         letter,
         letterFilledInForm,
@@ -932,6 +988,16 @@ async function main() {
     return 0;
   } catch (e) {
     if (isBatchApply) {
+      try {
+        if (page && !page.isClosed()) {
+          const { detectApplicantProfileOnboarding } = await import('../lib/hh-applicant-onboarding.mjs');
+          if (await detectApplicantProfileOnboarding(page)) {
+            logBatchSkipReason('мастер hh.ru «Кем хотите работать» — npm run open-hh');
+          }
+        }
+      } catch {
+        /* ignore */
+      }
       logBatchSkipReason(formatApplySkipReasonFromText(e?.message || e));
     }
     progress.error(e?.message || e);
@@ -939,6 +1005,7 @@ async function main() {
     await saveErrorScreenshot(page, e);
     throw e;
   } finally {
+    unregisterCaptchaVisibleEscalation();
     await closeContextSafe(ctx, BROWSER_OWNER);
     if (tmpDir) {
       try {

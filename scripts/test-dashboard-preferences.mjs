@@ -6,6 +6,9 @@ import {
   clampDashboardPref,
   patchDashboardPreferences,
   getDashboardBatchSizeCap,
+  getDashboardUiConfig,
+  applyLayoutPreset,
+  normalizeUiMode,
 } from '../lib/dashboard-preferences.mjs';
 import { applyRateLimitsSnapshot } from '../lib/hh-apply-rate.mjs';
 
@@ -26,6 +29,17 @@ try {
   assert.equal(getDashboardBatchSizeCap(), 25);
   const snap = applyRateLimitsSnapshot();
   assert.ok('lastMonth' in snap && 'maxPerMonth' in snap);
+
+  const ui = getDashboardUiConfig();
+  assert.equal(normalizeUiMode('expert'), 'expert');
+  assert.equal(normalizeUiMode('simple'), 'simple');
+  assert.ok(ui.panels.actionsPrimary);
+
+  applyLayoutPreset('simple');
+  const uiSimple = getDashboardUiConfig();
+  assert.equal(uiSimple.uiMode, 'simple');
+  assert.equal(uiSimple.panels.kpi, false);
+
   console.log('test-dashboard-preferences: OK');
 } finally {
   fs.writeFileSync(prefsPath, backup, 'utf8');

@@ -1,6 +1,6 @@
-# HH Ai 2.0.1 — для нового пользователя
+# HH Ai 2.2.0 — для нового пользователя
 
-**Скачать:** [hh-ai-public-v2.0.1.zip](https://github.com/emildg8/HH_Ai/releases/latest)  
+**Скачать:** [hh-ai-public-v2.2.0.zip](https://github.com/emildg8/HH_Ai/releases/latest) или **hh-ru-apply-win-x64-v2.2.0.zip** (то же содержимое)  
 **Минимум ручного труда:** [FIRST-RUN.md](FIRST-RUN.md) · **5 шагов:** [QUICKSTART.md](QUICKSTART.md)
 
 ---
@@ -10,9 +10,9 @@
 | Есть | Нет (создаёт install) |
 |------|------------------------|
 | Код, дашборд, примеры конфигов | Сессия hh.ru |
-| `docs/`, `EXPORT-README.md`, `FIRST-RUN.md` | Ваши вакансии и CV |
+| `docs/`, `EXPORT-README.md`, `start-dashboard.bat` | Ваши вакансии и CV |
 | `data/vacancies-queue.example.json` — демо | API-ключи, hash резюме |
-| `config/*.example.*` | Логи и скриншоты ошибок |
+| `config/*.example.*`, `scripts/install-portable.ps1` | Логи и скриншоты ошибок |
 
 ---
 
@@ -22,11 +22,21 @@
 
 Путь **без кириллицы**, например `C:\Tools\hh-ai`.
 
-### 2. Установщик (всё копирует сам)
+### 2. Установщик
+
+**Из git clone:**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
+
+**Из zip (без git):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-portable.ps1
+```
+
+После install-portable можно запускать **`start-dashboard.bat`** с рабочего стола или из папки.
 
 ```bash
 bash scripts/install.sh
@@ -70,6 +80,7 @@ npm run dashboard
 
 ```bash
 npm run verify:local
+npm run qa:public
 ```
 
 ---

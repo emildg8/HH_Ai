@@ -10,13 +10,13 @@
  */
 
 import fs from 'fs';
-import { spawn } from 'child_process';
+import { spawnBackground } from '../lib/spawn-background.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
 
 loadDevOpsEnv();
-import { loadQueue, updateVacancyRecord } from '../lib/store.mjs';
+import { loadQueue, updateVacancyRecord, getVacancyRecord } from '../lib/store.mjs';
 import {
   applyRateLimitsSnapshot,
   countApplyLaunchesLastDay,
@@ -27,7 +27,7 @@ import {
   getMaxApplyChatPerMonth,
   recordApplyLaunch,
 } from '../lib/hh-apply-rate.mjs';
-import { loadCoverLetterPool, pickCoverLetterFromPool } from '../lib/cover-letter-pool.mjs';
+import { loadCoverLetterPool, pickCoverLetterFromPool, pickCoverLetterForVacancy } from '../lib/cover-letter-pool.mjs';
 import { ROOT } from '../lib/paths.mjs';
 import { createBatchProgressTracker, readJobProgress } from '../lib/job-progress.mjs';
 import { APPLY_CHAT_PROGRESS_FILE } from '../lib/paths.mjs';
@@ -56,6 +56,10 @@ import {
   formatApplySkipReasonFromText,
 } from '../lib/batch-skip-reason.mjs';
 import { pruneRespondedFromActiveQueue, pruneVacancyFromActiveQueue } from '../lib/queue-prune.mjs';
+import { assessVacancyForApply } from '../lib/vacancy-targeting.mjs';
+import { runBatchPreflight, repairProfileIfNeeded } from '../lib/batch-preflight.mjs';
+import { writeBatchRunReport } from '../lib/batch-run-report.mjs';
+import { logBatchSkipReason } from '../lib/batch-skip-reason.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BATCH_LOCK_FILE = path.join(DATA_DIR, 'apply-batch.lock');
@@ -144,12 +148,15 @@ function runApplyForId(id, { tailorResume, dryRun }) {
     if (tailorResume) args.push('--tailor-resume');
     const batchQAuto = String(process.env.HH_BATCH_QUESTIONNAIRE_AUTO ?? '1').trim() !== '0';
     if (process.env.HH_QUESTIONNAIRE_AUTO === '1' || batchQAuto) args.push('--questionnaire-auto');
-    const child = spawn(process.execPath, args, {
+    const child = spawnBackground(process.execPath, args, {
       cwd: ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
         HH_BATCH: '1',
+        // Свёрнутое окно; HH_BATCH_HEADLESS=1 — полный headless (эскалация при капче). Игнорирует HH_HEADLESS из .env.
+        HH_HEADLESS: process.env.HH_BATCH_HEADLESS === '1' ? '1' : '0',
+        HH_BROWSER_BACKGROUND: process.env.HH_BROWSER_BACKGROUND ?? '1',
         /** Батч: быстрый fill и короткие паузы (как одиночный отклик из дашборда). HH_FAST=0 — «человечный» режим. */
         HH_FAST: String(process.env.HH_FAST ?? '1'),
       },
@@ -203,10 +210,11 @@ function startApplyProgressSync(batchProgress, stepIndex, planned, rec, baseStat
     const sub = (Number(p.percent) || 0) / 100;
     const title = (rec.title || rec.id || '').slice(0, 55);
     const detail = p.label || p.step || '';
+    const stepHuman = p.label || p.step || null;
     batchProgress.runningVacancy(stepIndex, planned, `Отклик ${stepIndex}/${planned}: ${title}`, {
       ...baseStats,
       subProgress: sub,
-      detailStep: p.step,
+      detailStep: stepHuman,
       lastLogLine: detail,
       recordId: rec.id,
     });
@@ -326,9 +334,22 @@ async function main() {
     `scope=${batchScope} planned=${planned} min=${minScore || '-'} max=${maxScore || '-'} dry=${dryRun} resume=${resume}`
   );
   batchProgress.start(resume ? `Продолжение батча: ${planned} откликов` : `Подготовка батча: ${planned} откликов`);
+  repairProfileIfNeeded((m) => logBatch(m.replace(/^\[batch-preflight\]\s*/, '')));
+  runBatchPreflight((m) => logBatch(m.replace(/^\[batch-preflight\]\s*/, '')));
   logBatch(`Старт: цель ${limit} успешных, в очереди ${candidates.length} новых`);
 
   let stopReason = null;
+  let offTargetSkipped = 0;
+  const startedAt = new Date().toISOString();
+  const resumeUsage = {};
+  const skipReasons = {};
+  /** @type {Array<{ title?: string, status: string, resumeRole?: string, reason?: string }>} */
+  const reportItems = [];
+
+  const bumpSkip = (key) => {
+    skipReasons[key] = (skipReasons[key] || 0) + 1;
+  };
+  const skipOffTarget = String(process.env.HH_BATCH_SKIP_OFF_TARGET ?? '1').trim() !== '0';
 
   try {
     for (const rec of candidates) {
@@ -357,9 +378,33 @@ async function main() {
         break;
       }
 
+      const stepNum = done + failed + skipped + 1;
+      const stepTitle = (rec.title || rec.id || '').slice(0, 60);
+
+      if (skipOffTarget && !dryRun) {
+        const assessment = assessVacancyForApply(rec);
+        if (!assessment.eligible) {
+          skipped++;
+          offTargetSkipped++;
+          processedIds.add(rec.id);
+          bumpSkip('off-target');
+          logBatchSkipReason(assessment.skipReason || 'нецелевая вакансия');
+          logBatch(`OFF-TARGET ${stepNum}/${planned}: ${stepTitle}`);
+          reportItems.push({
+            title: stepTitle,
+            status: 'off-target',
+            resumeRole: assessment.resumeRole,
+            reason: assessment.skipReason,
+          });
+          syncBatchCounters({ done, failed, skipped, letterIdx, processedIds: [...processedIds] });
+          batchProgress.step(done, `Пропуск (не IT) ${stepNum}/${planned}`, { done, failed, skipped });
+          continue;
+        }
+      }
+
       let letter = String(rec.coverLetter?.approvedText || '').trim();
       if (!letter && usePoolLetters) {
-        letter = pickCoverLetterFromPool(letterIdx++);
+        letter = pickCoverLetterForVacancy(rec, letterIdx++);
         const now = new Date().toISOString();
         updateVacancyRecord(rec.id, {
           coverLetter: {
@@ -387,8 +432,6 @@ async function main() {
         continue;
       }
 
-      const stepNum = done + failed + skipped + 1;
-      const stepTitle = (rec.title || rec.id || '').slice(0, 60);
       batchProgress.runningVacancy(stepNum, planned, `Отклик ${stepNum}/${planned}: ${stepTitle}`, {
         done,
         failed,
@@ -430,6 +473,20 @@ async function main() {
         recordApplyLaunch();
         done++;
         processedIds.add(rec.id);
+        const plannedRole = assessVacancyForApply(rec).resumeRole || 'devops';
+        resumeUsage[plannedRole] = (resumeUsage[plannedRole] || 0) + 1;
+        const afterRec = getVacancyRecord(rec.id);
+        const resumeTitle =
+          afterRec?.hhApply?.resumeTitleSelected ||
+          afterRec?.hhApply?.resumeTitlePlanned ||
+          afterRec?.resumeRouting?.label ||
+          '';
+        reportItems.push({
+          title: stepTitle,
+          status: 'ok',
+          resumeRole: plannedRole,
+          resumeTitle: resumeTitle || undefined,
+        });
         logBatch(`OK ${stepNum}/${planned}: ${stepTitle}`);
         batchProgress.step(done, `Готово ${done}/${planned}`, { done, failed, skipped });
       } catch (e) {
@@ -502,6 +559,20 @@ async function main() {
     if (prunedEnd.changed > 0) {
       logBatch(`После батча убрано из очереди ещё ${prunedEnd.changed} карточек с откликом (responded)`);
     }
+    writeBatchRunReport({
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      planned,
+      done,
+      failed,
+      skipped,
+      offTargetSkipped,
+      stopReason,
+      batchScope,
+      resumeUsage,
+      skipReasons,
+      items: reportItems,
+    });
   }
 }
 

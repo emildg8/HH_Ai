@@ -2,7 +2,7 @@
  * Подготовка ряда «динамика откликов» для графика в модалке.
  */
 
-const PLOT_HEIGHT_PX = 88;
+const PLOT_HEIGHT_PX = 68;
 const MAX_DAILY_POINTS = 31;
 
 /**

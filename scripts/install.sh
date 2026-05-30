@@ -34,6 +34,7 @@ copy_if_missing config/profiles/devops.env.example config/profiles/devops.env "c
 copy_if_missing config/cover-letter.example.txt config/cover-letter.txt "config/cover-letter.txt"
 copy_if_missing config/cover-letter-style-examples.example.txt config/cover-letter-style-examples.txt "config/cover-letter-style-examples.txt"
 copy_if_missing config/resume-routing.example.json config/resume-routing.json "config/resume-routing.json"
+copy_if_missing config/resume-raise-schedule.example.json config/resume-raise-schedule.json "config/resume-raise-schedule.json"
 
 mkdir -p data CV
 

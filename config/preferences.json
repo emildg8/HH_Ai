@@ -104,5 +104,31 @@
   "hhApplyChatMaxPerDay": 1000,
   "hhApplyChatMaxPerMonth": 5000,
   "dashboardMinScoreFilter": 50,
-  "dashboardBatchSize": 50
+  "dashboardBatchSize": 100,
+  "dashboardUiMode": "expert",
+  "dashboardSidebarLayout": "full",
+  "dashboardSidebarPanels": {
+    "brand": true,
+    "status": true,
+    "actionsPrimary": true,
+    "harvestPeriod": true,
+    "nav": true,
+    "quickSync": true,
+    "filters": true,
+    "serviceLink": true,
+    "kpi": true,
+    "jobFooter": true
+  },
+  "dashboardSidebarPanelOrder": [
+    "brand",
+    "status",
+    "actionsPrimary",
+    "harvestPeriod",
+    "nav",
+    "quickSync",
+    "filters",
+    "serviceLink",
+    "kpi",
+    "jobFooter"
+  ]
 }

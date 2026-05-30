@@ -1,0 +1,53 @@
+/**
+ * Дополнительная полировка светлой темы (контраст, границы).
+ */
+
+html[data-theme='light'] .list-breadcrumbs__item--current {
+  color: #1c1c1e;
+}
+
+html[data-theme='light'] .command-palette__backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='light'] .command-palette__panel {
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.14);
+}
+
+html[data-theme='light'] .daily-sparkline {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+html[data-theme='light'] .daily-sparkline__bar {
+  background: #007aff;
+}
+
+html[data-theme='light'] .daily-sparkline__bar--today {
+  background: #248a3d;
+}
+
+html[data-theme='light'] .status-chip {
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+html[data-theme='light'] .card {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme='light'] .card:hover,
+html[data-theme='light'] .card:focus-within {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+html[data-theme='light'] .onboarding-card {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+html[data-theme='light'] .kbd,
+html[data-theme='light'] kbd.ds-kbd {
+  background: #f2f2f7;
+  border-color: rgba(0, 0, 0, 0.12);
+  color: rgba(60, 60, 67, 0.85);
+}

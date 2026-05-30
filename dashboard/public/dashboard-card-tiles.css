@@ -1,0 +1,513 @@
+/**
+ * Плитки (Краткий / Средний) и модалка полной карточки.
+ */
+
+/* ——— Сетка плиток ——— */
+#list.vacancy-grid--tiles {
+  display: grid !important;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, var(--tile-min-w, 13.5rem)), 1fr)
+  ) !important;
+  align-items: start !important;
+  align-content: start !important;
+  gap: 0.65rem;
+  padding: 0.65rem var(--main-pad-x, 0.75rem) 1rem !important;
+}
+
+html[data-card-layout='tile-compact'] {
+  --tile-min-w: clamp(10.5rem, calc(var(--card-col-w, 40rem) * 0.32), 16rem);
+}
+
+html[data-card-layout='tile-medium'] {
+  --tile-min-w: clamp(13rem, calc(var(--card-col-w, 40rem) * 0.38), 20rem);
+}
+
+#list.vacancy-grid--tiles > .card-tile {
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  overflow: hidden;
+}
+
+/* ——— Плитка ——— */
+.card-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.5rem 1.9rem 0.6rem 0.55rem;
+  border-radius: 10px;
+  background: var(--panel-bg-elevated, #18181e);
+  border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+  text-align: left;
+  overflow: hidden;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.12s ease;
+}
+
+.card-tile:hover,
+.card-tile:focus-within {
+  border-color: rgba(10, 132, 255, 0.45);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+}
+
+.card-tile--score-high {
+  border-left: 3px solid var(--good, #30d158);
+}
+
+.card-tile--score-low {
+  border-left: 3px solid var(--warn, #ffd60a);
+}
+
+.card-tile--off-target {
+  opacity: 0.88;
+}
+
+.card-tile--invited {
+  border-left: 3px solid var(--good, #30d158);
+}
+
+.card-tile--questionnaire {
+  border-left: 3px solid var(--accent, #58a6ff);
+}
+
+.card-tile .status-chips {
+  margin-top: 0.2rem;
+}
+
+.card-tile .status-chip {
+  font-size: 0.62rem;
+  padding: 0.05rem 0.35rem;
+}
+
+.card-tile__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  min-width: 0;
+  padding-right: 1.4rem;
+}
+
+.card-tile__score {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.1rem;
+  padding: 0.12rem 0.35rem;
+  border-radius: 6px;
+  font-size: calc(0.82rem * var(--cfs, var(--card-font-scale, 1)));
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary, #f2f2f7);
+}
+
+.card-tile__hh {
+  flex-shrink: 0;
+  width: 1.65rem;
+  height: 1.65rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted, rgba(235, 235, 245, 0.55));
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.card-tile__hh:hover {
+  color: var(--accent, #0a84ff);
+  background: rgba(10, 132, 255, 0.12);
+}
+
+.card-tile__open {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.card-tile__open:hover .card-tile__title {
+  color: var(--accent, #0a84ff);
+}
+
+.card-tile__open:focus-visible {
+  outline: 2px solid var(--accent, #0a84ff);
+  outline-offset: 2px;
+}
+
+.card-tile__title,
+.card-tile__meta,
+.card-tile__summary {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.card-tile__title {
+  font-size: calc(0.86rem * var(--cfs, var(--card-font-scale, 1)));
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-primary, #f2f2f7);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.card-tile--compact .card-tile__title {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.card-tile--medium .card-tile__title {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.card-tile__meta {
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  line-height: 1.32;
+  color: var(--text-muted, rgba(235, 235, 245, 0.55));
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.card-tile--medium .card-tile__meta {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.card-tile__summary {
+  margin-top: 0.22rem;
+  font-size: 0.74rem;
+  line-height: 1.38;
+  color: var(--text-primary, #e8e8ed);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.card-tile--medium .card-tile__summary {
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.card-tile .card-dismiss {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  z-index: 2;
+}
+
+/* ——— Модалка деталей (размер как у журнала: resize + полный экран) ——— */
+.modal-dialog--vacancy-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: min(52rem, calc(100vw - 2rem));
+  resize: both;
+  overflow: auto;
+  overflow-x: hidden;
+  min-width: min(22rem, calc(100vw - 2rem));
+  min-height: min(18rem, calc(100vh - 2rem));
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100vh - 1rem);
+  container-type: inline-size;
+  container-name: vacancy-detail;
+}
+
+#vacancy-detail-modal.modal--fullscreen .modal-dialog--vacancy-detail {
+  width: calc(100vw - 1rem);
+  height: calc(100vh - 1rem);
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100vh - 1rem);
+}
+
+.vacancy-detail-meta {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted, rgba(235, 235, 245, 0.55));
+}
+
+.vacancy-detail-counter {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted, rgba(235, 235, 245, 0.55));
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+}
+
+.vacancy-detail-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 8rem;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0.35rem 0 0.5rem;
+  container-type: inline-size;
+  container-name: vacancy-detail;
+}
+
+/* Шапка модалки */
+#vacancy-detail-modal .modal-head {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 0.75rem;
+}
+
+#vacancy-detail-modal .vacancy-detail-head {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+#vacancy-detail-modal .modal-title {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#vacancy-detail-modal .modal-head-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+/* Карточка внутри модалки — привязка к ширине окна */
+.vacancy-detail-body > .card--in-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  border: none;
+  box-shadow: none;
+  padding: 0.25rem 0.35rem 0.5rem;
+  background: transparent;
+}
+
+.vacancy-detail-body > .card--in-modal .card-dismiss {
+  display: none;
+}
+
+.vacancy-detail-body > .card--in-modal .card-head,
+.vacancy-detail-body > .card--in-modal .card-body,
+.vacancy-detail-body > .card--in-modal .card-foot,
+.vacancy-detail-body > .card--in-modal .card-scroll,
+.vacancy-detail-body > .card--in-modal .card-tail-align,
+.vacancy-detail-body > .card--in-modal .card-tail-rest,
+.vacancy-detail-body > .card--in-modal .card-section {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.vacancy-detail-body > .card--in-modal .card-scroll {
+  max-height: none;
+  overflow: visible;
+  overflow-x: hidden;
+}
+
+.vacancy-detail-body > .card--in-modal .card-tail-align {
+  height: auto;
+  min-height: 0;
+}
+
+.vacancy-detail-body > .card--in-modal .card-slot--questionnaire,
+.vacancy-detail-body > .card--in-modal .card-slot--risks {
+  flex: 0 1 auto;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.vacancy-detail-body > .card--in-modal .card-slot--risks .risks-box:not([hidden]) {
+  max-height: min(14rem, 45cqh);
+  overflow-y: auto;
+}
+
+.vacancy-detail-body > .card--in-modal :where(
+  .title-link,
+  .summary,
+  .risks,
+  .meta,
+  .meta-line,
+  .meta--compact,
+  .card-para,
+  .card-facts,
+  .card-facts li,
+  .questionnaire-banner,
+  .questionnaire-banner__text,
+  .hh-apply-badge,
+  .hh-site-badge,
+  .hidden-role-badge,
+  .negotiation-only-badge,
+  .done-reason,
+  .chat-msg,
+  .field-input,
+  .reason
+) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+  max-width: 100%;
+}
+
+.vacancy-detail-body > .card--in-modal .tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  max-width: 100%;
+}
+
+.vacancy-detail-body > .card--in-modal .questionnaire-banner {
+  width: 100%;
+  max-width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+
+.vacancy-detail-body > .card--in-modal .btn-row {
+  width: 100%;
+  max-width: 100%;
+}
+
+.vacancy-detail-body > .card--in-modal .apply-chat-row .btn {
+  flex: 1 1 9rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.vacancy-detail-body > .card--in-modal .apply-chat-row .btn-apply-auto {
+  flex: 1 1 100%;
+  max-width: 100%;
+}
+
+.vacancy-detail-body > .card--in-modal .btn-row--tools .btn,
+.vacancy-detail-body > .card--in-modal .btn-row--decision .btn {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.vacancy-detail-body > .card--in-modal .reason {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Узкая модалка — кнопки столбиком */
+@container vacancy-detail (max-width: 32rem) {
+  .vacancy-detail-body > .card--in-modal .apply-chat-row .btn,
+  .vacancy-detail-body > .card--in-modal .btn-row--decision .btn-approve,
+  .vacancy-detail-body > .card--in-modal .btn-row--decision .btn-reject {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .vacancy-detail-body > .card--in-modal .btn-row--decision {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vacancy-detail-body > .card--in-modal .btn-row--decision .btn-spacer {
+    display: none;
+  }
+
+  .vacancy-detail-body > .card--in-modal .btn-row--decision .btn-refresh-vacancy {
+    align-self: flex-start;
+  }
+}
+
+/* Средняя ширина — отклик в 2 колонки, «Авто» на всю строку */
+@container vacancy-detail (min-width: 32.01rem) and (max-width: 44rem) {
+  .vacancy-detail-body > .card--in-modal .apply-chat-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+  }
+
+  .vacancy-detail-body > .card--in-modal .apply-chat-row .btn-apply-auto {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Широкая модалка — отклик и решение рядом */
+@container vacancy-detail (min-width: 44.01rem) {
+  .vacancy-detail-body > .card--in-modal .card-foot {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 0.65rem 1rem;
+    align-items: start;
+  }
+
+  .vacancy-detail-body > .card--in-modal .card-foot .card-section + .card-section {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
+  }
+
+  .vacancy-detail-body > .card--in-modal .apply-chat-row {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .vacancy-detail-body > .card--in-modal .apply-chat-row .btn-apply-auto {
+    flex: 1 1 100%;
+  }
+
+  .vacancy-detail-body > .card--in-modal .apply-chat-row .btn-apply-chat,
+  .vacancy-detail-body > .card--in-modal .apply-chat-row .btn-apply-questionnaire {
+    flex: 1 1 calc(50% - 0.2rem);
+  }
+}
+
+/* Очень широкая модалка — три кнопки отклика в одну строку */
+@container vacancy-detail (min-width: 56rem) {
+  .vacancy-detail-body > .card--in-modal .apply-chat-row {
+    display: grid;
+    grid-template-columns: minmax(10rem, 2fr) minmax(8rem, 1fr) minmax(8rem, 1fr);
+    gap: 0.35rem;
+  }
+
+  .vacancy-detail-body > .card--in-modal .apply-chat-row .btn-apply-auto,
+  .vacancy-detail-body > .card--in-modal .apply-chat-row .btn-apply-chat,
+  .vacancy-detail-body > .card--in-modal .apply-chat-row .btn-apply-questionnaire {
+    flex: none;
+    width: auto;
+    max-width: none;
+  }
+}

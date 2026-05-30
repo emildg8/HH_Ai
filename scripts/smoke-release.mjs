@@ -63,7 +63,17 @@ function main() {
   checkNoPii(OUT);
   console.log('[smoke:release] PII check OK');
 
-  for (const must of ['package.json', 'docs/QUICKSTART.md', 'docs/CONFIG-GUIDE.md', 'config/presets/README.md', 'scripts/install.ps1', 'scripts/install.sh', 'EXPORT-README.md']) {
+  for (const must of [
+    'package.json',
+    'docs/QUICKSTART.md',
+    'docs/CONFIG-GUIDE.md',
+    'config/presets/README.md',
+    'scripts/install.ps1',
+    'scripts/install.sh',
+    'scripts/install-portable.ps1',
+    'start-dashboard.bat',
+    'EXPORT-README.md',
+  ]) {
     if (!fs.existsSync(path.join(OUT, must))) fail(`нет ${must}`);
   }
   console.log('[smoke:release] структура OK');

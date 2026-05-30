@@ -564,6 +564,13 @@ async function main() {
       ...serpStatsPayload({ newToProcess: urlsTotal }),
     });
     console.log(`\nГотово. Новых записей в очереди: ${added}. Запустите: npm run dashboard`);
+    try {
+      const { notifyHarvestComplete } = await import('../lib/harvest-notify.mjs');
+      const tg = await notifyHarvestComplete({ added, skipped, urlsTotal });
+      if (tg?.ok) console.log('[harvest] Telegram: уведомление отправлено');
+    } catch (e) {
+      console.warn('[harvest] Telegram:', e.message || e);
+    }
   } finally {
     await closeContextSafe(ctx, BROWSER_OWNER);
     finishHarvestControl({ reason: shouldStopHarvest() ? 'stop' : 'complete' });

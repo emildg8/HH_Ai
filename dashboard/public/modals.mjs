@@ -1,12 +1,14 @@
 /** Закрытие модалок: Escape, клик по фону, стек. */
 
 const MODAL_IDS = [
+  'vacancy-detail-modal',
   'draft-modal',
   'apply-log-modal',
   'approved-letter-modal',
   'questionnaire-modal',
   'funnel-modal',
   'settings-modal',
+  'shortcuts-modal',
 ];
 
 export function anyModalOpen() {
@@ -33,7 +35,9 @@ export function initModalLayer({ onEscape } = {}) {
         t.classList?.contains('modal-backdrop') ||
         t.hasAttribute?.('data-close-modal') ||
         t.hasAttribute?.('data-close-funnel') ||
-        t.hasAttribute?.('data-close-settings')
+        t.hasAttribute?.('data-close-settings') ||
+        t.hasAttribute?.('data-close-shortcuts') ||
+        t.hasAttribute?.('data-close-vacancy-detail')
       ) {
         e.preventDefault();
         onEscape?.(id);

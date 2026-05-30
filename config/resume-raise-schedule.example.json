@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "timezone": "Europe/Moscow",
+  "slots": [8, 12, 16, 20],
+  "windowMinutes": 40,
+  "raiseAll": true
+}
