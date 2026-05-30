@@ -45,7 +45,14 @@ if (fs.existsSync(mainRs)) {
   if (/spawn_dashboard_child|DashboardSidecar|start_dashboard_sidecar/.test(src)) {
     pass('desktop/phase2-sidecar');
   } else fail('desktop/phase2-sidecar', 'нет sidecar spawn в main.rs');
+  if (/install_chromium|check_chromium|desktop-chromium/.test(src)) {
+    pass('desktop/phase3-chromium');
+  } else fail('desktop/phase3-chromium', 'нет install chromium в main.rs');
 } else fail('desktop/phase1-healthcheck', 'нет main.rs');
+
+const chromiumScript = path.join(ROOT, 'scripts', 'desktop-chromium.mjs');
+if (fs.existsSync(chromiumScript)) pass('desktop/chromium-script');
+else fail('desktop/chromium-script');
 
 const r = spawnSync(process.execPath, ['--check', path.join(ROOT, 'scripts', 'dashboard-server.mjs')], {
   encoding: 'utf8',

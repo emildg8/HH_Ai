@@ -8,6 +8,15 @@
 - [Rust](https://rustup.rs) (для сборки Tauri)
 - HH Ai установлен и настроен в корне репозитория (`npm run login` один раз)
 
+## Фаза 3 (3.0.0-alpha)
+
+Экран подготовки (`public/index.html`): статус Chromium и кнопка **Установить Chromium** (Playwright, ~200 МБ).
+
+```powershell
+npm run desktop:install-chromium   # из терминала
+npm run desktop:smoke              # sidecar + chromium без Tauri
+```
+
 ## Фаза 2 (3.0.0-alpha)
 
 При запуске Tauri, если `:3849` не отвечает, автоматически стартует `node scripts/dashboard-server.mjs` из корня репозитория. При закрытии приложения sidecar завершается.

@@ -13,7 +13,7 @@
 | **0** | Scaffold `desktop/hh-ai-desktop`, `npm run desktop:launcher` | [x] |
 | **1** | WebView → `http://127.0.0.1:3849`, проверка «дашборд не запущен» | [x] |
 | **2** | Sidecar: встроенный spawn `dashboard-server.mjs` при старте app | [x] |
-| **3** | Кнопка «Установить Chromium» → `npx playwright install chromium` | [ ] |
+| **3** | Кнопка «Установить Chromium» → `npx playwright install chromium` | [x] |
 | **4** | Installer `.msi` / `.exe` в CI, автообновление (optional) | [ ] |
 
 ---
@@ -31,7 +31,7 @@ flowchart LR
   S --> P[Playwright profile]
 ```
 
-Сейчас (фаза 2): Tauri при старте поднимает `node scripts/dashboard-server.mjs` (если `:3849` молчит), при выходе — завершает процесс. Корень проекта: `HH_AI_ROOT` или `desktop/hh-ai-desktop/../../..`.
+Сейчас (фаза 3): экран подготовки с кнопкой «Установить Chromium» (`scripts/desktop-chromium.mjs`); sidecar дашборда — фаза 2. Сборка installer — фаза 4.
 
 ---
 
@@ -41,6 +41,8 @@ flowchart LR
 |---------|------------|
 | `npm run desktop:check` | Rust / scaffold / dashboard-server |
 | `npm run desktop:launcher` | Interim: PowerShell старт дашборда + браузер |
+| `npm run desktop:smoke` | Sidecar + chromium check без Tauri |
+| `npm run desktop:install-chromium` | Playwright Chromium из терминала |
 | `cd desktop/hh-ai-desktop && npm run tauri:dev` | Tauri dev (нужен Rust) |
 | `cd desktop/hh-ai-desktop && npm run tauri:build` | Сборка installer |
 

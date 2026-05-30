@@ -2,7 +2,7 @@
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <title>HH Ai — дашборд не запущен</title>
+    <title>HH Ai — подготовка</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -23,51 +23,67 @@
         font: inherit;
         padding: 0.5rem 1rem;
         cursor: pointer;
+        margin-right: 0.5rem;
       }
-      #status {
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+      #status,
+      #chromium-status {
         margin: 1rem 0;
         padding: 0.75rem 1rem;
         border-radius: 8px;
         background: rgba(127, 127, 127, 0.12);
       }
+      .section {
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(127, 127, 127, 0.25);
+      }
     </style>
   </head>
   <body>
     <h1>HH Ai</h1>
-    <p>Локальный дашборд на <code id="port-label">127.0.0.1:3849</code> не отвечает.</p>
+    <p>Локальный дашборд: <code id="port-label">127.0.0.1:3849</code></p>
     <div id="status">Запускаем дашборд…</div>
-    <ol>
-      <li>Desktop (Tauri) попробует запустить <code>dashboard-server</code> автоматически</li>
-      <li>Или вручную в корне HH Ai: <code>npm run dashboard</code></li>
-      <li>Interim: <code>npm run desktop:launcher</code></li>
-      <li>Один раз: <code>npm run login</code> (сессия hh.ru)</li>
-    </ol>
     <p>
       <button type="button" id="retry">Повторить подключение</button>
+      <a id="open-link" href="http://127.0.0.1:3849/">Открыть в браузере</a>
     </p>
-    <p><a id="open-link" href="http://127.0.0.1:3849/">Открыть дашборд в браузере</a></p>
+
+    <div class="section">
+      <h2>Chromium для откликов</h2>
+      <div id="chromium-status">Проверка…</div>
+      <p>Нужен для <code>npm run login</code> и автоматических откликов (~200 МБ).</p>
+      <button type="button" id="install-chromium" hidden>Установить Chromium</button>
+    </div>
+
     <script>
       const port = 3849;
       const statusEl = document.getElementById('status');
+      const chromiumStatusEl = document.getElementById('chromium-status');
       const retryBtn = document.getElementById('retry');
+      const installBtn = document.getElementById('install-chromium');
       const openLink = document.getElementById('open-link');
       const portLabel = document.getElementById('port-label');
       const dashboardUrl = `http://127.0.0.1:${port}/`;
+      const tauri = () => window.__TAURI_INTERNALS__?.invoke;
 
       portLabel.textContent = `127.0.0.1:${port}`;
       openLink.href = dashboardUrl;
 
-      async function probe() {
-        if (window.__TAURI_INTERNALS__?.invoke) {
+      async function probeDashboard() {
+        if (tauri()) {
           try {
-            await window.__TAURI_INTERNALS__.invoke('start_dashboard_sidecar');
-            const up = await window.__TAURI_INTERNALS__.invoke('check_dashboard');
+            await tauri()('start_dashboard_sidecar');
+            const up = await tauri()('check_dashboard');
             if (up) {
-              const opened = await window.__TAURI_INTERNALS__.invoke('open_dashboard');
+              const opened = await tauri()('open_dashboard');
               if (opened) return true;
             }
           } catch {
-            /* fallback below */
+            /* fallback */
           }
         }
         try {
@@ -82,17 +98,57 @@
         return false;
       }
 
-      async function refreshStatus() {
-        statusEl.textContent = 'Проверка…';
-        const up = await probe();
+      async function refreshDashboardStatus() {
+        statusEl.textContent = 'Проверка дашборда…';
+        const up = await probeDashboard();
         statusEl.textContent = up
           ? 'Дашборд найден, переключаем…'
-          : 'Дашборд не запущен. Выполните npm run dashboard в корне проекта.';
+          : 'Дашборд не отвечает. Tauri попробует sidecar или запустите npm run dashboard.';
       }
 
-      retryBtn.addEventListener('click', refreshStatus);
-      refreshStatus();
-      setInterval(refreshStatus, 5000);
+      async function refreshChromiumStatus() {
+        if (tauri()) {
+          try {
+            const installed = await tauri()('check_chromium');
+            if (installed) {
+              chromiumStatusEl.textContent = 'Chromium установлен.';
+              installBtn.hidden = true;
+              return;
+            }
+            chromiumStatusEl.textContent = 'Chromium не установлен — нужен для login/apply.';
+            installBtn.hidden = false;
+            return;
+          } catch {
+            /* fallback */
+          }
+        }
+        chromiumStatusEl.textContent =
+          'Проверка через Tauri недоступна. В терминале: npx playwright install chromium';
+        installBtn.hidden = true;
+      }
+
+      installBtn.addEventListener('click', async () => {
+        if (!tauri()) return;
+        installBtn.disabled = true;
+        retryBtn.disabled = true;
+        chromiumStatusEl.textContent = 'Установка Chromium… (1–3 мин, ~200 МБ)';
+        try {
+          await tauri()('install_chromium');
+          chromiumStatusEl.textContent = 'Chromium установлен.';
+          installBtn.hidden = true;
+        } catch (e) {
+          chromiumStatusEl.textContent = `Ошибка: ${e}`;
+          installBtn.hidden = false;
+        } finally {
+          installBtn.disabled = false;
+          retryBtn.disabled = false;
+        }
+      });
+
+      retryBtn.addEventListener('click', refreshDashboardStatus);
+      refreshDashboardStatus();
+      refreshChromiumStatus();
+      setInterval(refreshDashboardStatus, 5000);
     </script>
   </body>
 </html>

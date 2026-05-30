@@ -113,6 +113,42 @@ fn navigate_dashboard(app: &tauri::AppHandle) -> bool {
     win.navigate(url.parse().expect("dashboard url")).is_ok()
 }
 
+fn run_node_script(args: &[&str]) -> Result<String, String> {
+    let root = hh_ai_root();
+    let script = root.join("scripts").join("desktop-chromium.mjs");
+    if !script.exists() {
+        return Err(format!("нет {}", script.display()));
+    }
+    let output = Command::new("node")
+        .arg(script)
+        .args(args)
+        .current_dir(&root)
+        .output()
+        .map_err(|e| format!("node: {e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if output.status.success() {
+        Ok(if stdout.is_empty() { "ok".into() } else { stdout })
+    } else {
+        Err(if stderr.is_empty() { stdout } else { stderr })
+    }
+}
+
+#[tauri::command]
+fn check_chromium() -> bool {
+    run_node_script(&["--check"])
+        .map(|s| s.starts_with("installed"))
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+fn install_chromium() -> Result<String, String> {
+    if check_chromium() {
+        return Ok("installed".into());
+    }
+    run_node_script(&["--install"])
+}
+
 #[tauri::command]
 fn check_dashboard() -> bool {
     dashboard_up(dashboard_port())
@@ -138,7 +174,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             check_dashboard,
             open_dashboard,
-            start_dashboard_sidecar
+            start_dashboard_sidecar,
+            check_chromium,
+            install_chromium
         ])
         .setup(|app| {
             let sidecar = app.state::<DashboardSidecar>();

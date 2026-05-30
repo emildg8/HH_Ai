@@ -32,6 +32,13 @@ jobs:
       - name: smoke:release (export zip-срез + npm install)
         run: npm run smoke:release
 
+      - name: QA clean install (A+B, skip playwright reinstall)
+        run: npm run qa:clean-install -- --skip-playwright
+        timeout-minutes: 15
+
+      - name: Desktop smoke (sidecar + chromium check)
+        run: npm run desktop:smoke
+
       - name: Dashboard UI smoke
         run: |
           node scripts/dashboard-server.mjs --queue-file=./docs/demo/vacancies-demo.json &
