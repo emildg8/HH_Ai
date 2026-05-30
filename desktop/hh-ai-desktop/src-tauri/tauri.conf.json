@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "HH Ai",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "identifier": "dev.hh-ai.dashboard",
   "build": {
     "beforeDevCommand": "",
-    "beforeBuildCommand": "node ../../scripts/desktop-bundle.mjs",
+    "beforeBuildCommand": "",
     "devUrl": "http://127.0.0.1:3849",
     "frontendDist": "../public"
   },
@@ -36,9 +36,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "resources/hh-ai/**": "hh-ai/"
-    },
+    "resources": [
+      "resources/hh-ai/"
+    ],
     "shortDescription": "HH Ai — очередь откликов hh.ru",
     "longDescription": "Локальный дашборд и автоматизация откликов на hh.ru без облака.",
     "windows": {

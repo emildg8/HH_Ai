@@ -57,6 +57,13 @@ jobs:
       - name: Bundle HH Ai for desktop
         run: node scripts/desktop-bundle.mjs
 
+      - name: Verify desktop bundle
+        shell: pwsh
+        run: |
+          if (-not (Test-Path desktop/hh-ai-desktop/src-tauri/resources/hh-ai/scripts/dashboard-server.mjs)) {
+            throw "desktop bundle missing"
+          }
+
       - name: Install desktop deps
         working-directory: desktop/hh-ai-desktop
         run: npm ci

@@ -1,6 +1,6 @@
 # Чекпоинт для продолжения работы
 
-**Обновлено:** 2026-05-30 · **Версия:** 3.0.3 (финальный релиз)
+**Обновлено:** 2026-05-30 · **Версия:** 3.0.5 (финальный релиз)
 
 **Release:** https://github.com/emildg8/HH_Ai/releases/latest
 
@@ -10,8 +10,8 @@
 
 | Канал | Артефакт |
 |-------|----------|
-| Portable (все ОС) | `hh-ai-public-v3.0.3.zip` |
-| Windows zip alias | `hh-ru-apply-win-x64-v3.0.3.zip` |
+| Portable (все ОС) | `hh-ai-public-v3.0.5.zip` |
+| Windows zip alias | `hh-ru-apply-win-x64-v3.0.5.zip` |
 | Windows desktop | `HH-Ai_*-setup.exe` (NSIS, CI) |
 
 ### Быстрый старт Windows
@@ -32,4 +32,4 @@ powershell -File start-hh-ai.ps1
 
 - macOS/Linux desktop installer
 - Автообновление Tauri
-- Bundled node.exe в installer
+- Bundled node.exe в installer (локально `--bundle-node`, CI — опционально)

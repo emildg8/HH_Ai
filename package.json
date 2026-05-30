@@ -1,6 +1,6 @@
 {
   "name": "hh-ai",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "description": "HH Ai — локальная автоматизация откликов на hh.ru (дашборд, LLM, батч, анкеты). https://github.com/emildg8/HH_Ai",
   "private": true,
   "repository": {

@@ -2,6 +2,12 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версии — [SemVer](https://semver.org/lang/ru/).
 
+## [3.0.5] — 2026-05-30
+
+### Исправлено
+
+- **Desktop NSIS:** `resources` в `tauri.conf.json` — массив `resources/hh-ai/` вместо glob; `beforeBuildCommand` убран (bundle только в CI); verify шаг перед сборкой.
+
 ## [3.0.4] — 2026-05-30
 
 ### Fixed
