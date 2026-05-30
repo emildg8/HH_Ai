@@ -41,6 +41,7 @@ jobs:
 
       - name: Dashboard UI smoke
         run: |
+          cp dashboard/public/local-dashboard-defaults.example.mjs dashboard/public/local-dashboard-defaults.mjs
           node scripts/dashboard-server.mjs --queue-file=./docs/demo/vacancies-demo.json &
           SERVER_PID=$!
           for i in $(seq 1 30); do

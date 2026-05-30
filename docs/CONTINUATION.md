@@ -1,32 +1,35 @@
 # Чекпоинт для продолжения работы
 
-**Обновлено:** 2026-05-30 · **Версия:** 3.0.0
+**Обновлено:** 2026-05-30 · **Версия:** 3.0.3 (финальный релиз)
 
-**Релиз:** тег `v3.0.0` — zip + NSIS installer · ветка `HH_Ai`
+**Release:** https://github.com/emildg8/HH_Ai/releases/latest
 
 ---
 
-## Продукт 3.0.0
+## Продукт 3.0
 
 | Канал | Артефакт |
 |-------|----------|
-| Windows desktop | `HH-Ai_*-setup.exe` |
-| Portable | `hh-ai-public-v3.0.0.zip` |
-| Git | `install.ps1` / `install.sh` |
+| Portable (все ОС) | `hh-ai-public-v3.0.3.zip` |
+| Windows zip alias | `hh-ru-apply-win-x64-v3.0.3.zip` |
+| Windows desktop | `HH-Ai_*-setup.exe` (NSIS, CI) |
+
+### Быстрый старт Windows
+
+1. **Приложение:** скачать `*-setup.exe` → установить → «Установить Chromium» → login
+2. **Portable:** zip → `install-portable.ps1` → `start-dashboard.bat`
+3. **Git:** `install.ps1` → `npm run login` → `npm run dashboard`
 
 ```powershell
 npm run verify:local
 npm run qa:clean-install
-npm run desktop:smoke
-npm run release:public
+powershell -File start-hh-ai.ps1
 ```
 
 ---
 
 ## Backlog post-3.0
 
-- [ ] macOS/Linux desktop installer
-- [ ] Автообновление Tauri
-- [ ] VM QA login/apply вручную → UX-FRICTION-LOG
-
-См. [TAURI-PLAN.md](TAURI-PLAN.md) · [ROADMAP.md](ROADMAP.md)
+- macOS/Linux desktop installer
+- Автообновление Tauri
+- Bundled node.exe в installer

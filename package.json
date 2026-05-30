@@ -1,6 +1,6 @@
 {
   "name": "hh-ai",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "description": "HH Ai — локальная автоматизация откликов на hh.ru (дашборд, LLM, батч, анкеты). https://github.com/emildg8/HH_Ai",
   "private": true,
   "repository": {
@@ -89,7 +89,7 @@
     "desktop:bundle": "node scripts/desktop-bundle.mjs --bundle-node",
     "desktop:launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/desktop-launcher.ps1",
     "docs:screenshots": "node scripts/capture-demo-screenshots.mjs",
-    "postinstall": "node -e \"console.log('HH Ai: npm run login && npm run dashboard  |  docs/QUICKSTART.md')\""
+    "postinstall": "node scripts/ensure-dashboard-stubs.mjs && node -e \"console.log('HH Ai: npm run login && npm run dashboard  |  docs/QUICKSTART.md')\""
   },
   "dependencies": {
     "docx": "^9.6.1",

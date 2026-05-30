@@ -67,6 +67,7 @@ CV/
 # Артефакты сборки и бэкапы
 dist/
 desktop/hh-ai-desktop/bundled/
+desktop/hh-ai-desktop/src-tauri/resources/
 backups/
 releases/*.zip
 releases/RELEASE-public-v*.json

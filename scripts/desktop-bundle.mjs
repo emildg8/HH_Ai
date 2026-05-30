@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 import { ROOT } from '../lib/paths.mjs';
 
 const DESKTOP = path.join(ROOT, 'desktop', 'hh-ai-desktop');
-const OUT = path.join(DESKTOP, 'bundled', 'hh-ai');
+const OUT = path.join(DESKTOP, 'src-tauri', 'resources', 'hh-ai');
 const NODE_OUT = path.join(DESKTOP, 'bundled', 'node');
 const bundleNode = process.env.BUNDLE_NODE === '1' || process.argv.includes('--bundle-node');
 

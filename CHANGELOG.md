@@ -2,6 +2,14 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версии — [SemVer](https://semver.org/lang/ru/).
 
+## [3.0.3] — 2026-05-30
+
+### Fixed
+
+- **Tauri resources:** bundle в `src-tauri/resources/hh-ai/` (стабильный glob на Windows CI).
+- **postinstall:** `ensure-dashboard-stubs.mjs` — local-dashboard-defaults без 404.
+- **CI:** stub перед dashboard UI smoke.
+
 ## [3.0.2] — 2026-05-30
 
 ### Fixed

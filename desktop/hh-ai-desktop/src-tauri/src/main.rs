@@ -61,7 +61,8 @@ fn hh_ai_root(app: &AppHandle) -> PathBuf {
     let bundled = dev_repo_root()
         .join("desktop")
         .join("hh-ai-desktop")
-        .join("bundled")
+        .join("src-tauri")
+        .join("resources")
         .join("hh-ai");
     if bundled.join("scripts/dashboard-server.mjs").exists() {
         return bundled;
