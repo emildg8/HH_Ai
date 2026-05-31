@@ -4,7 +4,7 @@ import { initFloatingTooltips } from './tooltips.mjs';
 import { initModalLayer, openModalEl, closeModalEl } from './modals.mjs';
 import { initUiScaleControls } from './ui-scale.mjs';
 import { initThemeControls } from './ui-theme.mjs';
-import { initCardTuningControls } from './ui-card-tuning.mjs';
+import { initCardTuningControls, normalizeCardLayout } from './ui-card-tuning.mjs';
 import { applyLocalDashboardDefaults } from './load-local-defaults.mjs';
 import {
   meaningfulQuestions,
@@ -27,9 +27,16 @@ import {
   SIDEBAR_PANELS,
   SIDEBAR_PANEL_ORDER_DEFAULT,
   LAYOUT_PRESET_KEYS,
+  LAYOUT_PRESETS,
+  detectLayoutPreset,
   batchScopeLabel,
   defaultPanelsForMode,
+  defaultPanelSides,
+  normalizePanelSides,
+  panelSideFor,
 } from './dashboard-ux.mjs';
+import { initSidebarBuilder, renderSidebarBuilder } from './ui-sidebar-builder.mjs';
+import { initMobileShell, isMobileViewport } from './ui-mobile.mjs';
 import {
   initWorkspaceDocks,
   loadDockState,
@@ -49,6 +56,7 @@ import { buildListBreadcrumbItems, mountListBreadcrumbs } from './list-breadcrum
 import { initListKeyboardNav } from './list-keyboard-nav.mjs';
 import { renderStatusChips } from './card-status.mjs';
 import { applyCopyToDom, syncFullscreenIcon } from './apply-copy-dom.mjs';
+import { initWorkflowNav } from './ui-workflow.mjs';
 import {
   closeVacancyDetail,
   configureVacancyDetailNav,
@@ -95,14 +103,44 @@ let batchCaptchaToastShown = false;
 /** @type {string | null} */
 let lastFocusedVacancyId = null;
 let preferencesSaveAvailable = null;
-/** @type {{ uiMode: string, sidebarMode: string, panels: Record<string, boolean>, panelOrder: string[] }} */
+/** @type {{ uiMode: string, sidebarMode: string, panels: Record<string, boolean>, panelOrder: string[], panelSides: Record<string, string> }} */
 let dashboardUi = {
   uiMode: UI_MODES.simple,
   sidebarMode: 'compact',
   panels: defaultPanelsForMode(UI_MODES.simple),
   panelOrder: [...SIDEBAR_PANEL_ORDER_DEFAULT],
+  panelSides: defaultPanelSides(),
 };
 let layoutSettingsHydrated = false;
+
+const DASHBOARD_LAYOUT_LS_KEY = 'hh-dashboard-sidebar-layout-v1';
+
+function readDashboardLayoutLocal() {
+  try {
+    const raw = localStorage.getItem(DASHBOARD_LAYOUT_LS_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return data && typeof data === 'object' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDashboardLayoutLocal(ui) {
+  if (!ui) return;
+  try {
+    localStorage.setItem(
+      DASHBOARD_LAYOUT_LS_KEY,
+      JSON.stringify({
+        panelOrder: ui.panelOrder,
+        panelSides: ui.panelSides,
+        panels: ui.panels,
+      })
+    );
+  } catch {
+    /* ignore */
+  }
+}
 let lastHarvestTickSeq = 0;
 let applyLogPollTimer = null;
 let applyChatWasRunning = false;
@@ -188,9 +226,9 @@ async function setHhSiteStateManual(item, state) {
   });
   showToast(
     state === 'invited'
-      ? 'Приглашение — сохранено для LLM и убрано из батча'
+      ? 'Приглашение сохранено — карточка убрана из серии откликов'
       : state === 'declined'
-        ? 'Отказ — сохранён для LLM (учтётся в следующих письмах)'
+        ? 'Отказ сохранён — учтётся в следующих письмах'
         : 'Статус hh.ru сброшен',
     'good'
   );
@@ -353,7 +391,6 @@ function applyPreferencesToSettingsUI(preferences, bounds) {
     batchLimitEl.max = String(prefBounds.dashboardBatchSize.max);
   }
   updateScoreBandTabLabels();
-  applyDashboardUiFromPreferences(p);
   settingsHydrated = true;
 }
 
@@ -405,20 +442,34 @@ function normalizeUiFromApi(ui, preferences) {
       if (typeof src[id] === 'boolean') panels[id] = src[id];
     }
   }
+  const localLayout = readDashboardLayoutLocal();
   const order = Array.isArray(ui?.panelOrder)
     ? ui.panelOrder.filter((id) => SIDEBAR_PANELS[id])
     : Array.isArray(p.dashboardSidebarPanelOrder)
       ? p.dashboardSidebarPanelOrder.filter((id) => SIDEBAR_PANELS[id])
-      : [...SIDEBAR_PANEL_ORDER_DEFAULT];
+      : Array.isArray(localLayout?.panelOrder)
+        ? localLayout.panelOrder.filter((id) => SIDEBAR_PANELS[id])
+        : [...SIDEBAR_PANEL_ORDER_DEFAULT];
   const seen = new Set(order);
   for (const id of SIDEBAR_PANEL_ORDER_DEFAULT) {
     if (!seen.has(id)) order.push(id);
   }
-  return { uiMode, sidebarMode, panels, panelOrder: order };
+  const panelSides = normalizePanelSides(
+    ui?.panelSides ?? p.dashboardSidebarPanelSides ?? localLayout?.panelSides
+  );
+  if (localLayout?.panels && typeof localLayout.panels === 'object') {
+    for (const id of Object.keys(SIDEBAR_PANELS)) {
+      if (typeof localLayout.panels[id] === 'boolean' && p.dashboardSidebarPanels?.[id] === undefined) {
+        panels[id] = localLayout.panels[id];
+      }
+    }
+  }
+  return { uiMode, sidebarMode, panels, panelOrder: order, panelSides };
 }
 
 function applyDashboardUiFromPreferences(preferences, uiFromApi) {
   dashboardUi = normalizeUiFromApi(uiFromApi, preferences);
+  writeDashboardLayoutLocal(dashboardUi);
   const shell = document.getElementById('app-shell');
   if (shell) {
     shell.dataset.uiMode = dashboardUi.uiMode;
@@ -437,7 +488,21 @@ function applyDashboardUiFromPreferences(preferences, uiFromApi) {
   });
   applySidebarPanelVisibility();
   reorderSidebarPanels();
-  syncSidebarPanelToggleInputs();
+  renderSidebarBuilder();
+  syncLayoutPresetButtons();
+}
+
+function syncLayoutPresetButtons() {
+  const active = detectLayoutPreset(dashboardUi);
+  document.querySelectorAll('[data-layout-preset]').forEach((b) => {
+    b.classList.toggle('active', Boolean(active && b.dataset.layoutPreset === active));
+  });
+  const hintEl = document.getElementById('layout-preset-hint');
+  if (hintEl) {
+    hintEl.textContent = active
+      ? LAYOUT_PRESETS[active]?.hint || ''
+      : 'Своя конфигурация — перетащите блоки или выберите пресет';
+  }
 }
 
 function applySidebarPanelVisibility() {
@@ -449,68 +514,120 @@ function applySidebarPanelVisibility() {
     el.dataset.panelHidden = visible ? '0' : '1';
     el.hidden = !visible;
   });
-  const togglesWrap = document.getElementById('sidebar-panel-toggles-wrap');
-  if (togglesWrap) togglesWrap.hidden = uiMode === UI_MODES.simple;
+  syncDockSectionShells();
+}
+
+/** v4: секция dock-section — оболочка с заголовком; панель должна оставаться внутри. */
+function dockSectionHostForPanel(el) {
+  if (!el?.closest('#sidebar-scroll')) return el;
+  const section = el.closest('.dock-section');
+  if (section?.closest('#sidebar-scroll')) return section;
+  return el;
+}
+
+/** Скрыть пустые оболочки, если все вложенные панели выключены. */
+function syncDockSectionShells() {
+  document.querySelectorAll('#sidebar-scroll .dock-section').forEach((section) => {
+    if (section.dataset.panel) return;
+    const innerPanels = section.querySelectorAll('.sidebar-panel[data-panel]');
+    if (!innerPanels.length) return;
+    const anyVisible = [...innerPanels].some(
+      (p) => p.dataset.panelHidden !== '1' && !p.hidden
+    );
+    section.hidden = !anyVisible;
+  });
 }
 
 function reorderSidebarPanels() {
   const scroll = document.getElementById('sidebar-scroll');
   const rightBody = document.querySelector('#dock-right .dock__body');
   const footer = document.querySelector('#dock-right .sidebar-footer');
-  if (!scroll) return;
+  if (!scroll || !rightBody) return;
   const order = dashboardUi.panelOrder || SIDEBAR_PANEL_ORDER_DEFAULT;
-  const leftIds = new Set([
-    'status',
-    'actionsPrimary',
-    'harvestPeriod',
-    'nav',
-    'quickSync',
-    'filters',
-    'serviceLink',
-  ]);
   const panels = [...document.querySelectorAll('.sidebar-panel[data-panel]')];
   const byId = Object.fromEntries(panels.map((el) => [el.dataset.panel, el]));
+
+  const placedLeft = new Set();
   for (const id of order) {
-    if (!leftIds.has(id)) continue;
+    if (panelSideFor(dashboardUi, id) !== 'left' || id === 'brand') continue;
+    if (dashboardUi.panels[id] === false) continue;
     const el = byId[id];
-    if (el && el.closest('#sidebar-scroll')) scroll.appendChild(el);
+    if (!el) continue;
+    const host = dockSectionHostForPanel(el);
+    if (placedLeft.has(host)) continue;
+    placedLeft.add(host);
+    scroll.appendChild(host);
   }
-  if (footer && rightBody && dashboardUi.panels.jobFooter !== false) {
+  syncDockSectionShells();
+
+  for (const id of order) {
+    if (panelSideFor(dashboardUi, id) !== 'right') continue;
+    if (id === 'jobFooter') continue;
+    if (dashboardUi.panels[id] === false) continue;
+    const el = byId[id];
+    if (!el) continue;
+    rightBody.insertBefore(el, footer?.parentElement === rightBody ? footer : null);
+  }
+  if (
+    footer &&
+    dashboardUi.panels.jobFooter !== false &&
+    panelSideFor(dashboardUi, 'jobFooter') === 'right'
+  ) {
     rightBody.appendChild(footer);
   }
-  const kpi = byId.kpi;
-  if (kpi && rightBody && dashboardUi.panels.kpi !== false) {
-    rightBody.insertBefore(kpi, footer || null);
-  }
 }
 
-function syncSidebarPanelToggleInputs() {
-  document.querySelectorAll('[data-sidebar-panel-toggle]').forEach((input) => {
-    const id = input.dataset.sidebarPanelToggle;
-    if (!id) return;
-    input.checked = dashboardUi.panels[id] !== false;
-  });
-}
-
-function renderSidebarPanelToggles() {
-  const host = document.getElementById('sidebar-panel-toggles');
-  if (!host || host.dataset.built === '1') return;
-  host.dataset.built = '1';
-  host.innerHTML = Object.values(SIDEBAR_PANELS)
-    .map(
-      ({ id, label }) =>
-        `<label class="settings-panel-toggle"><input type="checkbox" data-sidebar-panel-toggle="${id}" checked /><span>${label}</span></label>`
-    )
-    .join('');
-  host.querySelectorAll('[data-sidebar-panel-toggle]').forEach((input) => {
-    input.addEventListener('change', () => {
-      const id = input.dataset.sidebarPanelToggle;
-      if (!id) return;
-      dashboardUi.panels[id] = input.checked;
-      applySidebarPanelVisibility();
+function initSidebarBuilderHooks() {
+  initSidebarBuilder({
+    getUi: () => dashboardUi,
+    patchUi: (partial) => {
+      dashboardUi = { ...dashboardUi, ...partial };
+      if (partial.panels) applySidebarPanelVisibility();
+      if (partial.panelOrder || partial.panelSides) {
+        reorderSidebarPanels();
+        renderSidebarBuilder();
+      }
+      syncLayoutPresetButtons();
+      writeDashboardLayoutLocal(dashboardUi);
+    },
+    onPersist: () => {
+      writeDashboardLayoutLocal(dashboardUi);
       if (layoutSettingsHydrated) scheduleSaveLayoutSettings();
-    });
+    },
   });
+}
+
+function applyLayoutPreset(name) {
+  const preset = LAYOUT_PRESETS[name];
+  if (!preset) return;
+  dashboardUi = {
+    ...dashboardUi,
+    uiMode: preset.uiMode,
+    sidebarMode: preset.sidebarMode,
+    panels: { ...preset.panels },
+    panelOrder: [...preset.panelOrder],
+    panelSides: defaultPanelSides(),
+  };
+  applyDashboardUiFromPreferences(
+    {
+      dashboardUiMode: preset.uiMode,
+      dashboardSidebarLayout: preset.sidebarMode,
+      dashboardSidebarPanels: preset.panels,
+      dashboardSidebarPanelOrder: preset.panelOrder,
+      dashboardSidebarPanelSides: dashboardUi.panelSides,
+    },
+    dashboardUi
+  );
+  const shell = document.getElementById('app-shell');
+  if (shell) shell.dataset.sidebarMode = preset.sidebarMode;
+  document.querySelectorAll('[data-sidebar-mode]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.sidebarMode === preset.sidebarMode);
+  });
+  document.querySelectorAll('[data-ui-mode-preset]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.uiModePreset === preset.uiMode);
+  });
+  syncLayoutPresetButtons();
+  if (layoutSettingsHydrated) scheduleSaveLayoutSettings();
 }
 
 function readLayoutPatchFromUI() {
@@ -519,59 +636,31 @@ function readLayoutPatchFromUI() {
     dashboardSidebarLayout: dashboardUi.sidebarMode,
     dashboardSidebarPanels: { ...dashboardUi.panels },
     dashboardSidebarPanelOrder: [...dashboardUi.panelOrder],
+    dashboardSidebarPanelSides: { ...dashboardUi.panelSides },
   };
 }
 
 const scheduleSaveLayoutSettings = debounce(() => {
   if (!layoutSettingsHydrated || preferencesSaveAvailable === false) return;
-  patchPreferencesApi(readLayoutPatchFromUI())
+  const layoutBeforeSave = readLayoutPatchFromUI();
+  patchPreferencesApi(layoutBeforeSave)
     .then((res) => {
-      if (res.ui) applyDashboardUiFromPreferences(res.preferences, res.ui);
-      else if (res.preferences) applyDashboardUiFromPreferences(res.preferences);
+      const prefs = { ...(res.preferences || {}) };
+      const uiFromApi = res.ui ? { ...res.ui } : {};
+      if (!prefs.dashboardSidebarPanelSides && layoutBeforeSave.dashboardSidebarPanelSides) {
+        prefs.dashboardSidebarPanelSides = layoutBeforeSave.dashboardSidebarPanelSides;
+      }
+      if (!uiFromApi.panelSides && layoutBeforeSave.dashboardSidebarPanelSides) {
+        uiFromApi.panelSides = layoutBeforeSave.dashboardSidebarPanelSides;
+      }
+      if (res.ui) applyDashboardUiFromPreferences(prefs, uiFromApi);
+      else if (res.preferences) applyDashboardUiFromPreferences(prefs);
       flashSettingsSaved();
     })
     .catch((e) => {
       setSettingsHint(e.message || 'Ошибка сохранения интерфейса', 'err');
     });
 }, 600);
-
-function applyLayoutPreset(name) {
-  const presets = {
-    simple: {
-      uiMode: UI_MODES.simple,
-      sidebarMode: 'compact',
-      panels: defaultPanelsForMode(UI_MODES.simple),
-    },
-    standard: {
-      uiMode: UI_MODES.expert,
-      sidebarMode: 'full',
-      panels: {
-        ...defaultPanelsForMode(UI_MODES.expert),
-        kpi: true,
-      },
-    },
-    expert: {
-      uiMode: UI_MODES.expert,
-      sidebarMode: 'full',
-      panels: Object.fromEntries(Object.keys(SIDEBAR_PANELS).map((k) => [k, true])),
-    },
-  };
-  const p = presets[name];
-  if (!p) return;
-  dashboardUi = { ...dashboardUi, ...p, panelOrder: [...SIDEBAR_PANEL_ORDER_DEFAULT] };
-  applyDashboardUiFromPreferences(
-    {
-      dashboardUiMode: p.uiMode,
-      dashboardSidebarLayout: p.sidebarMode,
-      dashboardSidebarPanels: p.panels,
-    },
-    dashboardUi
-  );
-  document.querySelectorAll('[data-layout-preset]').forEach((b) => {
-    b.classList.toggle('active', b.dataset.layoutPreset === name);
-  });
-  if (layoutSettingsHydrated) scheduleSaveLayoutSettings();
-}
 
 function readSettingsPatchFromUI() {
   /** @type {Record<string, number>} */
@@ -644,8 +733,16 @@ async function saveSettingsFromUI() {
   const patch = readSettingsPatchFromUI();
   try {
     const res = await patchPreferencesApi(patch);
+    const prefs = { ...(res.preferences || {}) };
+    const uiFromApi = res.ui ? { ...res.ui } : {};
+    if (!prefs.dashboardSidebarPanelSides && patch.dashboardSidebarPanelSides) {
+      prefs.dashboardSidebarPanelSides = patch.dashboardSidebarPanelSides;
+    }
+    if (!uiFromApi.panelSides && patch.dashboardSidebarPanelSides) {
+      uiFromApi.panelSides = patch.dashboardSidebarPanelSides;
+    }
     if (res.preferences) applyPreferencesToSettingsUI(res.preferences, prefBounds);
-    if (res.ui) applyDashboardUiFromPreferences(res.preferences, res.ui);
+    applyDashboardUiFromPreferences(prefs, res.ui ? uiFromApi : undefined);
     if (res.applyRates) renderApplyRateMeters(res.applyRates);
     flashSettingsSaved();
     if (currentScoreBand !== 'all') load({ preserveScroll: true });
@@ -674,7 +771,7 @@ async function loadDashboardSettings() {
     const fromGet = data.apiFeatures?.preferencesSave === true;
     preferencesSaveAvailable = fromGet || (await probePreferencesSaveApi());
     applyPreferencesToSettingsUI(data.preferences, data.bounds);
-    if (data.ui) applyDashboardUiFromPreferences(data.preferences, data.ui);
+    applyDashboardUiFromPreferences(data.preferences, data.ui);
     if (data.applyRates) renderApplyRateMeters(data.applyRates);
     applyProfileOptionsToSettingsUI(data);
     if (!preferencesSaveAvailable) {
@@ -689,10 +786,10 @@ async function loadDashboardSettings() {
 function updateScoreBandTabLabels() {
   const t = scoreThreshold;
   document.querySelectorAll('.tab-band[data-band="high"]').forEach((el) => {
-    el.textContent = `Авто ≥${t}`;
+    el.textContent = `${COPY.tabRecommended} ≥${t}`;
   });
   document.querySelectorAll('.tab-band[data-band="low"]').forEach((el) => {
-    el.textContent = `<${t}`;
+    el.textContent = `${COPY.tabBelowThreshold} <${t}`;
   });
   const autoBtn = document.getElementById('btn-batch-auto');
   if (autoBtn) autoBtn.textContent = `${COPY.batchAuto} (≥${t})`;
@@ -814,15 +911,36 @@ function showToast(message, variant = 'neutral') {
   setTimeout(hide, 2600);
 }
 
+function formatFetchError(err, path) {
+  const msg = err?.message || String(err);
+  if (msg === 'Failed to fetch' || /failed to fetch/i.test(msg)) {
+    return (
+      'Нет связи с дашбордом. Запустите в терминале: npm run dashboard\n' +
+      'и откройте http://127.0.0.1:3849 (не file://).'
+    );
+  }
+  if (/loadDevOpsEnv|ReferenceError/i.test(msg)) {
+    return 'Ошибка сервера при запуске поиска — обновите код и перезапустите npm run dashboard';
+  }
+  return msg;
+}
+
 async function api(path, opts = {}) {
   const url =
     typeof path === 'string' && path.startsWith('/')
       ? new URL(path, window.location.origin).toString()
       : path;
-  const r = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...opts.headers },
-    ...opts,
-  });
+  let r;
+  try {
+    r = await fetch(url, {
+      headers: { 'Content-Type': 'application/json', ...opts.headers },
+      ...opts,
+    });
+  } catch (err) {
+    const e = new Error(formatFetchError(err, path));
+    e.cause = err;
+    throw e;
+  }
   const text = await r.text();
   let data;
   try {
@@ -1093,7 +1211,7 @@ function renderQuestionnaireModalBody(modal, item) {
 
   const parts = [];
   if (q.answersGeneratedAt) {
-    parts.push(`LLM: ${q.answersModel || '—'} · ${new Date(q.answersGeneratedAt).toLocaleString('ru-RU')}`);
+    parts.push(`Модель: ${q.answersModel || '—'} · ${new Date(q.answersGeneratedAt).toLocaleString('ru-RU')}`);
   }
   if (q.probedAt) parts.push(`с hh.ru: ${new Date(q.probedAt).toLocaleString('ru-RU')}`);
   if (meta) meta.textContent = parts.join(' · ');
@@ -1383,7 +1501,7 @@ function renderBatchReportModal(report) {
     ? new Date(report.finishedAt).toLocaleString('ru-RU')
     : '—';
   if (summaryEl) {
-    summaryEl.innerHTML = `<p class="batch-report-meta">Завершено ${escapeHtml(when)} · scope: ${escapeHtml(report.batchScope || '—')}</p>`;
+    summaryEl.innerHTML = `<p class="batch-report-meta">Завершено ${escapeHtml(when)} · раздел: ${escapeHtml(batchScopeLabel(report.batchScope) || report.batchScope || '—')}</p>`;
   }
 
   const metrics = [
@@ -1459,6 +1577,12 @@ async function openBatchReportModal() {
   }
 }
 
+function normalizeSettingsTab(tabId) {
+  const t = String(tabId || 'apply').trim();
+  if (t === 'list' || t === 'ui') return 'appearance';
+  return t === 'appearance' || t === 'apply' ? t : 'apply';
+}
+
 function initOnboardingPanel(st) {
   const panel = document.getElementById('onboarding-panel');
   const stepsEl = document.getElementById('onboarding-steps');
@@ -1472,10 +1596,34 @@ function initOnboardingPanel(st) {
   const applied = stats.applied ?? 0;
   const rhOk = st?.routingHealth?.ok !== false;
   const steps = [
-    { done: rhOk, text: COPY.onboardingStepResume },
-    { done: queueTotal > 0, text: COPY.onboardingStepHarvest },
-    { done: applied > 0, text: COPY.onboardingStepApply },
-    { done: applied >= 3, text: COPY.onboardingStepSync },
+    {
+      num: 1,
+      done: rhOk,
+      text: COPY.onboardingStepResume,
+      cta: COPY.onboardingCtaSettings,
+      action: 'settings-profile',
+    },
+    {
+      num: 2,
+      done: queueTotal > 0,
+      text: COPY.onboardingStepHarvest,
+      cta: COPY.onboardingCtaHarvest,
+      action: 'harvest',
+    },
+    {
+      num: 3,
+      done: applied > 0,
+      text: COPY.onboardingStepApply,
+      cta: COPY.onboardingCtaQueue,
+      action: 'view-queue',
+    },
+    {
+      num: 4,
+      done: applied >= 3,
+      text: COPY.onboardingStepSync,
+      cta: COPY.onboardingCtaRoutine,
+      action: 'routine',
+    },
   ];
   if (steps.every((s) => s.done)) {
     panel.hidden = true;
@@ -1502,12 +1650,22 @@ function initOnboardingPanel(st) {
     track.setAttribute('aria-valuenow', String(pct));
     track.setAttribute('aria-label', `${doneCount} из ${steps.length} шагов`);
   }
-  if (label) label.textContent = `${doneCount}/${steps.length}`;
+  if (label) label.textContent = `Шаг ${doneCount} из ${steps.length}`;
   stepsEl.replaceChildren(
     ...steps.map((s) => {
       const li = document.createElement('li');
       li.className = s.done ? 'onboarding-step onboarding-step--done' : 'onboarding-step';
-      li.textContent = s.text;
+      li.innerHTML =
+        `<span class="onboarding-step__num" aria-hidden="true">${s.num}</span>` +
+        `<div class="onboarding-step__body">` +
+        `<span class="onboarding-step__text">${escapeHtml(s.text)}</span>` +
+        (s.done ? '' : `<button type="button" class="btn btn-ghost btn-sm onboarding-step__cta">${escapeHtml(s.cta)}</button>`) +
+        `</div>`;
+      if (!s.done) {
+        li.querySelector('.onboarding-step__cta')?.addEventListener('click', () => {
+          runOnboardingAction(s.action);
+        });
+      }
       return li;
     })
   );
@@ -1518,6 +1676,25 @@ function initOnboardingPanel(st) {
       localStorage.setItem('hh-dashboard-onboarding-dismissed', '1');
       panel.hidden = true;
     });
+  }
+}
+
+function runOnboardingAction(action) {
+  switch (action) {
+    case 'settings-profile':
+      openDashboardSettings('apply', { focusId: 'settings-profile-card' });
+      break;
+    case 'harvest':
+      document.getElementById('btn-run-harvest')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      break;
+    case 'view-queue':
+      applyViewTabsEl?.querySelector('[data-apply-view="queue"]')?.click();
+      break;
+    case 'routine':
+      document.getElementById('btn-daily-routine')?.click();
+      break;
+    default:
+      break;
   }
 }
 
@@ -2197,13 +2374,18 @@ function renderCard(item, options = {}) {
   a.href = item.url;
   a.textContent = item.title || item.url;
 
-  const density = options.forceDensity ?? readCardDensityMode();
+  const cardLayout = inModal
+    ? 'expanded'
+    : normalizeCardLayout(document.documentElement.dataset.cardLayout || 'expanded');
+  const density =
+    options.forceDensity ?? (cardLayout === 'tile-medium' ? 'medium' : readCardDensityMode());
   node.classList.add(`card--density-${density}`);
   if (inModal) {
     node.classList.add('card--in-modal', 'card--layout-expanded');
-  } else {
-    const layout = document.documentElement.dataset.cardLayout || 'expanded';
-    if (layout === 'expanded') node.classList.add('card--layout-expanded');
+  } else if (cardLayout === 'tile-medium') {
+    node.classList.add('card--layout-medium');
+  } else if (cardLayout === 'expanded') {
+    node.classList.add('card--layout-expanded');
   }
   const metaCompact = node.querySelector('.meta--compact');
   const metaDetail = node.querySelector('.card-meta-detail');
@@ -2915,6 +3097,7 @@ function syncApplyViewTabs() {
     b.classList.toggle('active', b.dataset.applyView === currentApplyView);
   });
   syncDockMiniActiveView(currentApplyView);
+  window.dispatchEvent(new CustomEvent('hh-apply-view-change', { detail: { view: currentApplyView } }));
   const hideQueueFilters =
     currentApplyView === 'applied' ||
     currentApplyView === 'questionnaire' ||
@@ -2946,13 +3129,13 @@ function syncApplyViewTabs() {
   if (contextBar) contextBar.hidden = !onApplied && !onQ;
 }
 
-const APPLY_VIEW_TAB_LABELS = {
-  queue: 'Очередь',
-  noQuestionnaire: 'Без анк.',
-  questionnaire: 'Анкета',
-  applied: 'Отклики',
-  hidden: 'Скрытые',
-  deferred: 'Отлож.',
+const APPLY_VIEW_COPY_KEYS = {
+  queue: 'navQueue',
+  noQuestionnaire: 'navNoQuestionnaire',
+  questionnaire: 'navQuestionnaire',
+  applied: 'navApplied',
+  hidden: 'navHidden',
+  deferred: 'navDeferred',
 };
 
 function updateApplyViewTabCounts(counts) {
@@ -2967,9 +3150,11 @@ function updateApplyViewTabCounts(counts) {
   };
   applyViewTabsEl.querySelectorAll('.tab[data-apply-view]').forEach((btn) => {
     const view = btn.dataset.applyView;
-    const base = APPLY_VIEW_TAB_LABELS[view] || view;
+    const copyKey = APPLY_VIEW_COPY_KEYS[view];
+    const base = (copyKey && COPY[copyKey]) || btn.getAttribute('data-copy') || view;
     const n = map[view];
-    btn.textContent = n != null && Number(n) > 0 ? `${base} (${n})` : base;
+    btn.textContent = typeof n === 'number' && Number.isFinite(n) ? `${base} (${n})` : base;
+    if (copyKey) btn.dataset.copy = copyKey;
   });
 }
 
@@ -4468,7 +4653,7 @@ async function runServiceAction(action, triggerEl) {
       case 'sync-resume-from-source':
         if (
           !confirm(
-            'Синхронизировать резюме с эталона (техподдержка L2/L3)?\n\n' +
+            'Синхронизировать резюме с эталона (техподдержка)?\n\n' +
               'Заполнит «О себе» и описание опыта на DevOps и других вариантах, если они пустее эталона.\n\n' +
               'Откроется Chromium. Нужен config/resume-variants.json с hash.'
           )
@@ -4724,7 +4909,7 @@ document.getElementById('btn-run-harvest')?.addEventListener('click', async () =
       }
     }, 4000);
   } catch (e) {
-    alert(e.message);
+    showToast(e.message, 'bad');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -4881,7 +5066,10 @@ function initTopCtaBar() {
 }
 
 function initLayoutSettingsUi() {
-  renderSidebarPanelToggles();
+  initSidebarBuilderHooks();
+  document.getElementById('btn-reset-panel-order')?.addEventListener('click', () => {
+    applyLayoutPreset('standard');
+  });
   document.querySelectorAll('[data-ui-mode-preset]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const mode = btn.dataset.uiModePreset === UI_MODES.expert ? UI_MODES.expert : UI_MODES.simple;
@@ -4896,6 +5084,7 @@ function initLayoutSettingsUi() {
       document.querySelectorAll('[data-ui-mode-preset]').forEach((b) => {
         b.classList.toggle('active', b.dataset.uiModePreset === mode);
       });
+      syncLayoutPresetButtons();
       if (layoutSettingsHydrated) scheduleSaveLayoutSettings();
     });
   });
@@ -4949,12 +5138,11 @@ function initCrmUi() {
   const settingsTabBtns = settingsModal?.querySelectorAll('[data-settings-tab]') || [];
   const settingsPanels = {
     apply: document.getElementById('settings-panel-apply'),
-    list: document.getElementById('settings-panel-list'),
-    ui: document.getElementById('settings-panel-ui'),
+    appearance: document.getElementById('settings-panel-appearance'),
   };
 
   function setSettingsTab(tabId) {
-    const id = tabId || 'apply';
+    const id = normalizeSettingsTab(tabId);
     try {
       sessionStorage.setItem('hh-settings-tab', id);
     } catch {
@@ -4991,6 +5179,17 @@ function initCrmUi() {
   initTopCtaBar();
   initLayoutSettingsUi();
   initWorkspaceDocks();
+  initMobileShell({
+    onDesktopRefresh: () => {
+      window.dispatchEvent(new CustomEvent('hh-docks-refresh'));
+    },
+  });
+  initWorkflowNav({
+    getApplyView: () => currentApplyView,
+    onApplyView: (view) => {
+      applyViewTabsEl?.querySelector(`[data-apply-view="${view}"]`)?.click();
+    },
+  });
 }
 
 function closeServiceDrawer() {

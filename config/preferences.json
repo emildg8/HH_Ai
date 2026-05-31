@@ -108,7 +108,7 @@
   "dashboardUiMode": "expert",
   "dashboardSidebarLayout": "full",
   "dashboardSidebarPanels": {
-    "brand": true,
+    "brand": false,
     "status": true,
     "actionsPrimary": true,
     "harvestPeriod": true,
@@ -120,15 +120,28 @@
     "jobFooter": true
   },
   "dashboardSidebarPanelOrder": [
-    "brand",
     "status",
     "actionsPrimary",
     "harvestPeriod",
     "nav",
-    "quickSync",
     "filters",
-    "serviceLink",
+    "quickSync",
     "kpi",
-    "jobFooter"
-  ]
+    "jobFooter",
+    "brand",
+    "serviceLink"
+  ],
+  "dashboardSidebarPanelSides": {
+    "brand": "left",
+    "status": "left",
+    "onboard": "left",
+    "actionsPrimary": "left",
+    "harvestPeriod": "left",
+    "nav": "left",
+    "quickSync": "left",
+    "filters": "left",
+    "serviceLink": "left",
+    "kpi": "right",
+    "jobFooter": "right"
+  }
 }

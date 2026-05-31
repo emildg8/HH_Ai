@@ -42,6 +42,16 @@ export function getVacancyDetailId() {
   return currentId;
 }
 
+/** Подсветка строки/плитки в списке при открытой модалке. */
+export function syncVacancyListActive(activeId) {
+  document.querySelectorAll('#list .card-tile[data-record-id]').forEach((el) => {
+    el.classList.toggle('card-tile--active', Boolean(activeId && el.dataset.recordId === activeId));
+  });
+  document.querySelectorAll('#list .card[data-record-id]').forEach((el) => {
+    el.classList.toggle('card--active', Boolean(activeId && el.dataset.recordId === activeId));
+  });
+}
+
 export function configureVacancyDetailNav({ getItems, renderCard }) {
   if (typeof getItems === 'function') getNavItems = getItems;
   if (typeof renderCard === 'function') renderFullCard = renderCard;
@@ -178,6 +188,8 @@ export function openVacancyDetail(item, renderCard, opts = {}) {
 
   setVacancyDetailFullscreen(vacancyDetailFullscreen);
 
+  syncVacancyListActive(item.id);
+
   const firstOpen = !opts.preserveModal;
   if (firstOpen) openModalEl(modal);
   scrollListItemIntoView(item.id);
@@ -191,6 +203,7 @@ export function closeVacancyDetail() {
   document.getElementById('vacancy-detail-body')?.replaceChildren();
   syncNavCounter([], -1);
   currentId = null;
+  syncVacancyListActive(null);
 }
 
 export function initVacancyDetailModal({ onClose } = {}) {

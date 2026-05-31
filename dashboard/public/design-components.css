@@ -262,7 +262,7 @@ kbd.ds-kbd {
 /* --- Card keyboard focus --- */
 .card:focus-visible,
 .card-tile:focus-visible,
-.card-tile__open:focus-visible {
+.card-tile__hit:focus-visible {
   outline: none;
   box-shadow: var(--ds-focus-ring);
 }

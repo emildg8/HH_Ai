@@ -115,8 +115,18 @@ body {
   gap: 0.3rem;
 }
 
-#dock-left .crm-action-grid .btn-batch-manual {
+#dock-left .crm-action-grid .btn-batch-manual,
+#dock-left .crm-action-grid .btn-open-service-alt {
   grid-column: 1 / -1;
+}
+
+#dock-left .crm-action-grid .btn {
+  font-size: 0.72rem;
+  padding: 0.4rem 0.45rem;
+  text-align: center;
+  justify-content: center;
+  line-height: 1.25;
+  width: 100%;
 }
 
 #dock-left .btn-routine-hero {
@@ -136,10 +146,6 @@ body {
   min-width: 0;
   font-size: 0.68rem;
   padding: 0.35rem 0.25rem;
-}
-
-#dock-left .sidebar-quick__grid {
-  grid-template-columns: 1fr 1fr;
 }
 
 #dock-left .sidebar-filters .segmented {
@@ -172,7 +178,11 @@ body {
 }
 
 .card-size-toolbar {
-  padding: 0.15rem;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.35rem;
   background: var(--panel-bg-elevated);
   border: 1px solid var(--panel-border);
   border-radius: 9px;
@@ -326,22 +336,6 @@ body {
 
 #dock-left .btn-ghost {
   font-size: 0.68rem;
-}
-
-.card-size-toolbar {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.card-size-toolbar__label {
-  display: inline;
-  font-size: 0.65rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  padding-left: 0.25rem;
 }
 
 .list-count--toolbar {

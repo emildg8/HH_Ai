@@ -75,7 +75,7 @@ async function main() {
   await page.locator('[data-apply-view="questionnaire"]').click();
   await page.locator('[data-apply-view="queue"]').click();
 
-  await openSettingsTab(page, 'list');
+  await openSettingsTab(page, 'appearance');
   await page.locator('#filter-reset').click();
   await closeSettingsModal(page);
 
@@ -129,7 +129,9 @@ async function main() {
     await waitModalHidden(page, 'approved-letter-modal');
   }
 
-  await openSettingsTab(page, 'ui');
+  await openSettingsTab(page, 'appearance');
+  await page.locator('[data-ui-mode-preset="expert"]').click();
+  await page.waitForTimeout(150);
 
   for (const preset of ['0.85', '1', '1.15']) {
     await page.locator(`[data-ui-scale-preset="${preset}"]`).click();
@@ -183,17 +185,76 @@ async function main() {
   }
   if (!listMode.hasTile) errors.push('краткий режим: нет плиток .card-tile');
   if (!listMode.title) errors.push('краткий режим: нет заголовка на плитке');
-  if (listMode.listDisplay !== 'grid') {
-    errors.push(`краткий режим: список должен быть grid, got ${listMode.listDisplay}`);
+  if (listMode.listDisplay !== 'flex') {
+    errors.push(`краткий режим: список должен быть flex (колонка строк), got ${listMode.listDisplay}`);
   }
 
-  const tileOpen = page.locator('#list .card-tile__open').first();
+  await page.locator('.card-size-toolbar [data-card-size-preset="medium"]').click();
+  await page.waitForTimeout(350);
+  const mediumMode = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('#list .card.card--layout-medium')].slice(0, 4);
+    const card = cards[0];
+    const cs = (el) => (el ? getComputedStyle(el) : null);
+    const cardCs = cs(card);
+    const bodyCs = cs(card?.querySelector('.card-body'));
+    const footCs = cs(card?.querySelector('.card-foot--v4'));
+    const footRows = new Map();
+    for (const c of cards) {
+      const rowKey = Math.round(c.getBoundingClientRect().top / 12);
+      if (!footRows.has(rowKey)) footRows.set(rowKey, []);
+      footRows.get(rowKey).push(c);
+    }
+    let footAlignedInRow = true;
+    for (const rowCards of footRows.values()) {
+      if (rowCards.length < 2) continue;
+      const tops = rowCards.map(
+        (c) => c.querySelector('.card-foot--v4')?.getBoundingClientRect().top ?? 0
+      );
+      if (Math.max(...tops) - Math.min(...tops) > 6) footAlignedInRow = false;
+    }
+    return {
+      layout: document.documentElement.dataset.cardLayout,
+      listDisplay: getComputedStyle(document.getElementById('list')).display,
+      hasCard: !!card,
+      title: card?.querySelector('.title-link')?.textContent?.trim().length > 0,
+      hasApply: !!card?.querySelector('.btn-apply-auto'),
+      hasDecision: !!card?.querySelector('.btn-approve'),
+      bodyFlex: bodyCs?.flexGrow === '1' || bodyCs?.flex === '1 1 auto',
+      footPanel: !!card?.querySelector('.card-foot--v4'),
+      widthSliderInSettings: !!document.querySelector('#card-col-w-range'),
+      widthSliderNotInToolbar: !document.querySelector('#card-col-w-toolbar'),
+      footAlignedInRow,
+    };
+  });
+  if (mediumMode.layout !== 'tile-medium') {
+    errors.push(`средний режим: ожидали layout=tile-medium, got ${mediumMode.layout}`);
+  }
+  if (mediumMode.listDisplay !== 'grid') {
+    errors.push(`средний режим: список должен быть grid, got ${mediumMode.listDisplay}`);
+  }
+  if (!mediumMode.hasCard) errors.push('средний режим: нет .card.card--layout-medium');
+  if (!mediumMode.title) errors.push('средний режим: нет заголовка на карточке');
+  if (!mediumMode.hasApply) errors.push('средний режим: нет кнопки авто-отклика');
+  if (!mediumMode.hasDecision) errors.push('средний режим: нет блока решения');
+  if (!mediumMode.footPanel) errors.push('средний режим: нет .card-foot--v4');
+  if (!mediumMode.bodyFlex) errors.push('средний режим: card-body не flex-grow (футер не прижат)');
+  if (!mediumMode.footAlignedInRow) {
+    errors.push('средний режим: футеры в ряду не выровнены по вертикали');
+  }
+  if (!mediumMode.widthSliderInSettings) {
+    errors.push('средний режим: ползунок ширины не в настройках');
+  }
+  if (!mediumMode.widthSliderNotInToolbar) {
+    errors.push('средний режим: ползунок ширины не должен быть в тулбаре');
+  }
+
+  const tileOpen = page.locator('#list .card-tile__hit').first();
   if ((await tileOpen.count()) > 0) {
     await tileOpen.scrollIntoViewIfNeeded();
     try {
       await tileOpen.click({ timeout: 8000 });
     } catch {
-      await page.evaluate(() => document.querySelector('#list .card-tile__open')?.click());
+      await page.evaluate(() => document.querySelector('#list .card-tile__hit')?.click());
     }
     await waitModalOpen(page, 'vacancy-detail-modal');
     const detailOk = await page.evaluate(
@@ -218,7 +279,7 @@ async function main() {
   if (fullMode.listDisplay !== 'flex') {
     errors.push(`полный режим: список должен быть flex, got ${fullMode.listDisplay}`);
   }
-  await openSettingsTab(page, 'ui');
+  await openSettingsTab(page, 'appearance');
   await setTextAmount(85);
   await page.waitForTimeout(120);
   const fullText = await page.evaluate(() => {
@@ -342,7 +403,12 @@ async function main() {
     cardLayout: document.documentElement.dataset.cardLayout,
     listDisplay: getComputedStyle(document.getElementById('list')).display,
   }));
-  const expectListDisplay = listLayout.cardLayout === 'expanded' ? 'flex' : 'grid';
+  const expectListDisplay =
+    listLayout.cardLayout === 'tile-medium'
+      ? 'grid'
+      : listLayout.cardLayout === 'tile-compact' || listLayout.cardLayout === 'expanded'
+        ? 'flex'
+        : 'flex';
   if (listLayout.listDisplay !== expectListDisplay) {
     errors.push(
       `список (${listLayout.cardLayout}): ожидали display=${expectListDisplay}, got ${listLayout.listDisplay}`

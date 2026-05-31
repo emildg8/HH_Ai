@@ -662,27 +662,7 @@ body.workspace-resizing * {
   padding: 0.28rem 0.35rem;
 }
 
-.sidebar-quick {
-  padding: 0.35rem 0.4rem;
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-}
-
-.sidebar-quick__grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.2rem;
-  margin-bottom: 0.2rem;
-}
-
-.sidebar-quick__btn {
-  font-size: 0.6rem;
-  padding: 0.32rem 0.25rem;
-  justify-content: center;
-  text-align: center;
-  line-height: 1.2;
-}
+/* Синхронизация: те же классы, что у блока «Действия» (crm-actions-primary / crm-action-grid) */
 
 .btn-open-service-alt {
   font-size: 0.62rem;
@@ -1171,8 +1151,31 @@ html[data-card-size='full'] #list .card {
   display: none !important;
 }
 
-.sidebar-filters__row .segmented {
+.sidebar-filters__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
   width: 100%;
+}
+
+.sidebar-filters__group {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.1rem;
+  width: 100%;
+}
+
+.sidebar-filters__group .seg-btn {
+  flex: 1 1 calc(33.333% - 0.12rem);
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.15;
+  overflow: hidden;
+  word-break: break-word;
+  text-align: center;
+  font-size: 0.56rem;
+  padding: 0.26rem 0.1rem;
 }
 
 .crm-seg-tight {
@@ -1780,13 +1783,8 @@ html[data-card-size='full'] #list .card {
 
 .crm-action-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 0.25rem;
-}
-
-.crm-action-grid .btn {
-  font-size: 0.62rem;
-  padding: 0.35rem 0.2rem;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
 }
 
 .harvest-period-field {

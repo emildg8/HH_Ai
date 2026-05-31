@@ -22,16 +22,16 @@ export const CARD_SIZE_PRESETS = {
     layout: 'tile-compact',
     colW: 40,
     minH: 0,
-    textAmount: 18,
-    fontScale: 96,
+    textAmount: 15,
+    fontScale: 98,
   },
   medium: {
     id: 'medium',
     label: 'Средний',
     layout: 'tile-medium',
-    colW: 40,
+    colW: 30,
     minH: 0,
-    textAmount: 50,
+    textAmount: 55,
     fontScale: 100,
   },
   full: {
@@ -55,8 +55,7 @@ export function normalizeCardLayout(layout) {
 }
 
 export function isTileBrowseLayout(layout) {
-  const v = normalizeCardLayout(layout);
-  return v === 'tile-compact' || v === 'tile-medium';
+  return normalizeCardLayout(layout) === 'tile-compact';
 }
 
 /** @param {string} layout */
@@ -66,9 +65,9 @@ export function applyCardLayout(layout) {
   const list = document.getElementById('list');
   if (!list) return;
   list.dataset.cardLayout = v;
-  const tiles = isTileBrowseLayout(v);
-  list.classList.toggle('vacancy-grid--tiles', tiles);
-  list.classList.toggle('vacancy-grid--expanded', !tiles);
+  list.classList.toggle('vacancy-grid--tiles', v === 'tile-compact');
+  list.classList.toggle('vacancy-grid--expanded', v === 'expanded');
+  list.classList.toggle('vacancy-grid--medium', v === 'tile-medium');
 }
 
 export function layoutForDensity(density) {
@@ -331,6 +330,7 @@ export function applyCardTuningFlash(tuning) {
   applyCardLayout(cardLayoutForTuning(t));
   if (t.sizePreset) root.dataset.cardSize = t.sizePreset;
   root.dataset.cardTextAmount = String(t.textAmount);
+  applyTileStyle(readTileStyle());
 }
 
 function initCardSizePresetControls() {

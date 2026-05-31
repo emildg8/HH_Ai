@@ -67,14 +67,15 @@
     <link rel="stylesheet" href="/style.css?v=20260528layoutfix1" />
     <link rel="stylesheet" href="/design-tokens.css?v=20260529ds1" />
     <link rel="stylesheet" href="/design-components.css?v=20260529ds1" />
-    <link rel="stylesheet" href="/dashboard-shell.css?v=20260529fix1" />
-    <link rel="stylesheet" href="/dashboard-cards.css?v=20260529tiles1" />
-    <link rel="stylesheet" href="/dashboard-card-tiles.css?v=20260529vdfluid1" />
+    <link rel="stylesheet" href="/dashboard-shell.css?v=20260531w1" />
+    <link rel="stylesheet" href="/dashboard-cards.css?v=20260531med5" />
+    <link rel="stylesheet" href="/dashboard-card-tiles.css?v=20260531qc5" />
     <link rel="stylesheet" href="/dashboard-icons.css?v=20260529p2" />
     <link rel="stylesheet" href="/dashboard-light-polish.css?v=20260529p2" />
+    <link rel="stylesheet" href="/dashboard-v4.css?v=20260530v4p10" />
   </head>
   <body>
-    <div id="app-shell" class="app crm-layout workspace-shell" aria-label="HH Ai — дашборд откликов">
+    <div id="app-shell" class="app crm-layout workspace-shell workspace-shell--v4" aria-label="HH Ai — дашборд откликов">
       <header class="workspace-menubar" aria-label="Главное меню">
         <button
           type="button"
@@ -86,19 +87,34 @@
           <span class="brand-mark" aria-hidden="true">HH</span>
           <span class="brand-text">
             <span class="brand-title">HH Ai</span>
+            <span class="brand-subtitle ui-expert-only">Поиск · отклики · воронка</span>
           </span>
         </button>
+        <nav class="workflow-nav" aria-label="Шаги работы">
+          <button type="button" class="workflow-nav__step workflow-nav__step--active" data-workflow="find" data-tip="Поиск новых вакансий на hh.ru">
+            <span class="workflow-nav__num">1</span><span class="workflow-nav__label">Найти</span>
+          </button>
+          <button type="button" class="workflow-nav__step" data-workflow="review" data-tip="Очередь на проверку">
+            <span class="workflow-nav__num">2</span><span class="workflow-nav__label">Разобрать</span>
+          </button>
+          <button type="button" class="workflow-nav__step" data-workflow="apply" data-tip="Серия авто-откликов">
+            <span class="workflow-nav__num">3</span><span class="workflow-nav__label">Откликнуться</span>
+          </button>
+          <button type="button" class="workflow-nav__step" data-workflow="track" data-tip="Отправленные отклики">
+            <span class="workflow-nav__num">4</span><span class="workflow-nav__label">Следить</span>
+          </button>
+        </nav>
         <nav class="workspace-menubar__nav" aria-label="Действия">
           <button type="button" class="btn btn-ghost btn-sm" id="btn-daily-routine-menubar" data-tip="Синхронизация откликов, кэш и чаты" data-copy="dailyRoutine">Утренний цикл</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btn-run-harvest-menubar" data-tip="Поиск вакансий на hh.ru" data-copy="harvest">Поиск</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btn-batch-auto-menubar" data-tip="Серия откликов ≥ порога" data-copy="batchAuto">Авто</button>
-          <button type="button" class="btn btn-ghost btn-sm ui-expert-only" id="btn-batch-manual-menubar" data-tip="Серия &lt; порога" data-copy="batchManual">Ручн.</button>
+          <button type="button" class="btn btn-ghost btn-sm ui-expert-only" id="btn-batch-manual-menubar" data-tip="Серия откликов ниже порога" data-copy="batchManual">Вручную</button>
         </nav>
         <div class="workspace-menubar__spacer" aria-hidden="true"></div>
         <div class="workspace-menubar__tools">
           <button type="button" class="workspace-menubar__dock-toggle" data-dock-toggle="left" aria-pressed="true" title="Левая панель (управление)" aria-label="Левая панель"><span class="ui-icon dock-mini__icon--panel" aria-hidden="true"></span></button>
           <button type="button" class="workspace-menubar__dock-toggle" data-dock-toggle="right" aria-pressed="true" title="Правая панель (сводка)" aria-label="Правая панель"><span class="ui-icon dock-mini__icon--panel dock-mini__icon--panel-flip" aria-hidden="true"></span></button>
-          <button type="button" class="btn btn-ghost btn-sm ui-expert-only" id="btn-open-service" data-tip="Подъём резюме, синхронизация, пакеты" data-copy="openService">Сервис</button>
+          <button type="button" class="btn btn-ghost btn-sm ui-expert-only" id="btn-open-service" data-tip="Подъём резюме, синхронизация, пакеты" data-copy="openService">Дополнительно</button>
           <button type="button" class="btn btn-ghost btn-sm btn-settings" id="btn-open-settings" data-tip="Лимиты, интерфейс, карточки" data-copy="openSettings">Настройки</button>
           <button type="button" class="btn btn-ghost btn-sm btn-shortcuts-hint" id="btn-open-shortcuts" title="Горячие клавиши (?)" aria-label="Горячие клавиши"><kbd class="ds-kbd">?</kbd></button>
           <button type="button" class="btn btn-ghost btn-sm btn-log-apply" data-tip="Журнал действий" data-copy="openLog">Журнал</button>
@@ -148,7 +164,7 @@
             </button>
           </nav>
           <header class="dock__chrome dock__chrome--expanded">
-            <span class="dock__title">Управление</span>
+            <span class="dock__title">Меню</span>
             <div class="dock__actions">
               <div class="segmented sidebar-mode-toggle crm-seg-tight ui-expert-only" role="tablist" aria-label="Плотность панели">
                 <button type="button" class="seg-btn active" data-sidebar-mode="full">+</button>
@@ -165,12 +181,15 @@
           <div class="sidebar-panel" data-panel="brand" hidden aria-hidden="true"></div>
 
           <div class="dock-section dock-section--onboard sidebar-panel" data-panel="onboard" id="onboarding-panel" hidden>
-            <div class="onboarding-card">
+            <div class="onboarding-card onboarding-wizard">
               <div class="onboarding-card__head">
-                <strong data-copy="onboardingTitle">Первые шаги</strong>
+                <div class="onboarding-card__titles">
+                  <strong data-copy="onboardingTitle">С чего начать</strong>
+                  <p class="onboarding-card__lead">4 шага до первого отклика</p>
+                </div>
                 <button type="button" class="btn btn-ghost btn-sm onboarding-dismiss" aria-label="Скрыть">×</button>
               </div>
-              <ol class="onboarding-steps" id="onboarding-steps"></ol>
+              <ol class="onboarding-steps onboarding-wizard__steps" id="onboarding-steps"></ol>
             </div>
           </div>
 
@@ -217,44 +236,42 @@
           <span class="dock-section__label">Раздел</span>
           <nav class="crm-nav sidebar-panel" data-panel="nav" aria-label="Раздел">
             <div class="segmented apply-view-tabs crm-seg crm-seg--nav" role="tablist">
-              <button type="button" data-apply-view="queue" class="tab seg-btn active">Очередь</button>
-              <button type="button" data-apply-view="noQuestionnaire" class="tab seg-btn">Без анк.</button>
-              <button type="button" data-apply-view="questionnaire" class="tab seg-btn">Анкета</button>
-              <button type="button" data-apply-view="applied" class="tab seg-btn">Отклики</button>
-              <button type="button" data-apply-view="hidden" class="tab seg-btn">Скрытые</button>
-              <button type="button" data-apply-view="deferred" class="tab seg-btn">Отлож.</button>
+              <button type="button" data-apply-view="queue" class="tab seg-btn active" data-copy="navQueue">Очередь</button>
+              <button type="button" data-apply-view="noQuestionnaire" class="tab seg-btn" data-copy="navNoQuestionnaire">Без анкет</button>
+              <button type="button" data-apply-view="questionnaire" class="tab seg-btn" data-copy="navQuestionnaire">С анкетой</button>
+              <button type="button" data-apply-view="applied" class="tab seg-btn" data-copy="navApplied">Отклики</button>
+              <button type="button" data-apply-view="hidden" class="tab seg-btn" data-copy="navHidden">Скрытые</button>
+              <button type="button" data-apply-view="deferred" class="tab seg-btn" data-copy="navDeferred">Отложенные</button>
             </div>
           </nav>
           </div>
 
           <div class="dock-section dock-section--sync">
           <span class="dock-section__label">Синхронизация</span>
-          <section class="sidebar-quick sidebar-panel sidebar-panel__expandable" data-panel="quickSync" aria-label="Быстрые действия">
-            <div class="sidebar-quick__grid">
-              <button type="button" class="btn btn-ghost btn-sm sidebar-quick__btn" data-service-action="sync-hh-responses" data-tip="Синхр. откликов и статусов с hh.ru">Отклики</button>
-              <button type="button" class="btn btn-ghost btn-sm sidebar-quick__btn" data-service-action="sync-hh-chats" data-tip="Подтянуть чаты переговоров">Чаты</button>
-              <button type="button" class="btn btn-ghost btn-sm sidebar-quick__btn" data-service-action="import-negotiations-queue" data-tip="Импорт откликов hh в очередь">Импорт</button>
-              <button type="button" class="btn btn-ghost btn-sm sidebar-quick__btn" data-service-action="sync-resume-from-source" data-tip="Синхр. резюме с эталона L2/L3">Резюме</button>
+          <section class="crm-actions-primary sidebar-panel sidebar-panel__expandable" data-panel="quickSync" aria-label="Синхронизация">
+            <div class="crm-action-grid">
+              <button type="button" class="btn btn-secondary" data-service-action="sync-hh-responses" data-copy="sidebarSyncResponses" data-tip="Синхр. откликов и статусов с hh.ru">Статусы</button>
+              <button type="button" class="btn btn-secondary" data-service-action="sync-hh-chats" data-copy="sidebarSyncChats" data-tip="Подтянуть чаты переговоров">Чаты</button>
+              <button type="button" class="btn btn-secondary" data-service-action="import-negotiations-queue" data-copy="sidebarSyncImport" data-tip="Импорт откликов hh в очередь">Импорт</button>
+              <button type="button" class="btn btn-secondary" data-service-action="sync-resume-from-source" data-copy="sidebarSyncResume" data-tip="Синхронизировать резюме с эталона">Резюме</button>
+              <button type="button" class="btn btn-ghost btn-open-service-alt sidebar-panel" data-panel="serviceLink" data-tip="Подъём резюме, проверка маршрутизации, пакеты">Дополнительно…</button>
             </div>
-            <button type="button" class="btn btn-ghost btn-block btn-open-service-alt sidebar-panel" data-panel="serviceLink" data-tip="Подъём резюме, проверка маршрутизации, пакеты">Дополнительно…</button>
           </section>
           </div>
 
           <div class="dock-section dock-section--filters">
           <span class="dock-section__label">Фильтры</span>
           <div class="sidebar-filters sidebar-panel sidebar-panel__expandable" data-panel="filters" id="sidebar-queue-filters" aria-label="Фильтры очереди">
-            <div class="sidebar-filters__row" id="panel-score-band">
-              <div class="segmented score-band-tabs crm-seg-tight" role="tablist" aria-label="Оценка">
-                <button type="button" data-band="high" class="tab tab-band seg-btn active">Авто</button>
-                <button type="button" data-band="low" class="tab tab-band seg-btn">&lt;порог</button>
-                <button type="button" data-band="all" class="tab tab-band seg-btn">Все</button>
+            <div class="segmented sidebar-filters__controls crm-seg-tight">
+              <div class="sidebar-filters__group score-band-tabs" id="panel-score-band" role="group" aria-label="Оценка">
+                <button type="button" data-band="high" class="tab tab-band seg-btn active" data-copy="tabRecommended">Рекомендуемые</button>
+                <button type="button" data-band="low" class="tab tab-band seg-btn ui-expert-only" data-copy="tabBelowThreshold">Ниже порога</button>
+                <button type="button" data-band="all" class="tab tab-band seg-btn" data-copy="tabAllScores">Все</button>
               </div>
-            </div>
-            <div class="sidebar-filters__row vacancy-tabs" id="panel-vacancy-status">
-              <div class="segmented crm-seg-tight" role="tablist" aria-label="Статус карточки">
-                <button type="button" data-status="pending" class="tab seg-btn active">Проверка</button>
-                <button type="button" data-status="approved" class="tab seg-btn">Подходят</button>
-                <button type="button" data-status="rejected" class="tab seg-btn">Отклон.</button>
+              <div class="sidebar-filters__group vacancy-tabs" id="panel-vacancy-status" role="group" aria-label="Статус карточки">
+                <button type="button" data-status="pending" class="tab seg-btn active" data-copy="tabPending">На проверке</button>
+                <button type="button" data-status="approved" class="tab seg-btn" data-copy="tabApproved">Подходят</button>
+                <button type="button" data-status="rejected" class="tab seg-btn" data-copy="tabRejected">Отклонённые</button>
               </div>
             </div>
           </div>
@@ -300,13 +317,15 @@
               <button type="button" class="seg-btn" data-applied-funnel="declined">Отказ</button>
             </div>
             <div class="crm-context-actions" id="context-questionnaire-actions" hidden>
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-questionnaire-reprobe-batch" hidden>Обновить вопросы</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-questionnaire-probe-filter" hidden>Probe анкет</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-questionnaire-prep-batch" hidden>Ответы на анкеты</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-questionnaire-reprobe-batch" hidden data-copy="questionnaireReprobe">Обновить вопросы</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-questionnaire-probe-filter" hidden data-copy="questionnaireProbe">Проверить анкеты</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-questionnaire-prep-batch" hidden data-copy="questionnairePrep">Подготовить ответы</button>
             </div>
           </div>
         </header>
-        <main id="list" class="vacancy-grid" aria-live="polite"></main>
+        <div class="workspace-list-viewport" id="workspace-list-viewport">
+          <main id="list" class="vacancy-grid" aria-live="polite"></main>
+        </div>
         </section>
 
         <div class="dock-splitter dock-splitter--right" id="splitter-right" role="separator" aria-orientation="vertical" aria-label="Ширина правой панели" tabindex="0"></div>
@@ -375,21 +394,55 @@
         </aside>
       </div>
 
+      <nav class="mobile-bar" id="mobile-bar" hidden aria-label="Мобильная навигация">
+        <button type="button" class="mobile-bar__btn" data-mobile-sheet="left" aria-expanded="false" aria-controls="dock-left">
+          <span class="mobile-bar__glyph" aria-hidden="true">☰</span>
+          <span class="mobile-bar__label">Меню</span>
+        </button>
+        <button type="button" class="mobile-bar__btn mobile-bar__btn--center" data-mobile-center aria-expanded="false">
+          <span class="mobile-bar__glyph" aria-hidden="true">▦</span>
+          <span class="mobile-bar__label">Список</span>
+        </button>
+        <button type="button" class="mobile-bar__btn" data-mobile-sheet="right" aria-expanded="false" aria-controls="dock-right">
+          <span class="mobile-bar__glyph" aria-hidden="true">◫</span>
+          <span class="mobile-bar__label">Сводка</span>
+        </button>
+        <button type="button" class="mobile-bar__btn" data-mobile-settings aria-expanded="false">
+          <span class="mobile-bar__glyph" aria-hidden="true">⚙</span>
+          <span class="mobile-bar__label">Ещё</span>
+        </button>
+      </nav>
+      <div class="mobile-sheet-backdrop" id="mobile-sheet-backdrop" hidden aria-hidden="true"></div>
+
     </div>
 
     <template id="card-tile-tpl">
       <article class="card-tile card-tile--compact" data-record-id="">
-        <button type="button" class="card-dismiss" aria-label="Убрать из очереди" data-tip="Убрать из очереди">×</button>
-        <div class="card-tile__head">
-          <span class="card-tile__score" aria-hidden="true"></span>
-          <a class="card-tile__hh" target="_blank" rel="noopener" title="Открыть на hh.ru" hidden>↗</a>
+        <div class="card-tile__score-ring">
+          <span class="card-tile__score"></span>
         </div>
-        <button type="button" class="card-tile__open" aria-label="Открыть карточку">
-          <span class="card-tile__title"></span>
-          <span class="card-tile__meta"></span>
-          <span class="card-tile__status status-chips" hidden></span>
-          <span class="card-tile__summary" hidden></span>
-        </button>
+        <div class="card-tile__body">
+          <button type="button" class="card-tile__hit">
+            <span class="card-tile__title"></span>
+            <span class="card-tile__meta" hidden></span>
+          </button>
+          <p class="card-tile__hint" hidden>
+            <span class="card-tile__hint-tag" hidden></span>
+            <span class="card-tile__hint-text"></span>
+          </p>
+          <div class="card-tile__foot" hidden>
+            <div class="card-tile__status status-chips" hidden></div>
+            <button type="button" class="card-tile__open">Подробнее</button>
+          </div>
+        </div>
+        <div class="card-tile__rail">
+          <span class="card-tile__badge" hidden></span>
+          <div class="card-tile__actions" aria-label="Действия">
+            <a class="card-tile__hh" target="_blank" rel="noopener" title="Открыть на hh.ru" hidden>hh</a>
+            <span class="card-tile__chev" aria-hidden="true">›</span>
+            <button type="button" class="card-dismiss" aria-label="Убрать из очереди" data-tip="Убрать из очереди">×</button>
+          </div>
+        </div>
       </article>
     </template>
 
@@ -457,28 +510,38 @@
             </div>
           </div>
         </div>
-        <div class="card-foot">
+        <div class="card-foot card-foot--v4">
         <div class="card-section card-section--apply">
-          <p class="card-section-title">Отклик</p>
-          <div class="btn-row apply-chat-row">
-            <button type="button" class="btn btn-primary-soft btn-apply-auto">Авто-отклик</button>
-            <button type="button" class="btn btn-secondary btn-apply-chat" disabled>С письмом</button>
-            <button type="button" class="btn btn-secondary btn-apply-questionnaire" hidden>+ анкета</button>
+          <div class="card-action-group card-action-group--apply">
+            <p class="card-action-group__title">Отклик</p>
+            <div class="btn-row apply-chat-row">
+              <button type="button" class="btn btn-primary-soft btn-apply-auto">Авто-отклик</button>
+              <button type="button" class="btn btn-secondary btn-apply-chat" disabled>С письмом</button>
+              <button type="button" class="btn btn-secondary btn-apply-questionnaire" hidden>С анкетой</button>
+            </div>
           </div>
-          <div class="btn-row btn-row--tools">
-            <button type="button" class="btn btn-ghost btn-sm btn-defer-vacancy" hidden title="Отложить до завтра">Завтра</button>
-            <button type="button" class="btn btn-ghost btn-sm btn-undefer-vacancy" hidden title="Вернуть в очередь">В очередь</button>
-            <button type="button" class="btn btn-ghost btn-sm btn-hh-invited" hidden title="Приглашение — учтётся в LLM">Пригласили</button>
-            <button type="button" class="btn btn-ghost btn-sm btn-hh-declined" hidden title="Отказ — учтётся в LLM">Отказ</button>
-            <button type="button" class="btn btn-ghost btn-sm btn-tailor-resume">PDF</button>
-            <button type="button" class="btn btn-ghost btn-sm btn-interview-prep" hidden>К собесу</button>
-            <button type="button" class="btn btn-ghost btn-sm btn-chat-reply-draft" hidden>Ответ в чат</button>
-            <button type="button" class="btn btn-ghost btn-sm cover-draft-btn" hidden>Черновик</button>
-            <button type="button" class="btn btn-ghost btn-sm btn-regenerate-letter" hidden>Заново</button>
-            <button type="button" class="btn btn-ghost btn-sm btn-view-approved" hidden>Письмо</button>
-            <button type="button" class="btn btn-ghost btn-sm btn-export-md" hidden title="Экспорт в Markdown">MD</button>
-            <button type="button" class="btn btn-secondary btn-sm btn-questionnaire-view" hidden>Вопросы</button>
+          <div class="card-action-group card-action-group--letter">
+            <p class="card-action-group__title">Письмо</p>
+            <div class="btn-row btn-row--letter">
+              <button type="button" class="btn btn-ghost btn-sm cover-draft-btn" hidden>Черновик</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-regenerate-letter" hidden>Заново</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-view-approved" hidden>Письмо</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-chat-reply-draft" hidden>Ответ в чат</button>
+            </div>
           </div>
+          <details class="card-action-group card-action-group--more">
+            <summary class="card-action-group__title card-action-group__title--more">Ещё действия</summary>
+            <div class="btn-row btn-row--more">
+              <button type="button" class="btn btn-ghost btn-sm btn-defer-vacancy" hidden title="Отложить до завтра">Завтра</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-undefer-vacancy" hidden title="Вернуть в очередь">В очередь</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-hh-invited" hidden title="Приглашение — учтётся при генерации писем">Пригласили</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-hh-declined" hidden title="Отказ — учтётся при генерации писем">Отказ</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-tailor-resume" title="Скачать PDF резюме под вакансию">Резюме PDF</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-interview-prep" hidden>К собесу</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-export-md" hidden title="Скопировать описание в текст">Экспорт</button>
+              <button type="button" class="btn btn-secondary btn-sm btn-questionnaire-view" hidden>Вопросы анкеты</button>
+            </div>
+          </details>
         </div>
         <div class="card-section actions" hidden>
           <p class="card-section-title">Решение</p>
@@ -505,7 +568,7 @@
       <div class="service-drawer__backdrop" data-close-service tabindex="-1"></div>
       <aside class="service-drawer__panel" role="dialog" aria-modal="true" aria-labelledby="service-drawer-title" tabindex="-1">
         <header class="service-drawer__head">
-          <h2 id="service-drawer-title" class="service-drawer__title">Сервис</h2>
+          <h2 id="service-drawer-title" class="service-drawer__title">Дополнительно</h2>
           <button type="button" class="modal-close service-drawer__close" data-close-service aria-label="Закрыть">×</button>
         </header>
         <div class="service-drawer__body">
@@ -523,8 +586,8 @@
                 <span class="service-card__hint">Кнопка на hh.ru «Поднять»</span>
               </button>
               <button type="button" class="service-card" data-service-action="raise-resumes-routing">
-                <span class="service-card__name">Из routing</span>
-                <span class="service-card__hint">Все hash из config</span>
+                <span class="service-card__name">Все роли из списка</span>
+                <span class="service-card__hint">Как в настройках маршрутизации</span>
               </button>
               <label class="field field--row service-raise-role">
                 <span class="field-label">Роль</span>
@@ -549,17 +612,17 @@
                 <span class="service-quick__label">Чаты</span>
                 <button type="button" class="service-quick__btn" data-service-action="sync-hh-chats" data-tip="Подтянуть чаты переговоров">Чаты</button>
                 <span class="service-quick__label service-quick__label--sub">Резюме</span>
-                <button type="button" class="service-quick__btn" data-service-action="sync-resume-from-source" data-tip="Синхр. резюме с эталона L2/L3">Резюме</button>
+                <button type="button" class="service-quick__btn" data-service-action="sync-resume-from-source" data-tip="Синхронизировать резюме с эталона">Резюме</button>
               </div>
             </div>
           </section>
           <section class="service-block">
             <h3 class="service-block__title">Синхронизация hh.ru</h3>
-            <p class="service-block__desc">Отклики, чаты и статусы без батча откликов.</p>
+            <p class="service-block__desc">Отклики, чаты и статусы без серии откликов.</p>
             <div class="service-block__actions">
               <button type="button" class="service-card" data-service-action="sync-hh-responses">
                 <span class="service-card__name">Отклики и статусы</span>
-                <span class="service-card__hint">Playwright, обновить очередь</span>
+                <span class="service-card__hint">Через браузер, обновить очередь</span>
               </button>
               <button type="button" class="service-card" data-service-action="sync-hh-chats">
                 <span class="service-card__name">Чаты</span>
@@ -575,7 +638,7 @@
               </button>
               <button type="button" class="service-card service-card--warn" data-service-action="prune-responded">
                 <span class="service-card__name">Убрать откликнутые</span>
-                <span class="service-card__hint">Prune из «Проверка»</span>
+                <span class="service-card__hint">Убрать уже откликнувшиеся из «На проверке»</span>
               </button>
             </div>
           </section>
@@ -583,12 +646,12 @@
             <h3 class="service-block__title">Резюме и собеседования</h3>
             <div class="service-block__actions">
               <button type="button" class="service-card" data-service-action="sync-resume-from-source">
-                <span class="service-card__name">С эталона L2/L3</span>
+                <span class="service-card__name">С эталона резюме</span>
                 <span class="service-card__hint">Опыт и «О себе» на hh.ru</span>
               </button>
               <button type="button" class="service-card" data-service-action="sync-resume-variants">
-                <span class="service-card__name">Тексты резюме (LLM)</span>
-                <span class="service-card__hint">До 5 вариантов</span>
+                <span class="service-card__name">Обновить тексты резюме</span>
+                <span class="service-card__hint">До 5 вариантов на hh.ru</span>
               </button>
               <button type="button" class="service-card" data-service-action="import-interview-notes">
                 <span class="service-card__name">Заметки собесов</span>
@@ -600,7 +663,7 @@
             <h3 class="service-block__title">Рутина и пакеты</h3>
             <label class="field-check service-block__check">
               <input type="checkbox" id="daily-routine-harvest" />
-              <span>Утренний цикл + сбор вакансий (harvest)</span>
+              <span>Утренний цикл + поиск вакансий</span>
             </label>
             <ol class="routine-steps" id="routine-steps"></ol>
             <div class="service-block__actions">
@@ -614,11 +677,11 @@
               </button>
               <button type="button" class="service-card" data-service-action="questionnaire-reprobe" data-service-q-only hidden>
                 <span class="service-card__name">Обновить вопросы анкет</span>
-                <span class="service-card__hint">Probe с hh.ru</span>
+                <span class="service-card__hint">Загрузить вопросы с hh.ru</span>
               </button>
               <button type="button" class="service-card" data-service-action="questionnaire-prep" data-service-q-only hidden>
                 <span class="service-card__name">Ответы на анкеты</span>
-                <span class="service-card__hint">CV / LLM черновики</span>
+                <span class="service-card__hint">Черновики ответов в чатах</span>
               </button>
             </div>
           </section>
@@ -670,21 +733,20 @@
         <div class="modal-head settings-dialog__head">
           <div>
             <h2 id="settings-modal-title" class="modal-title">Настройки</h2>
-            <p class="settings-dialog__lead">Лимиты откликов, фильтры списка и вид карточек</p>
+            <p class="settings-dialog__lead">Отклики, лимиты и внешний вид дашборда</p>
           </div>
           <button type="button" class="modal-close modal-close--settings" aria-label="Закрыть">×</button>
         </div>
-        <nav class="settings-tabs" role="tablist" aria-label="Разделы настроек">
-          <button type="button" class="settings-tabs__btn active" role="tab" aria-selected="true" data-settings-tab="apply" id="settings-tab-apply">Отклики и серия</button>
-          <button type="button" class="settings-tabs__btn" role="tab" aria-selected="false" data-settings-tab="list" id="settings-tab-list">Список</button>
-          <button type="button" class="settings-tabs__btn" role="tab" aria-selected="false" data-settings-tab="ui" id="settings-tab-ui">Интерфейс</button>
+        <nav class="settings-tabs settings-tabs--v4" role="tablist" aria-label="Разделы настроек">
+          <button type="button" class="settings-tabs__btn active" role="tab" aria-selected="true" data-settings-tab="apply" id="settings-tab-apply">Отклики и лимиты</button>
+          <button type="button" class="settings-tabs__btn" role="tab" aria-selected="false" data-settings-tab="appearance" id="settings-tab-appearance">Список и вид</button>
         </nav>
         <div class="settings-modal-body">
           <section class="settings-panel active" id="settings-panel-apply" role="tabpanel" aria-labelledby="settings-tab-apply">
             <div class="settings-card">
               <div class="settings-card__head">
                 <h3 class="settings-card__title">Порог и серия откликов</h3>
-                <p class="settings-card__desc">Разделение «Авто» / «ручной» в сайдбаре и сколько вакансий за один запуск</p>
+                <p class="settings-card__desc">«Рекомендуемые» в сайдбаре — от порога и выше; «Ниже порога» — ручная серия</p>
               </div>
               <div class="settings-fields settings-fields--duo">
                 <label class="settings-field">
@@ -706,12 +768,13 @@
             <div class="settings-card" id="settings-profile-card">
               <div class="settings-card__head">
                 <h3 class="settings-card__title">Профиль поиска</h3>
-                <p class="settings-card__desc">Очередь вакансий и env из <code>config/profiles/</code> или <code>config/devops.env</code></p>
+                <p class="settings-card__desc">Какой набор ключевых слов и очередь вакансий используются для поиска и откликов</p>
+                <p class="settings-card__desc ui-expert-only">Файлы: <code>config/profiles/</code>, <code>config/devops.env</code></p>
               </div>
               <div class="settings-fields">
                 <label class="settings-field">
                   <div class="settings-field__meta">
-                    <span class="settings-field__label">HH_PROFILE</span>
+                    <span class="settings-field__label">Активный профиль</span>
                     <span class="settings-field__hint settings-field__hint--profile" id="settings-profile-queue-hint">—</span>
                   </div>
                   <select id="settings-profile-select" class="field-input"></select>
@@ -740,11 +803,11 @@
             </div>
           </section>
 
-          <section class="settings-panel" id="settings-panel-list" role="tabpanel" aria-labelledby="settings-tab-list" hidden>
+          <section class="settings-panel" id="settings-panel-appearance" role="tabpanel" aria-labelledby="settings-tab-appearance" hidden>
             <div class="settings-card">
               <div class="settings-card__head">
-                <h3 class="settings-card__title">Фильтры карточек</h3>
-                <p class="settings-card__desc">Сортировка и балл — здесь. Общий поиск (вакансия, резюме, чат) — в шапке списка</p>
+                <h3 class="settings-card__title">Фильтры списка</h3>
+                <p class="settings-card__desc">Сортировка и балл. Поиск по тексту — в шапке над списком вакансий</p>
               </div>
               <div class="settings-list-layout">
                 <div class="settings-fields settings-fields--duo">
@@ -780,36 +843,46 @@
                 </div>
               </div>
             </div>
-          </section>
-
-          <section class="settings-panel" id="settings-panel-ui" role="tabpanel" aria-labelledby="settings-tab-ui" hidden>
             <div class="settings-card" id="settings-layout-card">
               <div class="settings-card__head">
-                <h3 class="settings-card__title">Режим интерфейса</h3>
-                <p class="settings-card__desc">Простой — меньше блоков; эксперт — все панели и сервис в шапке</p>
+                <h3 class="settings-card__title">Конструктор панелей</h3>
+                <p class="settings-card__desc">Выберите пресет или соберите свой: перетащите блоки и включите нужные</p>
               </div>
               <div class="settings-subblock">
-                <span class="settings-subblock__label">Сложность</span>
+                <span class="settings-subblock__label">Пресет</span>
+                <div class="segmented settings-seg layout-preset-seg" role="group" aria-label="Пресет панелей">
+                  <button type="button" class="seg-btn" data-layout-preset="simple" title="Статус, действия и разделы">Минимум</button>
+                  <button type="button" class="seg-btn active" data-layout-preset="standard" title="Поиск, фильтры и статистика">Стандарт</button>
+                  <button type="button" class="seg-btn" data-layout-preset="expert" title="Все блоки">Всё</button>
+                </div>
+                <p class="layout-preset-hint" id="layout-preset-hint">Поиск, фильтры и статистика</p>
+              </div>
+              <div class="settings-subblock">
+                <span class="settings-subblock__label">Сложность интерфейса</span>
                 <div class="segmented settings-seg" role="group" aria-label="Режим интерфейса">
                   <button type="button" class="seg-btn active" data-ui-mode-preset="simple">Простой</button>
-                  <button type="button" class="seg-btn" data-ui-mode-preset="expert">Эксперт</button>
-                </div>
-              </div>
-              <div class="settings-subblock">
-                <span class="settings-subblock__label">Пресет панелей</span>
-                <div class="segmented settings-seg" role="group" aria-label="Пресет панелей">
-                  <button type="button" class="seg-btn" data-layout-preset="simple">Минимум</button>
-                  <button type="button" class="seg-btn active" data-layout-preset="standard">Стандарт</button>
-                  <button type="button" class="seg-btn" data-layout-preset="expert">Всё</button>
+                  <button type="button" class="seg-btn" data-ui-mode-preset="expert">Расширенный</button>
                 </div>
               </div>
               <div class="settings-subblock" id="sidebar-panel-toggles-wrap">
-                <span class="settings-subblock__label">Блоки в боковой панели</span>
-                <div class="settings-panel-toggles" id="sidebar-panel-toggles"></div>
+                <div class="settings-subblock__row">
+                  <span class="settings-subblock__label">Блоки и порядок</span>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-panel-order">Сбросить</button>
+                </div>
+                <div class="sidebar-builder-grid" id="sidebar-panel-builder" aria-label="Блоки боковой панели">
+                  <div class="sidebar-builder-col">
+                    <p class="sidebar-builder-col__title">Меню — слева</p>
+                    <ul class="sidebar-builder-list" data-builder-list="left"></ul>
+                  </div>
+                  <div class="sidebar-builder-col">
+                    <p class="sidebar-builder-col__title">Сводка — справа</p>
+                    <ul class="sidebar-builder-list" data-builder-list="right"></ul>
+                  </div>
+                </div>
+                <p class="settings-card__desc settings-card__desc--tight">
+                  Перетащите ⠿ между колонками или внутри списка. Галочка — показать блок.
+                </p>
               </div>
-              <p class="settings-card__desc settings-card__desc--tight">
-                Панели: «Свернуть» оставляет полоску с иконками (как в Cloudflare); кнопки панелей в меню — убрать панель полностью; перетаскивание разделителя — ширина; двойной щелчок — сброс.
-              </p>
             </div>
             <div class="settings-card">
               <div class="settings-card__head">
@@ -829,6 +902,14 @@
                 </div>
               </div>
               <div class="settings-subblock">
+                <span class="settings-subblock__label">Ширина карточек</span>
+                <p class="settings-card__desc settings-card__desc--tight">Режим «Средний» — сколько карточек в ряд; меняется сразу</p>
+                <div class="scale-row settings-range-row">
+                  <input type="range" id="card-col-w-range" min="18" max="56" step="0.5" value="30" aria-label="Ширина карточки в сетке" />
+                  <span class="tuning-value" id="card-col-w-value">30rem</span>
+                </div>
+              </div>
+              <div class="settings-subblock">
                 <span class="settings-subblock__label">Тема</span>
                 <div class="segmented theme-presets settings-seg" role="group" aria-label="Тема">
                   <button type="button" class="seg-btn active" data-theme-preset="dark">Тёмная</button>
@@ -842,16 +923,9 @@
                 <p class="settings-card__desc">Три готовых размера или точная настройка ползунками</p>
               </div>
               <p class="settings-card__desc settings-card__desc--tight">
-                Размер карточек — в панели над списком: <strong>Краткий</strong> и <strong>Средний</strong> — плитки (клик открывает полную карточку), <strong>Полный</strong> — развёрнутая лента с описанием и действиями.
+                Над списком: <strong>Краткий</strong> — строки, <strong>Средний</strong> — карточки в сетке, <strong>Полный</strong> — одна колонка. Ширина сетки — в блоке «Масштаб и тема» выше.
               </p>
               <div class="settings-tuning-grid">
-                <label class="settings-tuning">
-                  <span class="settings-tuning__label">Ширина</span>
-                  <div class="tuning-row">
-                    <input type="range" id="card-col-w-range" min="18" max="72" step="0.5" value="40" />
-                    <span class="tuning-value" id="card-col-w-value">40rem</span>
-                  </div>
-                </label>
                 <label class="settings-tuning">
                   <span class="settings-tuning__label">Мин. высота</span>
                   <div class="tuning-row">
@@ -879,7 +953,8 @@
         </div>
         <footer class="settings-footer">
           <p class="settings-hint" id="settings-save-hint" hidden></p>
-          <p class="settings-footer__note">Лимиты и порог сохраняются в <code>config/preferences.json</code> автоматически</p>
+          <p class="settings-footer__note">Лимиты и порог сохраняются автоматически</p>
+          <p class="settings-footer__note ui-expert-only">Файл настроек: <code>config/preferences.json</code></p>
         </footer>
       </div>
     </div>
@@ -968,14 +1043,14 @@
         </div>
         <div id="apply-log-insights" class="apply-log-insights" hidden></div>
         <div class="apply-log-insights-actions">
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-batch-report" hidden>Подробный отчёт батча</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-batch-report" hidden data-copy="batchReportBtn">Отчёт серии</button>
         </div>
         <div class="apply-log-toolbar">
           <label class="apply-log-tab-label">
             <input type="radio" name="log-source" value="apply" checked /> Отклик
           </label>
           <label class="apply-log-tab-label">
-            <input type="radio" name="log-source" value="harvest" /> Сбор
+            <input type="radio" name="log-source" value="harvest" /> Поиск
           </label>
           <label class="apply-log-filter">
             <input type="checkbox" id="apply-log-last-run" checked /> Последний запуск
@@ -1108,6 +1183,6 @@
       </div>
     </div>
 
-    <script type="module" src="/app.js?v=20260530r2"></script>
+    <script type="module" src="/app.js?v=20260531med1"></script>
   </body>
 </html>

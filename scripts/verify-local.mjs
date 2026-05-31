@@ -112,19 +112,30 @@ async function waitHttp(url, ms = 25_000) {
   return false;
 }
 
+function runDashboardScript(script, label) {
+  const r = spawnSync(process.execPath, [script], {
+    cwd: ROOT,
+    env: { ...process.env, DASHBOARD_URL: BASE },
+    stdio: 'inherit',
+  });
+  if (r.status === 0) pass(label);
+  else fail(label);
+}
+
 async function checkDashboard(child) {
   if (!(await waitHttp(BASE))) {
     fail('dashboard не отвечает на ' + BASE);
     if (child) child.kill();
     return;
   }
-  const r = spawnSync(process.execPath, ['scripts/test-dashboard-ui.mjs'], {
-    cwd: ROOT,
-    env: { ...process.env, DASHBOARD_URL: BASE },
-    stdio: 'inherit',
-  });
-  if (r.status === 0) pass('test-dashboard-ui (85/100/115%, анкета)');
-  else fail('test-dashboard-ui');
+  // Дать фронту подтянуть /api/vacancies и отрисовать список после cold start.
+  await new Promise((r) => setTimeout(r, child ? 1500 : 0));
+  runDashboardScript('scripts/test-dashboard-ui.mjs', 'test-dashboard-ui (85/100/115%, анкета)');
+  runDashboardScript(
+    'scripts/test-dashboard-integration.mjs',
+    'test-dashboard-integration (API + кнопки/тогглы)'
+  );
+  runDashboardScript('scripts/test-dashboard-copy.mjs', 'test-dashboard-copy (plain language)');
   if (child) child.kill();
 }
 
@@ -135,6 +146,8 @@ function checkUxAndApply() {
     ['scripts/test-apply-view-deferred.mjs', 'test-apply-view-deferred'],
     ['scripts/test-export-portable.mjs', 'test-export-portable'],
     ['scripts/test-ux-lib.mjs', 'test-ux-lib'],
+    ['scripts/test-sidebar-builder.mjs', 'test-sidebar-builder'],
+    ['scripts/test-mobile-layout.mjs', 'test-mobile-layout'],
     ['scripts/test-list-breadcrumbs.mjs', 'test-list-breadcrumbs'],
     ['scripts/test-apply-copy-dom.mjs', 'test-apply-copy-dom'],
     ['scripts/test-questionnaire-auto-reprobe.mjs', 'test-questionnaire-auto-reprobe'],

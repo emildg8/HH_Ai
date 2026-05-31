@@ -9,6 +9,7 @@ import { spawn } from 'child_process';
 import { spawnBackground } from '../lib/spawn-background.mjs';
 import { fileURLToPath } from 'url';
 import { loadEnv } from '../lib/load-env.mjs';
+import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
 import { applyStoredProfile, getStoredProfileId, listProfiles, saveStoredProfileId } from '../lib/profile-prefs.mjs';
 import { parseHarvestPeriodDays, harvestPeriodLabel } from '../lib/hh-search-period.mjs';
 import { getBrowserLockInfo, clearStaleBrowserLock } from '../lib/chromium-session.mjs';
@@ -590,15 +591,14 @@ const server = http.createServer(async (req, res) => {
       .filter((x) => recordPassesNot1C(x, prefs))
       .filter((x) => recordPassesLlmList(x))
       .filter((x) => recordPassesMinSalary(x, prefs));
-    const queueBase = baseForCounts.filter(
-      (x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x) && !recordNeedsQuestionnaireWork(x)
+    const workBase = baseForCounts.filter(
+      (x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x) && !isVacancyDeferred(x)
     );
-    const questionnaireBase = baseForCounts.filter(
-      (x) => !vacancyHasHhApply(x) && !vacancyHhSiteBlocked(x) && recordNeedsQuestionnaireWork(x)
-    );
+    const noQuestionnaireBase = workBase.filter((x) => !recordNeedsQuestionnaireWork(x));
+    const questionnaireBase = workBase.filter((x) => recordNeedsQuestionnaireWork(x));
     const appliedBase = baseForCounts.filter((x) => vacancyShownInAppliedTab(x));
-    const high = filterByScoreBand(queueBase, 'high', threshold).length;
-    const low = filterByScoreBand(queueBase, 'low', threshold).length;
+    const high = filterByScoreBand(noQuestionnaireBase, 'high', threshold).length;
+    const low = filterByScoreBand(noQuestionnaireBase, 'low', threshold).length;
     const appliedHigh = filterByScoreBand(appliedBase, 'high', threshold).length;
     const appliedLow = filterByScoreBand(appliedBase, 'low', threshold).length;
 
@@ -662,9 +662,9 @@ const server = http.createServer(async (req, res) => {
         applied: appliedBase.length,
         appliedHigh,
         appliedLow,
-        queue: queueBase.length,
+        queue: workBase.length,
         questionnaire: questionnaireBase.length,
-        noQuestionnaire: queueBase.length,
+        noQuestionnaire: noQuestionnaireBase.length,
         deferred: loadQueue().filter((x) => isVacancyDeferred(x)).length,
         rawInBand,
         hiddenByRole,

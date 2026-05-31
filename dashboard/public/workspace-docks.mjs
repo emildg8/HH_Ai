@@ -3,6 +3,8 @@
  * Сетка workspace-stage пересчитывается в JS — иначе min-width в CSS ломает layout.
  */
 
+import { isMobileViewport } from './ui-mobile.mjs';
+
 const STORAGE_KEY = 'hh-dashboard-docks-v3';
 const LEGACY_KEYS = ['hh-dashboard-docks-v2', 'hh-dashboard-docks-v1'];
 const MIN_W = 160;
@@ -136,7 +138,12 @@ export function applyDockState(state) {
     );
   }
 
-  stage.style.gridTemplateColumns = buildStageColumns(state);
+  const mobile = isMobileViewport() || shell.classList.contains('workspace-shell--mobile');
+  if (mobile) {
+    stage.style.gridTemplateColumns = 'minmax(0, 1fr)';
+  } else {
+    stage.style.gridTemplateColumns = buildStageColumns(state);
+  }
 
   if (leftDock) {
     leftDock.style.display = state.left.hidden ? 'none' : '';
@@ -396,8 +403,13 @@ export function initWorkspaceDocks() {
 
   window.addEventListener('resize', () => {
     sanitizeDockState(state);
-    applyDockState(state);
+    if (!isMobileViewport()) applyDockState(state);
     saveDockState(state);
+  });
+
+  window.addEventListener('hh-docks-refresh', () => {
+    sanitizeDockState(state);
+    applyDockState(state);
   });
 
   return state;
