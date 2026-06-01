@@ -1,9 +1,7 @@
-# Бесплатный прокси Bot API на Cloudflare Workers (деploy из GitHub, без SSH).
-# Один раз: Settings → Secrets → CLOUDFLARE_API_TOKEN (шаблон Edit Cloudflare Workers).
-# Опционально: CLOUDFLARE_ACCOUNT_ID (если wrangler не определит сам).
+# Бесплатный прокси Bot API на Cloudflare Workers (deploy из GitHub, без SSH).
+# Secrets: CLOUDFLARE_API_TOKEN (обяз.), CLOUDFLARE_ACCOUNT_ID (если wrangler не определит).
 #
 # Actions → Deploy CF Telegram proxy → Run workflow
-# В summary job — TELEGRAM_API_BASE и TELEGRAM_API_SECRET для .env
 
 name: Deploy CF Telegram proxy
 
@@ -29,7 +27,7 @@ jobs:
           node-version: '22'
 
       - name: Install wrangler
-        run: npm install -g wrangler@3
+        run: npm install -g wrangler@4
 
       - name: Unique worker name
         id: meta
@@ -38,18 +36,38 @@ jobs:
           echo "name=hh-ai-tg-${SUFFIX}" >> "$GITHUB_OUTPUT"
           sed -i "s/^name = .*/name = \"hh-ai-tg-${SUFFIX}\"/" deploy/cf-telegram-proxy/wrangler.toml
 
-      - name: Deploy worker
-        id: deploy
+      - name: Cloudflare account id
+        id: cf
         working-directory: deploy/cf-telegram-proxy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          set -e
+          WHO=$(wrangler whoami 2>&1)
+          echo "$WHO"
+          ACCOUNT="${CLOUDFLARE_ACCOUNT_ID}"
+          if [ -z "$ACCOUNT" ]; then
+            ACCOUNT=$(echo "$WHO" | grep -oE '[0-9a-f]{32}' | head -1)
+          fi
+          if [ -z "$ACCOUNT" ]; then
+            echo "Не удалось определить CLOUDFLARE_ACCOUNT_ID — добавьте secret в GitHub"
+            exit 1
+          fi
+          echo "account=$ACCOUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy worker
+        id: deploy
+        working-directory: deploy/cf-telegram-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ steps.cf.outputs.account }}
+        run: |
+          set -e
           SECRET=$(openssl rand -hex 24)
+          wrangler deploy 2>&1 | tee /tmp/wrangler-deploy.log
           printf '%s' "$SECRET" | wrangler secret put PROXY_SECRET
-          OUT=$(wrangler deploy 2>&1)
-          echo "$OUT"
-          URL=$(echo "$OUT" | grep -oE 'https://[^[:space:]]+\.workers\.dev' | head -1)
+          URL=$(grep -oE 'https://[^[:space:]]+\.workers\.dev' /tmp/wrangler-deploy.log | head -1)
           if [ -z "$URL" ]; then URL="https://${{ steps.meta.outputs.name }}.workers.dev"; fi
           echo "base=$URL" >> "$GITHUB_OUTPUT"
           echo "secret=$SECRET" >> "$GITHUB_OUTPUT"
