@@ -31,10 +31,11 @@ async function handleProfilePhotoUpload(request) {
   ];
   let last;
   for (const build of attempts) {
-    const form = build();
+    const payload = build();
     const res = await fetch(`${TG_ORIGIN}/bot${token}/setMyProfilePhoto`, {
       method: 'POST',
-      body: form,
+      headers: { 'Content-Type': payload.contentType },
+      body: payload.body,
     });
     last = res;
     if (res.ok) return res;
@@ -54,20 +55,63 @@ async function handleProfilePhotoUpload(request) {
 
 /** @param {string} attach @param {Uint8Array} bytes @param {string} filename @param {string} mime */
 function buildProfilePhotoFormAttach(attach, bytes, filename, mime) {
-  const form = new FormData();
-  form.append(
-    'photo',
-    JSON.stringify({ type: 'static', photo: `attach://${attach}` })
-  );
-  form.append(attach, new File([bytes], filename, { type: mime }));
-  return form;
+  return buildMultipart([
+    {
+      name: 'photo',
+      contentType: 'application/json',
+      body: textEncoder.encode(JSON.stringify({ type: 'static', photo: `attach://${attach}` })),
+    },
+    {
+      name: attach,
+      filename,
+      contentType: mime,
+      body: bytes,
+    },
+  ]);
 }
 
 /** @param {Uint8Array} bytes @param {string} filename @param {string} mime */
 function buildProfilePhotoFormDirect(bytes, filename, mime) {
-  const form = new FormData();
-  form.append('photo', new File([bytes], filename, { type: mime }));
-  return form;
+  return buildMultipart([
+    {
+      name: 'photo',
+      filename,
+      contentType: mime,
+      body: bytes,
+    },
+  ]);
+}
+
+const textEncoder = new TextEncoder();
+
+/**
+ * @param {{ name: string, body: Uint8Array, filename?: string, contentType?: string }[]} parts
+ */
+function buildMultipart(parts) {
+  const boundary = `hhAi${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+  const chunks = [];
+  for (const part of parts) {
+    chunks.push(textEncoder.encode(`--${boundary}\r\n`));
+    const disp = part.filename
+      ? `Content-Disposition: form-data; name="${part.name}"; filename="${part.filename}"\r\n`
+      : `Content-Disposition: form-data; name="${part.name}"\r\n`;
+    chunks.push(textEncoder.encode(disp));
+    if (part.contentType) {
+      chunks.push(textEncoder.encode(`Content-Type: ${part.contentType}\r\n`));
+    }
+    chunks.push(textEncoder.encode('\r\n'));
+    chunks.push(part.body);
+    chunks.push(textEncoder.encode('\r\n'));
+  }
+  chunks.push(textEncoder.encode(`--${boundary}--\r\n`));
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
 export default {
