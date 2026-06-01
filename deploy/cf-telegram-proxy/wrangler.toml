@@ -1,0 +1,5 @@
+name = "hh-ai-telegram-proxy"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# PROXY_SECRET — wrangler secret put PROXY_SECRET

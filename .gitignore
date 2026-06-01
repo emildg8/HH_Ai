@@ -9,6 +9,8 @@ Thumbs.db
 
 # Секреты и личные конфиги
 config/secrets.local.env
+config/telegram-bot.json
+config/telegram-cf-proxy.json
 config/devops.env
 config/resume-routing.json
 config/resume-routing.local.json
@@ -20,6 +22,9 @@ config/profiles/*.env
 
 # Данные и сессия
 data/session/
+data/tor-bundle/
+data/tor-data/
+data/telegram-setup-state.json
 data/vacancies-queue.json
 data/vacancies-devops.json
 data/vacancies-*.json

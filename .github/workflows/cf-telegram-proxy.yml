@@ -1,0 +1,83 @@
+# Бесплатный прокси Bot API на Cloudflare Workers (деploy из GitHub, без SSH).
+# Один раз: Settings → Secrets → CLOUDFLARE_API_TOKEN (шаблон Edit Cloudflare Workers).
+# Опционально: CLOUDFLARE_ACCOUNT_ID (если wrangler не определит сам).
+#
+# Actions → Deploy CF Telegram proxy → Run workflow
+# В summary job — TELEGRAM_API_BASE и TELEGRAM_API_SECRET для .env
+
+name: Deploy CF Telegram proxy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, HH_Ai, master]
+    paths:
+      - 'deploy/cf-telegram-proxy/**'
+      - '.github/workflows/cf-telegram-proxy.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install wrangler
+        run: npm install -g wrangler@3
+
+      - name: Unique worker name
+        id: meta
+        run: |
+          SUFFIX=$(echo -n "${{ github.repository }}" | sha256sum | cut -c1-8)
+          echo "name=hh-ai-tg-${SUFFIX}" >> "$GITHUB_OUTPUT"
+          sed -i "s/^name = .*/name = \"hh-ai-tg-${SUFFIX}\"/" deploy/cf-telegram-proxy/wrangler.toml
+
+      - name: Deploy worker
+        id: deploy
+        working-directory: deploy/cf-telegram-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          SECRET=$(openssl rand -hex 24)
+          printf '%s' "$SECRET" | wrangler secret put PROXY_SECRET
+          OUT=$(wrangler deploy 2>&1)
+          echo "$OUT"
+          URL=$(echo "$OUT" | grep -oE 'https://[^[:space:]]+\.workers\.dev' | head -1)
+          if [ -z "$URL" ]; then URL="https://${{ steps.meta.outputs.name }}.workers.dev"; fi
+          echo "base=$URL" >> "$GITHUB_OUTPUT"
+          echo "secret=$SECRET" >> "$GITHUB_OUTPUT"
+
+      - name: Summary for .env
+        run: |
+          {
+            echo "## Telegram CF Worker (скопируйте в .env)"
+            echo ""
+            echo '```env'
+            echo "TELEGRAM_API_BASE=${{ steps.deploy.outputs.base }}"
+            echo "TELEGRAM_API_SECRET=${{ steps.deploy.outputs.secret }}"
+            echo '```'
+            echo ""
+            echo "Локально: \`npm run telegram:probe-api\` затем \`npm run telegram-bot\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write config artifact
+        run: |
+          mkdir -p config
+          printf '{\n  "base": "%s",\n  "secret": "%s"\n}\n' \
+            "${{ steps.deploy.outputs.base }}" \
+            "${{ steps.deploy.outputs.secret }}" \
+            > config/telegram-cf-proxy.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telegram-cf-proxy-config
+          path: config/telegram-cf-proxy.json
+          retention-days: 90

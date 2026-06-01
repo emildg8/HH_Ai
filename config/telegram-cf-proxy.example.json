@@ -1,0 +1,4 @@
+{
+  "base": "https://hh-ai-tg-xxxxxxxx.workers.dev",
+  "secret": "paste_from_github_actions_summary"
+}
