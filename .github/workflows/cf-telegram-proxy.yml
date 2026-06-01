@@ -103,3 +103,16 @@ jobs:
           name: telegram-cf-proxy-config
           path: config/telegram-cf-proxy.json
           retention-days: 90
+
+      - name: Set bot avatar (direct Bot API from CI)
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ ! -f assets/telegram-bot-avatar.jpg ]; then
+            echo "skip avatar (no token or jpg)"
+            exit 0
+          fi
+          curl -sS -F 'photo={"type":"static","photo":"attach://avatar"};type=application/json' \
+            -F "avatar=@assets/telegram-bot-avatar.jpg" \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyProfilePhoto"
