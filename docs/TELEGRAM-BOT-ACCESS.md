@@ -25,12 +25,12 @@ npm run telegram:probe-api
 
 ## GitHub Actions (если локально не качается Tor/WARP)
 
-1. [Cloudflare](https://dash.cloudflare.com) → My Profile → API Tokens → Create Token → шаблон **Edit Cloudflare Workers**.
-2. GitHub → Settings → Secrets and variables → Actions → `CLOUDFLARE_API_TOKEN`.
-3. Actions → **Deploy CF Telegram proxy** → Run workflow.
-4. В summary job скопируйте `TELEGRAM_API_BASE` и `TELEGRAM_API_SECRET` в `.env`  
-   или скачайте artifact `telegram-cf-proxy-config` → `config/telegram-cf-proxy.json`.
-5. `npm run telegram:setup-access` — проверка и автозапуск.
+**Один раз в Cloudflare:** [Workers & Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages) → **Register workers.dev subdomain** (например `hh-ai-bot`). Без этого URL `*.workers.dev` не создаётся.
+
+1. [Cloudflare](https://dash.cloudflare.com) → API Token (Edit Cloudflare Workers) → GitHub secret `CLOUDFLARE_API_TOKEN`.
+2. Actions → **Deploy CF Telegram proxy** → **Run workflow** (после регистрации subdomain).
+3. Из **Summary** job — `TELEGRAM_API_BASE` и `TELEGRAM_API_SECRET` в `.env`.
+4. `npm run telegram:probe-api` → `npm run telegram-bot`.
 
 Worker крутится на Cloudflare бесплатно; ПК только опрашивает `*.workers.dev`.
 

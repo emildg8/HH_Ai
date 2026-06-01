@@ -64,11 +64,16 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ steps.cf.outputs.account }}
         run: |
           set -e
+          set -o pipefail
           SECRET=$(openssl rand -hex 24)
           wrangler deploy 2>&1 | tee /tmp/wrangler-deploy.log
           printf '%s' "$SECRET" | wrangler secret put PROXY_SECRET
-          URL=$(grep -oE 'https://[^[:space:]]+\.workers\.dev' /tmp/wrangler-deploy.log | head -1)
-          if [ -z "$URL" ]; then URL="https://${{ steps.meta.outputs.name }}.workers.dev"; fi
+          URL=$(grep -oE 'https://[a-zA-Z0-9._-]+\.workers\.dev' /tmp/wrangler-deploy.log | head -1)
+          if [ -z "$URL" ]; then
+            echo "wrangler deploy не вернул URL — зарегистрируйте workers.dev subdomain в Cloudflare Dashboard"
+            cat /tmp/wrangler-deploy.log
+            exit 1
+          fi
           echo "base=$URL" >> "$GITHUB_OUTPUT"
           echo "secret=$SECRET" >> "$GITHUB_OUTPUT"
 

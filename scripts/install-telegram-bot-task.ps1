@@ -1,14 +1,12 @@
-# Автозапуск Telegram-бота HH Ai при входе в Windows.
+# Autostart HH Ai Telegram bot at Windows logon.
 #   powershell -ExecutionPolicy Bypass -File scripts/install-telegram-bot-task.ps1
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $TaskName = "HH-Ai-Telegram-Bot"
 $Node = (Get-Command node -ErrorAction Stop).Source
-$LogDir = Join-Path $Root "data\logs"
-$LogFile = Join-Path $LogDir "telegram-bot.log"
 
-New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $Root "data\logs") | Out-Null
 
 $Action = New-ScheduledTaskAction `
   -Execute $Node `
@@ -30,20 +28,11 @@ Register-ScheduledTask `
   -Action $Action `
   -Trigger $Trigger `
   -Settings $Settings `
-  -Description "HH Ai — локальный Telegram-бот (long polling)" `
+  -Description "HH Ai Telegram bot (long polling)" `
   -Force | Out-Null
 
 Write-Host "[install-telegram-bot-task] OK: $TaskName (at logon)" -ForegroundColor Green
-Write-Host "  логи: перенаправьте вывод или смотрите консоль при ручном запуске"
-Write-Host "  снять: Unregister-ScheduledTask -TaskName '$TaskName' -Confirm:`$false"
+Write-Host "  remove: Unregister-ScheduledTask -TaskName '$TaskName' -Confirm:`$false"
 
-# Стартуем сейчас, если бот ещё не запущен
-$existing = Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object {
-  try {
-    $_.CommandLine -like "*telegram-bot.mjs*"
-  } catch { $false }
-}
-if (-not $existing) {
-  Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-  Write-Host "[install-telegram-bot-task] задача запущена" -ForegroundColor Cyan
-}
+Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+Write-Host "[install-telegram-bot-task] started" -ForegroundColor Cyan
