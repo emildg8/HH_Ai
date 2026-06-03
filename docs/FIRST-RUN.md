@@ -1,6 +1,6 @@
 # Первый запуск — что обязательно, что опционально
 
-**Версия:** 3.0.0 · Полный путь: [QUICKSTART.md](QUICKSTART.md) · zip/desktop: [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md)
+**Версия:** 3.2.0 · Полный путь: [QUICKSTART.md](QUICKSTART.md) · zip/desktop: [PUBLIC-RELEASE.md](PUBLIC-RELEASE.md)
 
 Цель: после `install` + `setup` + `login` дашборд уже работает **без API-ключей** (локальная оценка). LLM и несколько резюме — по желанию.
 
@@ -18,8 +18,11 @@
 | `config/cover-letter.txt` | Шаблон письма |
 | `config/resume-routing.json` | Из `resume-routing.example.json` (1 резюме достаточно) |
 | `data/`, `CV/` | Пустые каталоги |
+| `data/vacancies.json` | **Демо-очередь** (5 вакансий) — если файла ещё не было |
 
 Проверка: `npm run setup:check`
+
+Быстрый старт без wizard: `npm run setup:first-run -- --demo`
 
 ---
 

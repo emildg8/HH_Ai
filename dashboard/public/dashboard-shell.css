@@ -3,23 +3,23 @@
  */
 
 :root {
-  --shell-bg: #0a0a0c;
-  --panel-bg: #121216;
-  --panel-bg-elevated: #18181e;
-  --panel-border: rgba(255, 255, 255, 0.07);
+  --shell-bg: var(--ui-canvas);
+  --panel-bg: var(--ui-chrome);
+  --panel-bg-elevated: var(--ui-surface);
+  --panel-border: var(--ui-border);
   --panel-radius: 10px;
-  --accent-soft: rgba(10, 132, 255, 0.14);
-  --text-primary: #f2f2f7;
-  --text-muted: rgba(235, 235, 245, 0.55);
+  --accent-soft: var(--ds-accent-muted);
+  --text-primary: var(--ui-text);
+  --text-muted: var(--ui-muted);
 }
 
 html[data-theme='light'] {
-  --shell-bg: #ececf0;
-  --panel-bg: #ffffff;
-  --panel-bg-elevated: #f7f7fa;
-  --panel-border: rgba(0, 0, 0, 0.08);
-  --text-primary: #1c1c1e;
-  --text-muted: rgba(60, 60, 67, 0.72);
+  --shell-bg: var(--ui-canvas);
+  --panel-bg: var(--ui-chrome);
+  --panel-bg-elevated: var(--ui-surface);
+  --panel-border: var(--ui-border);
+  --text-primary: var(--ui-text);
+  --text-muted: var(--ui-muted);
 }
 
 body {
@@ -271,23 +271,6 @@ body {
   gap: 0.2rem;
 }
 
-.workspace-menubar__dock-toggle {
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 7px;
-  border: 1px solid var(--panel-border);
-  background: var(--panel-bg-elevated);
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-
-.workspace-menubar__dock-toggle[aria-pressed='true'] {
-  color: var(--accent);
-  border-color: rgba(10, 132, 255, 0.35);
-  background: var(--accent-soft);
-}
-
 #dock-left,
 #dock-right {
   min-width: 0;
@@ -298,9 +281,7 @@ body {
   display: none !important;
 }
 
-.workspace-stage {
-  grid-template-columns: minmax(0, 1fr);
-}
+/* Одноколоночная сетка stage — только на мобильном (ui-mobile.mjs + dashboard-v4.css). */
 
 .segmented {
   background: var(--panel-bg-elevated);
@@ -364,7 +345,7 @@ body {
 }
 
 #dock-right .job-progress-bar {
-  background: linear-gradient(90deg, var(--accent), #5ac8fa);
+  background: linear-gradient(90deg, var(--ds-accent), color-mix(in srgb, var(--ds-accent) 55%, var(--ds-good)));
 }
 
 .workspace-stage {

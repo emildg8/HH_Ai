@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "ok-devops-metrics",
+      "record": { "title": "DevOps Engineer", "geminiSummary": "K8s CI/CD" },
+      "letter": "Здравствуйте! Внедрял Kubernetes и GitLab CI, сократил время релиза на 40%. Настраивал мониторинг Prometheus/Grafana. Готов обсудить задачи команды.",
+      "role": "devops",
+      "expect": { "pass": true, "rawPass": true }
+    },
+    {
+      "id": "ok-data-role",
+      "record": { "title": "Data Engineer", "geminiSummary": "ETL DWH Airflow" },
+      "letter": "Добрый день! Строил ETL на Airflow, оптимизировал DWH-запросы (−25% времени). Опыт с Python и SQL для data pipeline. Буду рад обсудить вакансию.",
+      "role": "data",
+      "expect": { "pass": true }
+    },
+    {
+      "id": "short-generic",
+      "record": { "title": "Platform Engineer" },
+      "letter": "Здравствуйте, интересна вакансия.",
+      "role": "devops",
+      "expect": { "pass": false, "rawPass": false }
+    },
+    {
+      "id": "placeholder",
+      "record": { "title": "SRE" },
+      "letter": "Здравствуйте! [ВСТАВЬТЕ ОПЫТ] Готов к собеседованию.",
+      "role": "devops",
+      "expect": { "rawPass": false, "fixable": true }
+    },
+    {
+      "id": "wrong-role-java",
+      "record": { "title": "DevOps Engineer", "geminiSummary": "Kubernetes Terraform" },
+      "letter": "Здравствуйте! 5 лет пишу на Java Spring, Hibernate, REST API. Хочу перейти в вашу команду backend-разработки.",
+      "role": "devops",
+      "expect": { "rawPass": false }
+    },
+    {
+      "id": "fixable-generic",
+      "record": { "title": "Data Engineer", "geminiSummary": "Spark ETL" },
+      "letter": "Здравствуйте! Готов обсудить вакансию и выйти на связь. Имею опыт в командной работе.",
+      "role": "data",
+      "expect": { "pass": true, "fixable": true }
+    },
+    {
+      "id": "too-short-fixable",
+      "record": { "title": "DevOps" },
+      "letter": "Привет!",
+      "role": "devops",
+      "expect": { "rawPass": false, "fixable": true }
+    },
+    {
+      "id": "too-long",
+      "record": { "title": "DevOps Engineer" },
+      "letter": "word ",
+      "letterRepeat": 800,
+      "role": "devops",
+      "expect": { "pass": false, "rawPass": false }
+    },
+    {
+      "id": "support-ok",
+      "record": { "title": "Инженер поддержки L2", "geminiSummary": "Linux tickets SLA" },
+      "letter": "Здравствуйте! 4 года в L2: Linux, сети, SLA 99.5%, тикеты Jira/ServiceNow. Разбирал инциденты 24×7. Готов к сменному графику.",
+      "role": "support",
+      "expect": { "pass": true }
+    }
+  ]
+}

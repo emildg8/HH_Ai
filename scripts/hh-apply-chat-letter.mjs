@@ -151,6 +151,8 @@ function finishAlreadyResponded(progress, reason, det = {}, rec = null) {
 }
 
 const headless = process.env.HH_HEADLESS === '1';
+const captchaEscalate = String(process.env.HH_CAPTCHA_ESCALATE ?? '1').trim() !== '0';
+const browserBackground = String(process.env.HH_BROWSER_BACKGROUND || '').trim() === '1';
 const stayOpen = process.argv.includes('--stay-open');
 const questionnaireWait =
   process.argv.includes('--questionnaire-wait') ||
@@ -405,28 +407,33 @@ async function main() {
   };
   const ch = String(process.env.HH_PLAYWRIGHT_CHANNEL || '').trim();
   if (ch) launchOpts.channel = ch;
-  let ctx = await launchPersistentContextSafe(profile, launchOpts, { owner: BROWSER_OWNER });
+  let ctx = await launchPersistentContextSafe(profile, launchOpts, {
+    owner: BROWSER_OWNER,
+    skipMinimize: headless || !browserBackground,
+  });
 
-  if (headless) {
-    let escalatedOnce = false;
-    registerCaptchaVisibleEscalation(async (p) => {
-      if (escalatedOnce) return p;
-      escalatedOnce = true;
-      const r = await escalateHeadlessToVisibleBrowser(p, ctx, {
-        profile,
-        owner: BROWSER_OWNER,
-        log: logLine,
-        launchBase: { viewport: launchOpts.viewport, locale: launchOpts.locale },
+  if (captchaEscalate) {
+    if (headless) {
+      let escalatedOnce = false;
+      registerCaptchaVisibleEscalation(async (p) => {
+        if (escalatedOnce) return p;
+        escalatedOnce = true;
+        const r = await escalateHeadlessToVisibleBrowser(p, ctx, {
+          profile,
+          owner: BROWSER_OWNER,
+          log: logLine,
+          launchBase: { viewport: launchOpts.viewport, locale: launchOpts.locale },
+        });
+        ctx = r.ctx;
+        return r.page;
       });
-      ctx = r.ctx;
-      return r.page;
-    });
-  } else {
-    registerCaptchaVisibleEscalation(async (p) => {
-      logLine('[hh-captcha] Капча: разворачиваю окно Chromium…');
-      await bringBrowserToFront(p.context());
-      return p;
-    });
+    } else {
+      registerCaptchaVisibleEscalation(async (p) => {
+        logLine('[hh-captcha] Капча: разворачиваю окно Chromium…');
+        await bringBrowserToFront(p.context());
+        return p;
+      });
+    }
   }
 
   const openPages = ctx.pages();

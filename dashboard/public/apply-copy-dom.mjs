@@ -13,6 +13,7 @@ function copyText(key) {
 /** Применить COPY к статическим элементам DOM. */
 export function applyCopyToDom() {
   document.querySelectorAll('[data-copy]').forEach((el) => {
+    if (el.dataset.applyView || el.dataset.rejectedSource || el.dataset.status) return;
     const t = copyText(el.getAttribute('data-copy') || '');
     if (t) el.textContent = t;
   });

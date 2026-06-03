@@ -9,10 +9,12 @@
 | `dashboard-questionnaire.png` | Вкладка «Анкета» |
 | `dashboard-card.png` | Карточка вакансии |
 
-Пересоздать:
+Пересоздать marketing-скрины:
 
 ```bash
 npm run docs:screenshots
 ```
+
+Regression baseline (DS-07): `docs/screenshots/baseline/` — `npm run test:dashboard-screenshots`.
 
 Требуется Playwright (`npx playwright install chromium`).

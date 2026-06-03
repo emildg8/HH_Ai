@@ -52,6 +52,7 @@ export function openMobileSheet(side) {
     return;
   }
   closeMobileSheets();
+  window.dispatchEvent(new CustomEvent('hh-mobile-sheet-open', { detail: { side } }));
   const dock = document.getElementById(`dock-${side}`);
   const backdrop = backdropEl();
   if (!dock || !backdrop) return;
@@ -78,7 +79,6 @@ export function applyMobileStageLayout() {
     if (leftSplit) leftSplit.style.display = 'none';
     if (rightSplit) rightSplit.style.display = 'none';
   } else {
-    stage.style.removeProperty('grid-template-columns');
     window.dispatchEvent(new CustomEvent('hh-docks-refresh'));
   }
 }
@@ -91,6 +91,12 @@ export function syncMobileShell() {
   if (bar) {
     bar.hidden = !mobile;
     bar.setAttribute('aria-hidden', mobile ? 'false' : 'true');
+    if (mobile) {
+      const h = Math.ceil(bar.getBoundingClientRect().height);
+      shell?.style.setProperty('--mobile-bar-h', `${h}px`);
+    } else {
+      shell?.style.removeProperty('--mobile-bar-h');
+    }
   }
   if (!mobile) closeMobileSheets();
   for (const side of /** @type {const} */ (['left', 'right'])) {
@@ -111,7 +117,9 @@ export function initMobileShell(opts = {}) {
   });
   document.querySelector('[data-mobile-center]')?.addEventListener('click', () => {
     closeMobileSheets();
-    document.getElementById('list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const viewport = document.getElementById('workspace-list-viewport');
+    if (viewport) viewport.scrollTo({ top: 0, behavior: 'smooth' });
+    else document.getElementById('list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   document.querySelector('[data-mobile-settings]')?.addEventListener('click', () => {
     closeMobileSheets();

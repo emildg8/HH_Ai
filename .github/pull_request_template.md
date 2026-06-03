@@ -4,8 +4,11 @@
 
 ## Test plan
 
+- [ ] `npm run quality:check` (тесты + golden таргетинг и письма)
 - [ ] `npm run verify:local`
+- [ ] `npm run check:dashboard` (если менялся `dashboard/public/`)
 - [ ] `npm run devops:test-dashboard-ui` (если менялся dashboard)
+- [ ] `npm run test:dashboard-settings` (если менялась модалка «Настройки»)
 - [ ] `npm run export:public` — в `dist/hh-ai-public` нет секретов
 
 ## Docs

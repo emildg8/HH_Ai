@@ -13,8 +13,10 @@ import { applyStoredProfile } from '../lib/profile-prefs.mjs';
 import { loadTelegramBotConfig, readBotOffset, writeBotOffset } from '../lib/telegram-bot/config.mjs';
 import { deleteWebhook, getUpdates, getWebhookInfo } from '../lib/telegram-bot/api.mjs';
 import { handleTelegramUpdate } from '../lib/telegram-bot/router.mjs';
+import { setupBotUi } from '../lib/telegram-bot/ui.mjs';
 import { telegramAccessHint } from '../lib/telegram-api-base.mjs';
 import { ensureTorRunning } from '../lib/tor-local.mjs';
+import { acquireTelegramBotLock } from '../lib/telegram-bot/singleton.mjs';
 
 loadEnv();
 applyStoredProfile();
@@ -33,6 +35,11 @@ function sleep(ms) {
 
 async function main() {
   await ensureTorIfConfigured();
+  const lock = acquireTelegramBotLock();
+  if (!lock.ok) {
+    console.error(`[telegram-bot] ${lock.error}`);
+    process.exit(1);
+  }
   const cfg = loadTelegramBotConfig();
   if (!cfg.botToken) {
     console.error('[telegram-bot] Задайте TELEGRAM_BOT_TOKEN в .env или secrets.local.env');
@@ -61,16 +68,25 @@ async function main() {
   const accessHint = telegramAccessHint();
   if (accessHint) console.log(`[telegram-bot] ${accessHint}`);
 
+  try {
+    const ui = await setupBotUi(cfg.botToken, { skipPhoto: true });
+    console.log(`[telegram-bot] UI: ${ui.filter((x) => !x.includes(':')).join(', ') || 'ok'}`);
+  } catch (e) {
+    console.warn('[telegram-bot] UI setup:', e.message || e);
+  }
+
   while (true) {
     try {
       const updates = await getUpdates(cfg.botToken, offset, 25);
       for (const update of updates || []) {
-        offset = update.update_id + 1;
-        writeBotOffset(offset);
         try {
           await handleTelegramUpdate(cfg, update);
+          offset = update.update_id + 1;
+          writeBotOffset(offset);
         } catch (e) {
           console.error('[telegram-bot] update error:', e.message || e);
+          await sleep(2000);
+          break;
         }
       }
     } catch (e) {

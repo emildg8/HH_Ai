@@ -1,7 +1,15 @@
 import { vacancyMatchesSearch } from './vacancy-search.mjs';
 import { bucketTimelineForDisplay, renderFunnelTimelineHtml } from './funnel-timeline.mjs';
 import { initFloatingTooltips } from './tooltips.mjs';
-import { initModalLayer, openModalEl, closeModalEl } from './modals.mjs';
+import { initModalLayer, openModalEl, closeModalEl, MODAL_ROOT_IDS } from './modal-layout.mjs';
+import { openBatchPrecheckModal, updateBatchPrecheckModal } from './batch-precheck-modal.mjs';
+import {
+  pickBestVariantIndex,
+  formatLetterQualityBanner,
+  letterScore10Class,
+  renderLetterScaleLegendHtml,
+  renderSparklineHtml,
+} from './letter-quality-ui.mjs';
 import { initUiScaleControls } from './ui-scale.mjs';
 import { initThemeControls } from './ui-theme.mjs';
 import { initCardTuningControls, normalizeCardLayout } from './ui-card-tuning.mjs';
@@ -30,12 +38,16 @@ import {
   LAYOUT_PRESETS,
   detectLayoutPreset,
   batchScopeLabel,
+  batchReportScopeLabel,
   defaultPanelsForMode,
   defaultPanelSides,
   normalizePanelSides,
   panelSideFor,
+  glossaryLabel,
+  UI_TRIM_HINT_LS_KEY,
 } from './dashboard-ux.mjs';
 import { initSidebarBuilder, renderSidebarBuilder } from './ui-sidebar-builder.mjs';
+import { applySidebarLayout } from './sidebar-layout.mjs';
 import { initMobileShell, isMobileViewport } from './ui-mobile.mjs';
 import {
   initWorkspaceDocks,
@@ -43,6 +55,8 @@ import {
   applyDockState,
   syncDockMiniActiveView,
 } from './workspace-docks.mjs';
+import { autoRejectDoneReasonPrefix } from './reject-source.mjs';
+import { humanApiError } from './api-errors.mjs';
 import { renderCardTile, currentBrowseMode } from './card-tiles.mjs';
 import { renderDailySparklineHtml } from './daily-sparkline.mjs';
 import { copyVacancyMarkdown, downloadVacancyMarkdown } from './vacancy-export.mjs';
@@ -57,11 +71,29 @@ import { initListKeyboardNav } from './list-keyboard-nav.mjs';
 import { renderStatusChips } from './card-status.mjs';
 import { applyCopyToDom, syncFullscreenIcon } from './apply-copy-dom.mjs';
 import { initWorkflowNav } from './ui-workflow.mjs';
+import { initChatInboxUi, openChatInboxModal } from './chat-inbox-ui.mjs';
+import { buildScoreHumanHint } from './score-human-hint.mjs';
 import {
   closeVacancyDetail,
   configureVacancyDetailNav,
   initVacancyDetailModal,
 } from './vacancy-detail.mjs';
+import {
+  normalizeSettingsTab,
+  initSettingsModal,
+  updateSettingsSummaryFromPrefs,
+  parseSettingsFromLocation,
+  clearSettingsLocationParams,
+  focusSettingsField,
+  tryCloseSettingsModal,
+  markSettingsDirty,
+  markSettingsSaving,
+  markSettingsSaved,
+  markSettingsSaveFailed,
+  invalidateLettersSnapshot,
+  toggleSettingsModalFullscreen,
+  applySettingsOpenLayout,
+} from './settings-modal.mjs';
 
 const listEl = document.getElementById('list');
 const tpl = document.getElementById('card-tpl');
@@ -69,12 +101,33 @@ const tpl = document.getElementById('card-tpl');
 const vacancyTabsEl = document.querySelector('.vacancy-tabs');
 const applyViewTabsEl = document.querySelector('.apply-view-tabs');
 const filterSearchEl = document.getElementById('filter-search');
-const filterCompanyEl = document.getElementById('filter-company');
+const filterLetterQualityBtnEl = document.getElementById('btn-filter-letter-quality');
+const filterLetterWeakBtnEl = document.getElementById('btn-filter-letter-weak');
+const btnBulkImproveLettersEl = document.getElementById('btn-bulk-improve-letters');
 const filterMinScoreEl = document.getElementById('filter-min-score');
 const filterSortEl = document.getElementById('filter-sort');
 const filterSalaryEl = document.getElementById('filter-salary');
 const scoreThresholdInputEl = document.getElementById('score-threshold-input');
 const batchLimitEl = document.getElementById('batch-limit');
+const batchRequireRemoteEl = document.getElementById('batch-require-remote');
+const batchAutoPrepareLettersEl = document.getElementById('batch-auto-prepare-letters');
+const batchLetterRequireMetricEl = document.getElementById('batch-letter-require-metric');
+const batchAutoApproveLetterEl = document.getElementById('batch-auto-approve-letter');
+const batchFalsePositiveMaxEl = document.getElementById('batch-false-positive-max');
+const learningAutoApplyEl = document.getElementById('learning-auto-apply');
+const learningAutoApplyMinEl = document.getElementById('learning-auto-apply-min');
+const btnLetterCenterRegenEl = document.getElementById('btn-letter-center-regen');
+const letterStatsBodyEl = document.getElementById('letter-stats-body');
+const letterCenterPanelEl = document.getElementById('letter-center-panel');
+const letterCenterListEl = document.getElementById('letter-center-list');
+const btnLetterCenterPrepareEl = document.getElementById('btn-letter-center-prepare');
+const btnLetterCenterFilterEl = document.getElementById('btn-letter-center-filter');
+const btnLetterCenterFixableEl = document.getElementById('btn-letter-center-fixable');
+const btnLetterCenterFailEl = document.getElementById('btn-letter-center-fail');
+const btnLetterCenterMissingEl = document.getElementById('btn-letter-center-missing');
+const btnLetterCenterMoreEl = document.getElementById('btn-letter-center-more');
+const letterHubExtraEl = document.getElementById('letter-hub-extra');
+const letterCenterMetaEl = document.getElementById('letter-center-meta');
 const prefMaxHourEl = document.getElementById('pref-max-hour');
 const prefMaxDayEl = document.getElementById('pref-max-day');
 const prefMaxMonthEl = document.getElementById('pref-max-month');
@@ -85,6 +138,8 @@ const applyRateMetersEl = document.getElementById('apply-rate-meters');
 
 /** @type {((tabId: string) => void) | null} */
 let settingsTabSetter = null;
+/** @type {ReturnType<typeof initSettingsModal> | null} */
+let settingsModalHooks = null;
 
 let currentStatus = 'pending';
 let currentApplyView = 'queue';
@@ -103,6 +158,8 @@ let batchCaptchaToastShown = false;
 /** @type {string | null} */
 let lastFocusedVacancyId = null;
 let preferencesSaveAvailable = null;
+/** @type {Record<string, unknown>} */
+let dashboardPreferences = {};
 /** @type {{ uiMode: string, sidebarMode: string, panels: Record<string, boolean>, panelOrder: string[], panelSides: Record<string, string> }} */
 let dashboardUi = {
   uiMode: UI_MODES.simple,
@@ -152,6 +209,14 @@ let syncChatsWasRunning = false;
 let dailyRoutineWasRunning = false;
 let cachedRawItems = [];
 let cachedCounts = null;
+/** @type {{ empty?: boolean, demoAvailable?: boolean, demoCount?: number } | null} */
+let cachedQueueMeta = null;
+let demoEmptyToastShown = false;
+let topFalsePositivesCache = null;
+let topFalsePositivesTs = 0;
+let topFalsePositivesInFlight = null;
+let learningSuggestionsCache = [];
+let learningHistoryCache = [];
 /** Открыть первую анкету после перехода на вкладку «Анкета». */
 let openQuestionnaireOnNextLoad = false;
 const AUTO_REPROBE_COOLDOWN_MS = 30 * 60 * 1000;
@@ -161,20 +226,50 @@ let questionnaireReprobeCandidateCount = 0;
 
 function debounce(fn, ms) {
   let t;
-  return (...args) => {
+  /** @param {...unknown} args */
+  const wrapped = (...args) => {
     clearTimeout(t);
     t = setTimeout(() => fn(...args), ms);
   };
+  wrapped.flush = () => {
+    if (t) {
+      clearTimeout(t);
+      t = null;
+      fn();
+    }
+  };
+  wrapped.cancel = () => {
+    clearTimeout(t);
+    t = null;
+  };
+  return wrapped;
 }
 
 function readFiltersFromUI() {
   return {
     search: (filterSearchEl?.value || '').trim(),
-    company: (filterCompanyEl?.value || '').trim(),
+    company: '',
+    onlyLetterIssues: filterLetterQualityBtnEl?.getAttribute('aria-pressed') === 'true',
+    onlyLetterWeak: filterLetterWeakBtnEl?.getAttribute('aria-pressed') === 'true',
     minScore: filterMinScoreEl?.value?.trim() ?? '',
     sort: filterSortEl?.value || 'score-desc',
     onlySalary: Boolean(filterSalaryEl?.checked),
   };
+}
+
+function hasLetterQualityIssue(item) {
+  const q = item?.letterQuality;
+  if (!q) return false;
+  if (q.fixable) return true;
+  return q.pass === false;
+}
+
+function letterQualitySortKey(item) {
+  const q = item?.letterQuality;
+  if (!q) return 500;
+  const kind = q.fixable ? 0 : q.pass === false ? 1 : 2;
+  const score10 = Number(q.letterScore10);
+  return kind * 100 + (Number.isFinite(score10) ? score10 : 5);
 }
 
 function vacancyHhSiteBlocked(item) {
@@ -315,6 +410,16 @@ function applyClientFilters(items, filters) {
   if (filters.onlySalary) {
     out = out.filter((it) => it.salaryEstimate?.ok);
   }
+  if (filters.onlyLetterIssues) {
+    out = out.filter((it) => hasLetterQualityIssue(it));
+    out.sort((a, b) => letterQualitySortKey(a) - letterQualitySortKey(b));
+  }
+  if (filters.onlyLetterWeak) {
+    out = out.filter((it) => {
+      const l10 = it.letterQuality?.letterScore10 ?? it.readiness?.letterScore10;
+      return Number.isFinite(Number(l10)) && Number(l10) < 6;
+    });
+  }
   if (currentApplyView === 'applied' && currentAppliedFunnel !== 'all') {
     out = out.filter((it) => {
       const st = it?.hhApply?.hhSiteState;
@@ -368,6 +473,7 @@ function renderApplyRateMeters(rates) {
 function applyPreferencesToSettingsUI(preferences, bounds) {
   if (bounds && typeof bounds === 'object') prefBounds = bounds;
   const p = preferences || {};
+  dashboardPreferences = p;
   const setNum = (el, key, fallback) => {
     if (!el) return;
     const b = prefBounds[key];
@@ -383,6 +489,56 @@ function applyPreferencesToSettingsUI(preferences, bounds) {
   setNum(prefMaxHourEl, 'hhApplyChatMaxPerHour', 50);
   setNum(prefMaxDayEl, 'hhApplyChatMaxPerDay', 1000);
   setNum(prefMaxMonthEl, 'hhApplyChatMaxPerMonth', 5000);
+  if (batchRequireRemoteEl) {
+    batchRequireRemoteEl.checked = p.batchRequireRemote === true;
+  }
+  if (batchAutoPrepareLettersEl) {
+    batchAutoPrepareLettersEl.checked = p.batchAutoPrepareLetters !== false;
+  }
+  if (batchLetterRequireMetricEl) {
+    batchLetterRequireMetricEl.checked = p.batchLetterRequireMetric === true;
+  }
+  if (batchAutoApproveLetterEl) {
+    batchAutoApproveLetterEl.checked = p.batchAutoApproveBestLetter === true;
+  }
+  setNum(batchFalsePositiveMaxEl, 'batchFalsePositiveMax', 20);
+  if (learningAutoApplyEl) {
+    learningAutoApplyEl.checked = p.learningAutoApplyPatterns === true;
+  }
+  setNum(learningAutoApplyMinEl, 'learningAutoApplyMinCount', 3);
+  setNum(document.getElementById('pref-min-monthly-rub'), 'minMonthlyRub', 150000);
+  setNum(document.getElementById('pref-target-monthly-rub'), 'targetMonthlyRub', 180000);
+  setNum(document.getElementById('pref-max-monthly-search'), 'maxMonthlyRubSearch', 300000);
+  const pwEl = document.getElementById('settings-playwright-mode');
+  if (pwEl instanceof HTMLSelectElement) {
+    const mode = String(p.dashboardPlaywrightDisplayMode || 'hidden-captcha');
+    pwEl.value = ['hidden-captcha', 'visible', 'headless'].includes(mode) ? mode : 'hidden-captcha';
+  }
+  const targetingTrueDefault = new Set([
+    'allowHybrid',
+    'allowOfficeMoscow',
+    'hybridMoscowOnly',
+    'blockSpokenEnglishRequired',
+    'blockNightShiftOnly',
+    'allowUnknownSalary',
+    'excludeSeniorRoles',
+    'exclude1CRoles',
+    'excludeDeveloperRoles',
+    'excludeIrrelevantTitles',
+  ]);
+  for (const el of document.querySelectorAll('#settings-panel-targeting [data-pref-bool]')) {
+    const key = el.dataset.prefBool;
+    if (!key || !(el instanceof HTMLInputElement)) continue;
+    if (key in p) {
+      el.checked = targetingTrueDefault.has(key) ? p[key] !== false : p[key] === true;
+    } else {
+      el.checked = targetingTrueDefault.has(key);
+    }
+  }
+  const profileName = settingsProfileSelectEl?.selectedOptions?.[0]?.textContent?.trim();
+  updateSettingsSummaryFromPrefs(p, {
+    profileLabel: profileName ? `профиль: ${profileName}` : '',
+  });
   const defMin = Number(p.dashboardMinScoreFilter);
   if (Number.isFinite(defMin) && defMin >= 0) scoreThreshold = defMin;
   const batchN = Number(p.dashboardBatchSize);
@@ -392,6 +548,7 @@ function applyPreferencesToSettingsUI(preferences, bounds) {
   }
   updateScoreBandTabLabels();
   settingsHydrated = true;
+  settingsModalHooks?.syncDerivedState?.();
 }
 
 function applyProfileOptionsToSettingsUI(data) {
@@ -486,8 +643,7 @@ function applyDashboardUiFromPreferences(preferences, uiFromApi) {
   document.querySelectorAll('[data-ui-mode-preset]').forEach((b) => {
     b.classList.toggle('active', b.dataset.uiModePreset === dashboardUi.uiMode);
   });
-  applySidebarPanelVisibility();
-  reorderSidebarPanels();
+  applySidebarLayout(dashboardUi);
   renderSidebarBuilder();
   syncLayoutPresetButtons();
 }
@@ -505,88 +661,15 @@ function syncLayoutPresetButtons() {
   }
 }
 
-function applySidebarPanelVisibility() {
-  const { panels, uiMode } = dashboardUi;
-  document.querySelectorAll('.sidebar-panel[data-panel]').forEach((el) => {
-    const id = el.dataset.panel;
-    if (!id) return;
-    const visible = panels[id] !== false;
-    el.dataset.panelHidden = visible ? '0' : '1';
-    el.hidden = !visible;
-  });
-  syncDockSectionShells();
-}
-
-/** v4: секция dock-section — оболочка с заголовком; панель должна оставаться внутри. */
-function dockSectionHostForPanel(el) {
-  if (!el?.closest('#sidebar-scroll')) return el;
-  const section = el.closest('.dock-section');
-  if (section?.closest('#sidebar-scroll')) return section;
-  return el;
-}
-
-/** Скрыть пустые оболочки, если все вложенные панели выключены. */
-function syncDockSectionShells() {
-  document.querySelectorAll('#sidebar-scroll .dock-section').forEach((section) => {
-    if (section.dataset.panel) return;
-    const innerPanels = section.querySelectorAll('.sidebar-panel[data-panel]');
-    if (!innerPanels.length) return;
-    const anyVisible = [...innerPanels].some(
-      (p) => p.dataset.panelHidden !== '1' && !p.hidden
-    );
-    section.hidden = !anyVisible;
-  });
-}
-
-function reorderSidebarPanels() {
-  const scroll = document.getElementById('sidebar-scroll');
-  const rightBody = document.querySelector('#dock-right .dock__body');
-  const footer = document.querySelector('#dock-right .sidebar-footer');
-  if (!scroll || !rightBody) return;
-  const order = dashboardUi.panelOrder || SIDEBAR_PANEL_ORDER_DEFAULT;
-  const panels = [...document.querySelectorAll('.sidebar-panel[data-panel]')];
-  const byId = Object.fromEntries(panels.map((el) => [el.dataset.panel, el]));
-
-  const placedLeft = new Set();
-  for (const id of order) {
-    if (panelSideFor(dashboardUi, id) !== 'left' || id === 'brand') continue;
-    if (dashboardUi.panels[id] === false) continue;
-    const el = byId[id];
-    if (!el) continue;
-    const host = dockSectionHostForPanel(el);
-    if (placedLeft.has(host)) continue;
-    placedLeft.add(host);
-    scroll.appendChild(host);
-  }
-  syncDockSectionShells();
-
-  for (const id of order) {
-    if (panelSideFor(dashboardUi, id) !== 'right') continue;
-    if (id === 'jobFooter') continue;
-    if (dashboardUi.panels[id] === false) continue;
-    const el = byId[id];
-    if (!el) continue;
-    rightBody.insertBefore(el, footer?.parentElement === rightBody ? footer : null);
-  }
-  if (
-    footer &&
-    dashboardUi.panels.jobFooter !== false &&
-    panelSideFor(dashboardUi, 'jobFooter') === 'right'
-  ) {
-    rightBody.appendChild(footer);
-  }
-}
-
 function initSidebarBuilderHooks() {
   initSidebarBuilder({
     getUi: () => dashboardUi,
-    patchUi: (partial) => {
+    patchUi: (partial, opts = {}) => {
       dashboardUi = { ...dashboardUi, ...partial };
-      if (partial.panels) applySidebarPanelVisibility();
-      if (partial.panelOrder || partial.panelSides) {
-        reorderSidebarPanels();
-        renderSidebarBuilder();
+      if (partial.panels || partial.panelOrder || partial.panelSides || opts.reorder) {
+        applySidebarLayout(dashboardUi);
       }
+      if (partial.panelOrder || partial.panelSides) renderSidebarBuilder();
       syncLayoutPresetButtons();
       writeDashboardLayoutLocal(dashboardUi);
     },
@@ -606,7 +689,7 @@ function applyLayoutPreset(name) {
     sidebarMode: preset.sidebarMode,
     panels: { ...preset.panels },
     panelOrder: [...preset.panelOrder],
-    panelSides: defaultPanelSides(),
+    panelSides: { ...defaultPanelSides(), ...(preset.panelSides || {}) },
   };
   applyDashboardUiFromPreferences(
     {
@@ -663,13 +746,23 @@ const scheduleSaveLayoutSettings = debounce(() => {
 }, 600);
 
 function readSettingsPatchFromUI() {
-  /** @type {Record<string, number>} */
+  /** @type {Record<string, number | string | boolean>} */
   const patch = {};
   for (const el of document.querySelectorAll('[data-pref]')) {
     const key = el.dataset.pref;
     if (!key) continue;
     const n = Number(el.value);
     if (Number.isFinite(n)) patch[key] = n;
+  }
+  for (const el of document.querySelectorAll('[data-pref-bool]')) {
+    const key = el.dataset.prefBool;
+    if (!key) continue;
+    patch[key] = Boolean(el.checked);
+  }
+  for (const el of document.querySelectorAll('[data-pref-select]')) {
+    const key = el.dataset.prefSelect;
+    if (!key) continue;
+    patch[key] = String(el.value || '').trim();
   }
   return { ...patch, ...readLayoutPatchFromUI() };
 }
@@ -685,7 +778,7 @@ function setSettingsHint(text, variant = '') {
   const t = String(text || '').trim();
   settingsSaveHintEl.textContent = t;
   settingsSaveHintEl.hidden = !t;
-  settingsSaveHintEl.classList.remove('settings-hint--saved', 'settings-hint--err');
+  settingsSaveHintEl.classList.remove('settings-hint--saved', 'settings-hint--err', 'settings-hint--pending');
   if (variant) settingsSaveHintEl.classList.add(`settings-hint--${variant}`);
 }
 
@@ -730,6 +823,7 @@ async function saveSettingsFromUI() {
     setSettingsHint('Перезапустите дашборд: npm run devops:dashboard, затем F5', 'err');
     return;
   }
+  markSettingsSaving();
   const patch = readSettingsPatchFromUI();
   try {
     const res = await patchPreferencesApi(patch);
@@ -744,9 +838,14 @@ async function saveSettingsFromUI() {
     if (res.preferences) applyPreferencesToSettingsUI(res.preferences, prefBounds);
     applyDashboardUiFromPreferences(prefs, res.ui ? uiFromApi : undefined);
     if (res.applyRates) renderApplyRateMeters(res.applyRates);
+    markSettingsSaved();
     flashSettingsSaved();
+    invalidateLetterStatsCache();
+    invalidateLettersSnapshot();
+    void refreshLetterStatsSidebar(true);
     if (currentScoreBand !== 'all') load({ preserveScroll: true });
   } catch (e) {
+    markSettingsSaveFailed();
     const hint =
       e.status === 404
         ? 'Сервер без сохранения лимитов — перезапустите: npm run devops:dashboard, затем F5'
@@ -760,9 +859,24 @@ const scheduleSaveSettings = debounce(() => {
   saveSettingsFromUI();
 }, 500);
 
+function flushSaveSettings() {
+  scheduleSaveSettings.flush();
+}
+
 function getBatchLimitForRun() {
   const cap = Number(batchLimitEl?.max) || batchSizeCap || 100;
   return Math.min(cap, Math.max(1, Number(batchLimitEl?.value) || 10));
+}
+
+function showUiTrimHintOnce() {
+  try {
+    if (localStorage.getItem(UI_TRIM_HINT_LS_KEY) === '1') return;
+    if (dashboardUi.uiMode !== UI_MODES.simple) return;
+    localStorage.setItem(UI_TRIM_HINT_LS_KEY, '1');
+    showToast(glossaryLabel('uiTrimHint', dashboardUi.uiMode), 'neutral');
+  } catch {
+    /* ignore */
+  }
 }
 
 async function loadDashboardSettings() {
@@ -772,15 +886,46 @@ async function loadDashboardSettings() {
     preferencesSaveAvailable = fromGet || (await probePreferencesSaveApi());
     applyPreferencesToSettingsUI(data.preferences, data.bounds);
     applyDashboardUiFromPreferences(data.preferences, data.ui);
+    showUiTrimHintOnce();
     if (data.applyRates) renderApplyRateMeters(data.applyRates);
     applyProfileOptionsToSettingsUI(data);
+    if (data.systemStatus) settingsModalHooks?.renderSystemHealth?.(data.systemStatus);
     if (!preferencesSaveAvailable) {
       setSettingsHint('Сохранение недоступно — перезапустите дашборд (npm run devops:dashboard)', 'err');
     }
+    settingsModalHooks?.afterPreferencesLoaded();
   } catch {
     settingsHydrated = true;
     preferencesSaveAvailable = false;
+    settingsModalHooks?.afterPreferencesLoaded();
   }
+}
+
+function closeSettingsModal() {
+  const settingsModal = document.getElementById('settings-modal');
+  if (!settingsModal || settingsModal.hidden) return;
+  if (!tryCloseSettingsModal()) return;
+  settingsModal.hidden = true;
+  closeModalEl(settingsModal);
+}
+
+function resetAppearanceSettingsSection({ includeLocalVisual = false } = {}) {
+  const msg = includeLocalVisual
+    ? 'Сбросить фильтры, панели «Стандарт», тему (тёмная), масштаб 100%, карточки «Средний» и размер окна настроек?'
+    : 'Сбросить фильтры списка и пресет панелей «Стандарт»? Масштаб, тема и окно настроек не меняются.';
+  if (!window.confirm(msg)) return;
+  document.getElementById('filter-reset')?.click();
+  applyLayoutPreset('standard');
+  if (includeLocalVisual) {
+    import('./settings-modal.mjs').then((m) => {
+      m.resetLocalAppearanceVisuals();
+      m.resetSettingsModalLayout();
+    });
+  }
+  showToast(
+    includeLocalVisual ? 'Интерфейс, тема и окно настроек сброшены' : 'Интерфейс: фильтры и панели сброшены',
+    'neutral'
+  );
 }
 
 function updateScoreBandTabLabels() {
@@ -795,8 +940,6 @@ function updateScoreBandTabLabels() {
   if (autoBtn) autoBtn.textContent = `${COPY.batchAuto} (≥${t})`;
   const manualBtn = document.getElementById('btn-batch-manual');
   if (manualBtn) manualBtn.textContent = `${COPY.batchManual} (<${t})`;
-  const topAuto = document.getElementById('btn-top-batch-auto');
-  if (topAuto) topAuto.textContent = `${COPY.batchAuto} (≥${t})`;
 }
 
 /** Запасные фильтры ролей (если дашборд без актуального API). */
@@ -911,6 +1054,55 @@ function showToast(message, variant = 'neutral') {
   setTimeout(hide, 2600);
 }
 
+function batchPrecheckReasonLabel(key) {
+  const m = {
+    'work-format': 'формат работы',
+    'off-target-blue-collar': 'рабочие специальности',
+    'off-target-l1': 'L1 поддержка',
+    'off-target-sales': 'продажи/presale',
+    'off-target-network': 'сетевые/телеком',
+    'off-target-industrial': 'промышленный/полевой',
+    'off-target-no-it-profile': 'нет IT-профиля',
+    'off-target-promo': 'промо/служебные',
+    'off-target': 'нецелевая',
+    letterQuality: 'качество письма',
+    fixableLetterQuality: 'можно подготовить автоматически',
+  };
+  return m[key] || key;
+}
+
+function batchPrecheckSummaryText(precheck) {
+  if (!precheck || typeof precheck !== 'object') return '';
+  const blocked = precheck.blocked || {};
+  const top = Object.entries(blocked)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([k, v]) => `${batchPrecheckReasonLabel(k)}: ${v}`);
+  let extra = '';
+  if (Number(precheck.fixableLetterQuality || 0) > 0) {
+    extra = `\nАвтоподготовка: ${precheck.fixableLetterQuality} (полировка/роль без LLM)`;
+  }
+  return (top.length ? `\nБлокеры: ${top.join(' · ')}` : '') + extra;
+}
+
+function batchPrecheckTopSampleText(precheck) {
+  const blocked = precheck?.blocked || {};
+  const samples = precheck?.blockedSamples || {};
+  const top = Object.entries(blocked).sort((a, b) => b[1] - a[1])[0];
+  if (!top) return '';
+  const [key] = top;
+  const first = Array.isArray(samples[key]) ? samples[key][0] : null;
+  if (!first?.title) return '';
+  const why = first.reason ? ` — ${first.reason}` : '';
+  return `\nПример: ${first.title}${why}`.slice(0, 260);
+}
+
+function setLetterIssuesFilter(enabled) {
+  if (!filterLetterQualityBtnEl) return;
+  filterLetterQualityBtnEl.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  filterLetterQualityBtnEl.classList.toggle('active', enabled);
+}
+
 function formatFetchError(err, path) {
   const msg = err?.message || String(err);
   if (msg === 'Failed to fetch' || /failed to fetch/i.test(msg)) {
@@ -971,6 +1163,403 @@ async function requestCoverLetterGenerate(id, force = false) {
   });
 }
 
+async function requestCoverLetterImprove(id) {
+  return api('/api/cover-letter/improve', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  });
+}
+
+async function requestCoverLetterBulkImprove(opts = {}) {
+  return api('/api/cover-letter/bulk-improve', {
+    method: 'POST',
+    body: JSON.stringify(opts),
+  });
+}
+
+async function requestCoverLetterPrepareText(id, text) {
+  return api('/api/cover-letter/prepare-text', {
+    method: 'POST',
+    body: JSON.stringify({ id, text }),
+  });
+}
+
+async function requestCoverLetterEvaluate(id, text) {
+  return api('/api/cover-letter/evaluate', {
+    method: 'POST',
+    body: JSON.stringify({ id, text }),
+  });
+}
+
+async function requestCoverLetterRegenerateWeak(opts = {}) {
+  return api('/api/cover-letter/regenerate-weak', {
+    method: 'POST',
+    body: JSON.stringify(opts),
+  });
+}
+
+async function fetchBatchPrecheck(minScore, maxScore) {
+  const batchScope = batchScopeForCurrentView();
+  const qs = new URLSearchParams({
+    batchScope,
+    queueStatus: batchScope === 'queue' && currentStatus === 'approved' ? 'approved' : 'pending',
+    minScore: String(Math.max(0, Number(minScore || 0))),
+    maxScore: String(Math.max(0, Number(maxScore || 0))),
+  });
+  return api(`/api/batch-precheck?${qs.toString()}`);
+}
+
+async function runBulkLetterPrepare(minScore, maxScore) {
+  const batchScope = batchScopeForCurrentView();
+  return requestCoverLetterBulkImprove({
+    batchScope,
+    queueStatus: batchScope === 'queue' && currentStatus === 'approved' ? 'approved' : 'pending',
+    minScore: Math.max(0, Number(minScore || 0)),
+    maxScore: Math.max(0, Number(maxScore || 0)),
+  });
+}
+
+let letterStatsCache = null;
+let letterStatsCacheTs = 0;
+let letterCenterKindFilter = 'all';
+let letterQualityHubCache = null;
+let letterStatsFetchSeq = 0;
+
+function invalidateLetterStatsCache() {
+  letterStatsCache = null;
+  letterStatsCacheTs = 0;
+}
+
+function filterLetterCenterItems(items) {
+  if (!Array.isArray(items)) return [];
+  if (letterCenterKindFilter === 'all') return items;
+  return items.filter((it) => it.kind === letterCenterKindFilter);
+}
+
+function updateLetterCenterKindButtons() {
+  for (const [el, kind] of [
+    [btnLetterCenterFixableEl, 'fixable'],
+    [btnLetterCenterFailEl, 'fail'],
+    [btnLetterCenterMissingEl, 'missing'],
+  ]) {
+    if (!el) continue;
+    const on = letterCenterKindFilter === kind;
+    el.classList.toggle('active', on);
+    el.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+}
+
+function renderLetterHubExtra(hub) {
+  if (!letterHubExtraEl) return;
+  letterQualityHubCache = hub;
+  const parts = [];
+  const br = hub?.batchReport;
+  if (br?.letterQualitySkips > 0) {
+    parts.push(`батч: −${br.letterQualitySkips} по письмам`);
+  }
+  const gl = hub?.golden?.letters;
+  const gt = hub?.golden?.targeting;
+  if (gl?.total) {
+    parts.push(`письма ${gl.passed}/${gl.total}${gl.ok === false ? ' ⚠' : ''}`);
+  }
+  if (gt?.total) {
+    parts.push(`таргет ${gt.passed}/${gt.total}${gt.ok === false ? ' ⚠' : ''}`);
+  }
+  if (hub?.userEdits?.recentCount > 0) {
+    parts.push(`правки ${hub.userEdits.recentCount}`);
+  }
+  letterHubExtraEl.textContent = parts.join(' · ');
+  letterHubExtraEl.hidden = parts.length === 0;
+  letterHubExtraEl.title = 'Подробнее о качестве писем';
+}
+
+function toggleLetterIssuesFilter() {
+  if (!filterLetterQualityBtnEl) return;
+  const next = !(filterLetterQualityBtnEl.getAttribute('aria-pressed') === 'true');
+  setLetterIssuesFilter(next);
+  renderListFromCache(null);
+  showToast(
+    next ? 'Фильтр: только карточки с проблемами письма' : 'Фильтр писем снят',
+    'neutral'
+  );
+}
+
+function openLetterQualityHubModal() {
+  const modal = document.getElementById('letter-quality-hub-modal');
+  const body = document.getElementById('letter-quality-hub-body');
+  if (!modal || !body) return;
+  const hub = letterQualityHubCache;
+  if (!hub) {
+    body.innerHTML = '<p class="modal-hint">Нет данных — откройте раздел очереди с письмами.</p>';
+    openModalEl(modal);
+    return;
+  }
+  const gen = hub.metrics?.generate;
+  const bl = hub.baseline;
+  const gl = hub.golden?.letters;
+  const gt = hub.golden?.targeting;
+  const rows = [
+    ['LLM pass', gen?.qualityPassRate != null ? `${gen.qualityPassRate}%` : '—'],
+    ['LLM retry', gen?.qualityRetry ?? '—'],
+    [
+      glossaryLabel('fpRejected', dashboardUi.uiMode),
+      bl?.falsePositiveRate != null ? `${bl.falsePositiveRate}%` : '—',
+    ],
+    ['Батч писем ok', bl?.letterBatchReadyRate != null ? `${bl.letterBatchReadyRate}%` : '—'],
+    ['Invite', bl?.inviteRate != null ? `${bl.inviteRate}%` : '—'],
+    [
+      'Golden письма',
+      gl ? `${gl.passed}/${gl.total}${gl.ok === false ? ' ⚠' : ''}` : '—',
+    ],
+    [
+      'Golden таргет',
+      gt ? `${gt.passed}/${gt.total}${gt.ok === false ? ' ⚠' : ''}` : '—',
+    ],
+  ];
+  let html = renderLetterScaleLegendHtml();
+  if (gl?.ok === false || gt?.ok === false) {
+    html += `<p class="letter-quality-hub-alert">${escapeHtml(glossaryLabel('goldenRegression', dashboardUi.uiMode))} — <code>npm run audit:quality-golden</code></p>`;
+  }
+  const trends = hub.trends || {};
+  const fp7 = trends.falsePositive7d || [];
+  const lp7 = trends.letterPass7d || [];
+  if (fp7.length || lp7.length) {
+    html += '<div class="hub-trends-grid">';
+    if (fp7.length) {
+      html += `<div><p class="hub-trends-grid__label">${escapeHtml(glossaryLabel('fpRejected', dashboardUi.uiMode))}, 7 дн.</p>${renderSparklineHtml(fp7, { valueKey: 'total', suffix: '', ariaLabel: 'Ложные пропуски за 7 дней' })}</div>`;
+    }
+    if (lp7.length) {
+      html += `<div><p class="hub-trends-grid__label">LLM pass, 7 дн.</p>${renderSparklineHtml(lp7, { valueKey: 'passRate', suffix: '%', ariaLabel: 'Pass rate писем за 7 дней' })}</div>`;
+    }
+    html += '</div>';
+  }
+  if (hub.letterNoEdit?.noEditPct != null) {
+    html += `<p class="modal-hint">${escapeHtml(glossaryLabel('letterQuality', dashboardUi.uiMode))}: без правок <strong>${hub.letterNoEdit.noEditPct}%</strong> (${hub.letterNoEdit.noEdit}/${hub.letterNoEdit.samples} откликов)</p>`;
+  }
+  html += `<dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>`;
+  const batchSamples = hub.batchReport?.samples || [];
+  if (batchSamples.length) {
+    html += '<p><strong>Последний батч (письма):</strong></p><ul>';
+    for (const s of batchSamples) {
+      html += `<li class="letter-batch-sample">${escapeHtml(s.title || '')}${s.reason ? ` — <span>${escapeHtml(s.reason)}</span>` : ''}</li>`;
+    }
+    html += '</ul>';
+  }
+  if (hub.userEdits?.preview?.length) {
+    html += '<p><strong>Ваши правки (фрагменты):</strong></p><ul>';
+    for (const s of hub.userEdits.preview) {
+      html += `<li>${escapeHtml(s)}</li>`;
+    }
+    html += '</ul>';
+  }
+  if (hub.correlation?.insight) {
+    html += `<p class="modal-hint">${escapeHtml(hub.correlation.insight)}</p>`;
+  }
+  if (hub.styleInsights?.insight) {
+    html += `<p class="modal-hint">${escapeHtml(hub.styleInsights.insight)}</p>`;
+  }
+  body.innerHTML = html;
+  openModalEl(modal);
+  body.querySelectorAll('.letter-batch-sample').forEach((li, i) => {
+    const s = batchSamples[i];
+    if (!s?.id) return;
+    li.classList.add('letter-quality-hub-body__link');
+    li.addEventListener('click', () => focusVacancyCard(s.id));
+  });
+}
+
+function reapplyLetterCenterFromCache() {
+  if (letterStatsCache?.payload) {
+    applyLetterStatsPayload(letterStatsCache.payload);
+  }
+}
+
+async function refreshLetterStatsSidebar(force = false) {
+  if (!letterStatsBodyEl) return;
+  const fetchSeq = ++letterStatsFetchSeq;
+  const batchScope = batchScopeForCurrentView();
+  if (!batchScope || currentApplyView === 'applied') {
+    letterStatsBodyEl.hidden = true;
+    if (letterHubExtraEl) letterHubExtraEl.hidden = true;
+    if (letterCenterPanelEl) letterCenterPanelEl.hidden = true;
+    return;
+  }
+  const cacheKey = `${batchScope}:${currentStatus}:${filterMinScoreEl?.value || ''}`;
+  if (
+    !force &&
+    letterStatsCache &&
+    Date.now() - letterStatsCacheTs < 25_000 &&
+    letterStatsCache.key === cacheKey
+  ) {
+    applyLetterStatsPayload(letterStatsCache.payload);
+    return;
+  }
+
+  letterStatsBodyEl.textContent = 'Письма…';
+  letterStatsBodyEl.classList.add('letter-stats-mini--loading');
+  letterStatsBodyEl.hidden = false;
+
+  try {
+    const qs = new URLSearchParams({
+      batchScope,
+      queueStatus: batchScope === 'queue' && currentStatus === 'approved' ? 'approved' : 'pending',
+      minScore: String(Math.max(0, Number(filterMinScoreEl?.value || scoreThreshold || 0))),
+    });
+    const [s, issues, hub] = await Promise.all([
+      api(`/api/cover-letter/stats?${qs.toString()}`),
+      api(`/api/cover-letter/issues?${qs.toString()}&kind=issues&limit=24`),
+      api('/api/cover-letter/quality-hub').catch(() => null),
+    ]);
+    renderLetterHubExtra(hub);
+    const gen = hub?.metrics?.generate;
+    const genHint =
+      gen?.total > 0 && gen.qualityPassRate != null
+        ? ` · LLM ok ${gen.qualityPassRate}%${gen.qualityRetry ? ` · retry ${gen.qualityRetry}` : ''}`
+        : '';
+    const corrHint =
+      hub?.correlation?.invitedPassRate != null && hub?.correlation?.appliedPassRate != null
+        ? ` · invite ${hub.correlation.invitedPassRate}% vs отклик ${hub.correlation.appliedPassRate}%`
+        : '';
+    const insightParts = [];
+    if (hub?.correlation?.insight && (hub.correlation.withLetter || 0) >= 8) {
+      insightParts.push(hub.correlation.insight);
+    }
+    if (hub?.styleInsights?.insight && (hub.styleInsights.invitedCount || 0) >= 3) {
+      insightParts.push(hub.styleInsights.insight);
+    }
+    const insight =
+      insightParts.length > 0
+        ? `<p class="letter-stats-insight" title="${escapeHtml(insightParts.join(' '))}">${escapeHtml(insightParts.join(' ').slice(0, 120))}${insightParts.join(' ').length > 120 ? '…' : ''}</p>`
+        : '';
+    const readyPct =
+      s.letterReadyRate != null && s.approved > 0 ? ` · ${s.letterReadyRate}% ок` : '';
+    const bl = hub?.baseline;
+    const baselineBits = [];
+    if (bl?.falsePositiveRate != null && (bl.falsePositives || 0) > 0) {
+      baselineBits.push(
+        `${glossaryLabel('fpRejected', dashboardUi.uiMode)} ${bl.falsePositiveRate}%`
+      );
+    }
+    if (hub?.golden?.letters?.total) {
+      const glOk = hub.golden.letters.ok !== false;
+      baselineBits.push(
+        `L ${hub.golden.letters.passed}/${hub.golden.letters.total}${glOk ? '' : ' ⚠'}`
+      );
+    }
+    if (hub?.golden?.targeting?.total) {
+      const gOk = hub.golden.targeting.ok !== false;
+      baselineBits.push(
+        `T ${hub.golden.targeting.passed}/${hub.golden.targeting.total}${gOk ? '' : ' ⚠'}`
+      );
+    }
+    if (bl?.inviteRate != null && (bl.responded || 0) >= 5) {
+      baselineBits.push(`invite ${bl.inviteRate}%`);
+    }
+    const baselineHint = baselineBits.length ? ` · ${baselineBits.join(' · ')}` : '';
+    const parts = [
+      `<strong>Письма</strong>`,
+      `готово ${s.pass || 0}/${s.approved || 0}${readyPct}`,
+      s.fixable ? `· подготовить ${s.fixable}` : '',
+      s.fail ? `· правка ${s.fail}` : '',
+      s.missing ? `· нет ${s.missing}` : '',
+      genHint,
+      corrHint,
+      baselineHint,
+    ].filter(Boolean);
+    const baselineGoldenOk = hub?.golden?.targeting?.ok !== false;
+    const payload = {
+      s,
+      issues,
+      hub,
+      parts,
+      insight,
+      warn: (s.fail || 0) + (s.fixable || 0) > 0,
+      baselineGoldenOk:
+        baselineGoldenOk && hub?.golden?.letters?.ok !== false && hub?.golden?.targeting?.ok !== false,
+    };
+    letterStatsCache = { key: cacheKey, payload };
+    letterStatsCacheTs = Date.now();
+    if (fetchSeq !== letterStatsFetchSeq) return;
+    applyLetterStatsPayload(payload);
+  } catch {
+    if (fetchSeq !== letterStatsFetchSeq) return;
+    letterStatsBodyEl.hidden = true;
+    if (letterHubExtraEl) letterHubExtraEl.hidden = true;
+    if (letterCenterPanelEl) letterCenterPanelEl.hidden = true;
+  } finally {
+    letterStatsBodyEl.classList.remove('letter-stats-mini--loading');
+  }
+}
+
+function applyLetterStatsPayload({ s, issues, parts, insight, warn, baselineGoldenOk }) {
+  if (!letterStatsBodyEl) return;
+  letterStatsBodyEl.innerHTML = parts.join(' ') + (insight || '');
+  letterStatsBodyEl.classList.toggle('letter-stats-mini--warn', Boolean(warn));
+  letterStatsBodyEl.classList.toggle('letter-stats-mini--golden-warn', baselineGoldenOk === false);
+  letterStatsBodyEl.hidden = false;
+  if (!letterCenterPanelEl || !letterCenterListEl) return;
+  updateLetterCenterKindButtons();
+  const allItems = issues?.items || [];
+  const items = filterLetterCenterItems(allItems);
+  const issueTotal = (s?.fixable || 0) + (s?.fail || 0) + (s?.missing || 0);
+  const showPanel = allItems.length > 0 || issueTotal > 0;
+  letterCenterPanelEl.hidden = !showPanel;
+  if (letterCenterMetaEl) {
+    if (!showPanel) {
+      letterCenterMetaEl.hidden = true;
+    } else {
+      const shown = items.length;
+      const listTotal = allItems.length;
+      const filterLabel =
+        letterCenterKindFilter === 'all'
+          ? `проблем: ${listTotal}`
+          : `${shown} из ${listTotal}`;
+      letterCenterMetaEl.textContent = filterLabel;
+      letterCenterMetaEl.hidden = false;
+    }
+  }
+  if (items.length === 0 && showPanel && letterCenterKindFilter !== 'all') {
+    letterCenterListEl.replaceChildren();
+    const empty = document.createElement('li');
+    empty.className = 'letter-center-list__empty';
+    empty.textContent = 'Нет карточек в этом фильтре';
+    letterCenterListEl.append(empty);
+    return;
+  }
+  letterCenterListEl.replaceChildren(
+    ...items.slice(0, 12).map((it) => {
+      const li = document.createElement('li');
+      const kind =
+        it.kind === 'fixable' ? '⚙' : it.kind === 'fail' ? '✕' : it.kind === 'missing' ? '?' : '·';
+      const n10 = Number(it.letterScore10);
+      const score =
+        Number.isFinite(n10) && it.kind !== 'missing'
+          ? ` <span class="letter-center-list__score ${letterScore10Class(n10)}">${n10}/10</span>`
+          : '';
+      li.innerHTML = `<span class="letter-center-list__kind">${kind}</span>${escapeHtml(it.title || it.id)}${score}`;
+      const tip = [it.reason, it.hint].filter(Boolean).join(' · ');
+      li.title = tip || '';
+      li.addEventListener('click', () => focusVacancyCard(it.id));
+      return li;
+    })
+  );
+  if (btnLetterCenterPrepareEl) {
+    btnLetterCenterPrepareEl.hidden = !(s?.fixable > 0);
+    btnLetterCenterPrepareEl.textContent =
+      s?.fixable > 0 ? `Подготовить (${s.fixable})` : 'Подготовить';
+  }
+}
+
+function focusVacancyCard(id) {
+  if (!id) return;
+  const node = listEl.querySelector(`[data-record-id="${CSS.escape(id)}"]`);
+  if (node) {
+    node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    node.classList.add('card-tile--focus-pulse');
+    setTimeout(() => node.classList.remove('card-tile--focus-pulse'), 1600);
+  }
+}
+
 function closeDraftModal() {
   const modal = document.getElementById('draft-modal');
   if (!modal) return;
@@ -990,51 +1579,47 @@ function closeApplyLogModal() {
   closeModalEl(modal);
 }
 
+function closeBatchReportModal() {
+  const modal = document.getElementById('batch-report-modal');
+  if (!modal) return;
+  closeModalEl(modal);
+}
+
+function initBatchReportSettingsLinks() {
+  const modal = document.getElementById('batch-report-modal');
+  if (!modal || modal.dataset.settingsLinksBound === '1') return;
+  modal.dataset.settingsLinksBound = '1';
+  modal.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-batch-report-settings]');
+    if (!btn) return;
+    const kind = btn.getAttribute('data-batch-report-settings');
+    closeBatchReportModal();
+    const detail =
+      kind === 'fp'
+        ? { tab: 'letters', focus: 'fp', layout: 'wide' }
+        : kind === 'limits'
+          ? { tab: 'apply', focus: 'settings-limits-hh', layout: 'compact' }
+          : { tab: 'letters', focus: 'settings-letters-presets', layout: 'wide' };
+    window.dispatchEvent(new CustomEvent('hh-open-settings', { detail }));
+  });
+}
+
+function closeDailyDigestModal() {
+  const modal = document.getElementById('daily-digest-modal');
+  if (!modal) return;
+  closeModalEl(modal);
+}
+
 function closeTopModal() {
   const service = document.getElementById('service-drawer');
   if (service && !service.hidden) {
     closeServiceDrawer();
     return true;
   }
-  const vacancyDetail = document.getElementById('vacancy-detail-modal');
-  if (vacancyDetail && !vacancyDetail.hidden) {
-    closeVacancyDetail();
-    return true;
-  }
-  const settings = document.getElementById('settings-modal');
-  if (settings && !settings.hidden) {
-    closeModalEl(settings);
-    return true;
-  }
-  const funnel = document.getElementById('funnel-modal');
-  if (funnel && !funnel.hidden) {
-    closeFunnelModal();
-    return true;
-  }
-  const questionnaire = document.getElementById('questionnaire-modal');
-  if (questionnaire && !questionnaire.hidden) {
-    closeQuestionnaireModal();
-    return true;
-  }
-  const approved = document.getElementById('approved-letter-modal');
-  if (approved && !approved.hidden) {
-    closeApprovedLetterModal();
-    return true;
-  }
-  const log = document.getElementById('apply-log-modal');
-  if (log && !log.hidden) {
-    closeApplyLogModal();
-    return true;
-  }
-  const shortcuts = document.getElementById('shortcuts-modal');
-  if (shortcuts && !shortcuts.hidden) {
-    closeModalEl(shortcuts);
-    return true;
-  }
-  const draft = document.getElementById('draft-modal');
-  if (draft && !draft.hidden) {
-    closeDraftModal();
-    return true;
+  for (const id of MODAL_ROOT_IDS) {
+    const m = document.getElementById(id);
+    if (!m || m.hidden) continue;
+    return closeModalById(id);
   }
   return false;
 }
@@ -1052,6 +1637,18 @@ function closeModalById(modalId) {
     closeApplyLogModal();
     return true;
   }
+  if (modalId === 'batch-report-modal') {
+    closeBatchReportModal();
+    return true;
+  }
+  if (modalId === 'batch-precheck-modal') {
+    closeModalEl(document.getElementById('batch-precheck-modal'));
+    return true;
+  }
+  if (modalId === 'daily-digest-modal') {
+    closeDailyDigestModal();
+    return true;
+  }
   if (modalId === 'approved-letter-modal') {
     closeApprovedLetterModal();
     return true;
@@ -1061,11 +1658,8 @@ function closeModalById(modalId) {
     return true;
   }
   if (modalId === 'settings-modal') {
-    const m = document.getElementById('settings-modal');
-    if (m && !m.hidden) {
-      closeModalEl(m);
-      return true;
-    }
+    closeSettingsModal();
+    return true;
   }
   if (modalId === 'funnel-modal') {
     closeFunnelModal();
@@ -1073,6 +1667,13 @@ function closeModalById(modalId) {
   }
   if (modalId === 'shortcuts-modal') {
     const m = document.getElementById('shortcuts-modal');
+    if (m && !m.hidden) {
+      closeModalEl(m);
+      return true;
+    }
+  }
+  if (modalId === 'letter-quality-hub-modal') {
+    const m = document.getElementById('letter-quality-hub-modal');
     if (m && !m.hidden) {
       closeModalEl(m);
       return true;
@@ -1487,6 +2088,30 @@ function renderApplyLogInsights(text, st = lastJobStatus) {
   el.innerHTML = parts.map((p) => `<div class="apply-log-insight-line">${escapeHtml(p)}</div>`).join('');
 }
 
+function buildBatchReportHeadline(report) {
+  const done = Number(report?.done || 0);
+  const skipped = Number(report?.skipped || 0);
+  const failed = Number(report?.failed || 0);
+  if (done === 0 && skipped === 0 && failed === 0) {
+    return 'Серия завершилась без откликов — проверьте очередь и настройки писем.';
+  }
+  const parts = [];
+  if (done > 0) parts.push(`отправлено ${done} отклик${done === 1 ? '' : done < 5 ? 'а' : 'ов'}`);
+  if (skipped > 0) parts.push(`пропущено ${skipped}`);
+  if (failed > 0) parts.push(`ошибок ${failed}`);
+  let line = parts.join(', ');
+  const topSkip = Object.entries(report?.skipReasons || {}).sort((a, b) => b[1] - a[1])[0];
+  if (topSkip && topSkip[1] > 0) {
+    const reason = /letter|письм/i.test(topSkip[0])
+      ? 'качество письма'
+      : /нецел|off-target/i.test(topSkip[0])
+        ? 'нецелевые вакансии'
+        : topSkip[0];
+    line += `. Чаще всего пропускали: ${reason} (${topSkip[1]})`;
+  }
+  return line.charAt(0).toUpperCase() + line.slice(1) + '.';
+}
+
 function renderBatchReportModal(report) {
   const modal = document.getElementById('batch-report-modal');
   if (!modal || !report) return;
@@ -1501,7 +2126,10 @@ function renderBatchReportModal(report) {
     ? new Date(report.finishedAt).toLocaleString('ru-RU')
     : '—';
   if (summaryEl) {
-    summaryEl.innerHTML = `<p class="batch-report-meta">Завершено ${escapeHtml(when)} · раздел: ${escapeHtml(batchScopeLabel(report.batchScope) || report.batchScope || '—')}</p>`;
+    summaryEl.innerHTML = [
+      `<p class="batch-report-headline">${escapeHtml(buildBatchReportHeadline(report))}</p>`,
+      `<p class="batch-report-meta">Завершено ${escapeHtml(when)} · раздел: ${escapeHtml(batchReportScopeLabel(report.batchScope, report.queueStatus) || report.batchScope || '—')}</p>`,
+    ].join('');
   }
 
   const metrics = [
@@ -1529,18 +2157,33 @@ function renderBatchReportModal(report) {
   }
 
   const skipEntries = Object.entries(report.skipReasons || {}).sort((a, b) => b[1] - a[1]);
+  const letterSkip = skipEntries.find(([r]) => /letter|письм/i.test(r));
   if (skipsSec && skipsList) {
     if (skipEntries.length) {
       skipsSec.hidden = false;
       skipsList.replaceChildren(
         ...skipEntries.map(([reason, count]) => {
           const li = document.createElement('li');
-          li.textContent = `${reason} — ${count}`;
+          const isLetter = /letter|письм/i.test(reason);
+          if (isLetter) {
+            li.innerHTML = `${escapeHtml(reason)} — ${count} · <button type="button" class="btn btn-ghost btn-sm" data-batch-report-settings="fp">настроить фильтр</button>`;
+          } else {
+            li.textContent = `${reason} — ${count}`;
+          }
           return li;
         })
       );
     } else {
       skipsSec.hidden = true;
+    }
+  }
+  const actions = document.getElementById('batch-report-actions');
+  if (actions) {
+    actions.hidden = false;
+    if (letterSkip) {
+      actions.classList.add('batch-report-actions--letter-warn');
+    } else {
+      actions.classList.remove('batch-report-actions--letter-warn');
     }
   }
 
@@ -1577,16 +2220,20 @@ async function openBatchReportModal() {
   }
 }
 
-function normalizeSettingsTab(tabId) {
-  const t = String(tabId || 'apply').trim();
-  if (t === 'list' || t === 'ui') return 'appearance';
-  return t === 'appearance' || t === 'apply' ? t : 'apply';
-}
-
 function initOnboardingPanel(st) {
   const panel = document.getElementById('onboarding-panel');
   const stepsEl = document.getElementById('onboarding-steps');
   if (!panel || !stepsEl) return;
+  if ((st?.batchLastReport?.done || 0) > 0) {
+    try {
+      localStorage.setItem('hh-dashboard-onboarding-dismissed', '1');
+      localStorage.setItem('hh-settings-letters-onboarding-dismissed', '1');
+    } catch {
+      /* ignore */
+    }
+    panel.hidden = true;
+    return;
+  }
   if (localStorage.getItem('hh-dashboard-onboarding-dismissed') === '1') {
     panel.hidden = true;
     return;
@@ -1606,9 +2253,12 @@ function initOnboardingPanel(st) {
     {
       num: 2,
       done: queueTotal > 0,
-      text: COPY.onboardingStepHarvest,
-      cta: COPY.onboardingCtaHarvest,
-      action: 'harvest',
+      text:
+        queueTotal > 0
+          ? COPY.onboardingStepHarvest
+          : 'Загрузите демо-очередь — познакомьтесь с карточками без поиска на hh.ru',
+      cta: queueTotal > 0 ? COPY.onboardingCtaHarvest : 'Загрузить демо',
+      action: queueTotal > 0 ? 'harvest' : 'demo',
     },
     {
       num: 3,
@@ -1682,7 +2332,7 @@ function initOnboardingPanel(st) {
 function runOnboardingAction(action) {
   switch (action) {
     case 'settings-profile':
-      openDashboardSettings('apply', { focusId: 'settings-profile-card' });
+      openDashboardSettings('system', { focusId: 'settings-profile-card' });
       break;
     case 'harvest':
       document.getElementById('btn-run-harvest')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1693,14 +2343,32 @@ function runOnboardingAction(action) {
     case 'routine':
       document.getElementById('btn-daily-routine')?.click();
       break;
+    case 'demo':
+      void loadDemoQueue().catch((e) => showToast(e.message || String(e), 'bad'));
+      break;
     default:
       break;
   }
 }
 
+async function restoreVacancyFromCard(item, restoreBtn, toastMessage) {
+  restoreBtn.disabled = true;
+  try {
+    await api('/api/action', {
+      method: 'POST',
+      body: JSON.stringify({ id: item.id, action: 'restore' }),
+    });
+    showToast(toastMessage, 'good');
+    await load({ preserveScroll: true, anchorCardId: item.id });
+  } catch (e) {
+    alert(e.message);
+    restoreBtn.disabled = false;
+  }
+}
+
 function renderEmptyState(message, actions = []) {
   const wrap = document.createElement('div');
-  wrap.className = 'empty empty--actions';
+  wrap.className = 'empty empty--actions hh-empty';
   const p = document.createElement('p');
   p.textContent = message;
   wrap.appendChild(p);
@@ -1829,6 +2497,51 @@ function openApprovedLetterModal(item) {
   const text = String(item.coverLetter?.approvedText || '').trim();
   modal.querySelector('.modal-vacancy-approved').textContent = item.title || item.url || '';
   modal.querySelector('.modal-approved-text').textContent = text;
+  const actions = modal.querySelector('.modal-draft-actions');
+  let prepBtn = modal.querySelector('.btn-improve-approved-letter');
+  if (!prepBtn && actions) {
+    prepBtn = document.createElement('button');
+    prepBtn.type = 'button';
+    prepBtn.className = 'btn btn-improve-approved-letter';
+    prepBtn.textContent = 'Подготовить';
+    actions.insertBefore(prepBtn, actions.firstChild);
+  }
+  const q = item.letterQuality;
+  const hints = Array.isArray(q?.hints) ? q.hints : [];
+  let hintEl = modal.querySelector('.letter-quality-hint');
+  if (!hintEl) {
+    hintEl = document.createElement('p');
+    hintEl.className = 'letter-quality-hint draft-variant-hint';
+    const pre = modal.querySelector('.modal-approved-text');
+    pre?.before(hintEl);
+  }
+  if (q?.pass === false || q?.fixable) {
+    const parts = [];
+    if (q.reason) parts.push(q.reason);
+    if (hints.length) parts.push(hints[0]);
+    hintEl.textContent = parts.join(' · ');
+    hintEl.hidden = false;
+  } else {
+    hintEl.hidden = true;
+  }
+  if (prepBtn) {
+    const showPrep = q?.fixable || q?.pass === false;
+    prepBtn.hidden = !showPrep;
+    prepBtn.onclick = async () => {
+      prepBtn.disabled = true;
+      try {
+        const res = await requestCoverLetterImprove(item.id);
+        showToast(res.improved ? 'Письмо подготовлено' : 'Уже в порядке', 'good');
+        closeApprovedLetterModal();
+        await load();
+        void refreshLetterStatsSidebar(true);
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        prepBtn.disabled = false;
+      }
+    };
+  }
   openModalEl(modal);
 }
 
@@ -1882,21 +2595,32 @@ function openDraftModal(item) {
   hint.textContent =
     variants.length > 1 ? COPY.draftVariantHint || '1–3 или ← → — переключить вариант' : '';
 
+  const variantQualityEarly = item.coverLetter?.variantQuality || [];
+  const bestStart = pickBestVariantIndex(variantQualityEarly, variants.length);
+
   variants.forEach((text, i) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = `seg-btn tab draft-variant-tab${i === 0 ? ' active' : ''}`;
+    btn.className = `seg-btn tab draft-variant-tab${i === bestStart ? ' active' : ''}`;
     btn.dataset.variantIndex = String(i);
     btn.setAttribute('role', 'tab');
-    btn.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
-    btn.title = draftVariantPreview(text, 200);
-    btn.textContent = draftVariantLetter(i);
+    btn.setAttribute('aria-selected', i === bestStart ? 'true' : 'false');
+    const q = variantQualityEarly.find((x) => Number(x.index) === i);
+    const qMark = q?.rawPass ? ' ✓' : q?.pass ? ' ~' : q ? ' !' : '';
+    const scoreTip = Number.isFinite(Number(q?.letterScore10)) ? ` · ${q.letterScore10}/10` : '';
+    btn.title =
+      draftVariantPreview(text, 200) + scoreTip + (q?.reason ? ` — ${q.reason}` : '');
+    btn.textContent = `${draftVariantLetter(i)}${qMark}`;
     tabs.appendChild(btn);
   });
 
   picker.appendChild(tabs);
   picker.appendChild(preview);
   if (variants.length > 1) picker.appendChild(hint);
+
+  const qualityBanner = document.createElement('p');
+  qualityBanner.className = 'draft-letter-quality';
+  qualityBanner.hidden = true;
 
   const lbl = document.createElement('label');
   lbl.className = 'modal-letter-label';
@@ -1907,10 +2631,14 @@ function openDraftModal(item) {
   ta.className = 'modal-letter-edit';
   ta.id = `draft-v-${item.id}-edit`;
   ta.rows = 12;
-  ta.value = variants[0] || '';
 
   const actions = document.createElement('div');
   actions.className = 'modal-draft-actions';
+
+  const btnPrepare = document.createElement('button');
+  btnPrepare.type = 'button';
+  btnPrepare.className = 'btn btn-ghost';
+  btnPrepare.textContent = 'Подготовить';
 
   const btnSave = document.createElement('button');
   btnSave.type = 'button';
@@ -1927,13 +2655,37 @@ function openDraftModal(item) {
   btnDecline.className = 'btn bad';
   btnDecline.textContent = COPY.draftDecline;
 
-  actions.append(btnSave, btnApprove, btnDecline);
-  body.append(picker, lbl, ta, actions);
+  actions.append(btnPrepare, btnSave, btnApprove, btnDecline);
+  body.append(picker, qualityBanner, lbl, ta, actions);
 
-  draftModalState = { id: item.id, variants, selectedIndex: 0 };
+  const variantQuality = item.coverLetter?.variantQuality || [];
+  const startIndex = pickBestVariantIndex(variantQuality, variants.length);
+  ta.value = variants[startIndex] || variants[0] || '';
+
+  draftModalState = {
+    id: item.id,
+    variants,
+    selectedIndex: startIndex,
+    variantQuality,
+    qualityBanner,
+  };
+
+  const refreshDraftQualityBanner = debounce(async () => {
+    if (!qualityBanner) return;
+    try {
+      const res = await requestCoverLetterEvaluate(item.id, ta.value);
+      const fmt = formatLetterQualityBanner(res.letterQuality);
+      qualityBanner.textContent = fmt.text;
+      qualityBanner.className = fmt.className;
+      qualityBanner.hidden = !fmt.text;
+    } catch {
+      qualityBanner.hidden = true;
+    }
+  }, 400);
 
   function updatePreview() {
     preview.textContent = draftVariantPreview(ta.value);
+    void refreshDraftQualityBanner();
   }
 
   function syncTextareaToVariant() {
@@ -1968,6 +2720,22 @@ function openDraftModal(item) {
   ta.addEventListener('input', updatePreview);
   updatePreview();
 
+  btnPrepare.addEventListener('click', async () => {
+    syncTextareaToVariant();
+    btnPrepare.disabled = btnSave.disabled = btnApprove.disabled = btnDecline.disabled = true;
+    try {
+      const res = await requestCoverLetterPrepareText(item.id, ta.value);
+      ta.value = res.text || ta.value;
+      draftModalState.variants[draftModalState.selectedIndex] = ta.value;
+      updatePreview();
+      showToast('Текст подготовлен', 'good');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btnPrepare.disabled = btnSave.disabled = btnApprove.disabled = btnDecline.disabled = false;
+    }
+  });
+
   btnSave.addEventListener('click', async () => {
     syncTextareaToVariant();
     btnSave.disabled = btnApprove.disabled = btnDecline.disabled = true;
@@ -2000,7 +2768,9 @@ function openDraftModal(item) {
       });
       showToast('Письмо утверждено', 'good');
       closeDraftModal();
+      invalidateLetterStatsCache();
       await load();
+      void refreshLetterStatsSidebar(true);
     } catch (e) {
       alert(e.message);
       btnSave.disabled = btnApprove.disabled = btnDecline.disabled = false;
@@ -2063,7 +2833,7 @@ questionnaireModalEl?.querySelector('.btn-questionnaire-clear-captcha')?.addEven
     closeModalEl(questionnaireModalEl);
     await load();
   } catch (e) {
-    showToast(e.message || String(e), 'bad');
+    toastApiError(e);
   }
 });
 
@@ -2145,7 +2915,7 @@ questionnaireModalEl?.querySelector('.btn-questionnaire-save')?.addEventListener
     showToast(msg, 'good');
     await load();
   } catch (e) {
-    showToast(e.message || 'Ошибка сохранения', 'bad');
+    toastApiError(e, 'Ошибка сохранения');
   } finally {
     btn.disabled = false;
   }
@@ -2351,6 +3121,10 @@ function renderCard(item, options = {}) {
   } else {
     tooltip.textContent =
       'Нет разбивки по компонентам. Добавь записи через npm run harvest с включённым LLM (без --skip-llm).';
+  }
+  const humanHint = buildScoreHumanHint(item);
+  if (humanHint) {
+    tooltip.innerHTML += `<br><br><strong>Суть:</strong> ${escapeHtml(humanHint)}`;
   }
 
   const modelBtn = node.querySelector('.model-info-btn');
@@ -2721,9 +3495,14 @@ function renderCard(item, options = {}) {
     regenBtn.addEventListener('click', async () => {
       regenBtn.disabled = true;
       try {
-        await requestCoverLetterGenerate(item.id, false);
-        showToast('Новые варианты готовы', 'good');
+        const gen0 = await requestCoverLetterGenerate(item.id, false);
+        showToast(
+          gen0.autoApproved ? 'Письмо сгенерировано и утверждено' : 'Новые варианты готовы',
+          'good'
+        );
+        invalidateLetterStatsCache();
         await load();
+        void refreshLetterStatsSidebar(true);
       } catch (e) {
         if (e.status === 409) {
           const ok = confirm(
@@ -2731,9 +3510,14 @@ function renderCard(item, options = {}) {
           );
           if (ok) {
             try {
-              await requestCoverLetterGenerate(item.id, true);
-              showToast('Новые варианты готовы', 'good');
+              const gen1 = await requestCoverLetterGenerate(item.id, true);
+              showToast(
+                gen1.autoApproved ? 'Письмо сгенерировано и утверждено' : 'Новые варианты готовы',
+                'good'
+              );
+              invalidateLetterStatsCache();
               await load();
+              void refreshLetterStatsSidebar(true);
             } catch (e2) {
               alert(e2.message);
             }
@@ -2933,6 +3717,7 @@ function renderCard(item, options = {}) {
 
   const actions = node.querySelector('.actions');
   const doneReason = node.querySelector('.done-reason');
+  const restoreBtn = node.querySelector('.card-restore-queue');
 
   if (item.status === 'pending') {
     actions.hidden = false;
@@ -2947,9 +3732,14 @@ function renderCard(item, options = {}) {
       coverBtn.disabled = true;
       if (refreshBtn) refreshBtn.disabled = true;
       try {
-        await requestCoverLetterGenerate(item.id, false);
-        showToast('Сгенерированы варианты сопроводительного', 'good');
+        const gen = await requestCoverLetterGenerate(item.id, false);
+        showToast(
+          gen.autoApproved ? 'Письмо сгенерировано и утверждено' : 'Сгенерированы варианты сопроводительного',
+          'good'
+        );
+        invalidateLetterStatsCache();
         await load();
+        void refreshLetterStatsSidebar(true);
       } catch (e) {
         if (e.status === 409) {
           const confirmed = confirm(
@@ -2959,7 +3749,9 @@ function renderCard(item, options = {}) {
             try {
               await requestCoverLetterGenerate(item.id, true);
               showToast('Новые варианты готовы', 'good');
+              invalidateLetterStatsCache();
               await load();
+              void refreshLetterStatsSidebar(true);
             } catch (e2) {
               alert(e2.message);
             }
@@ -3034,10 +3826,55 @@ function renderCard(item, options = {}) {
     };
     ok?.addEventListener('click', () => send('approve'));
     bad?.addEventListener('click', () => send('reject'));
-  } else {
+
+    const hiddenReasons = item.hiddenRoleReasons || [];
+    if (restoreBtn && hiddenReasons.length) {
+      restoreBtn.hidden = false;
+      restoreBtn.textContent = COPY.restoreToMainQueue;
+      restoreBtn.title = 'Обойти фильтр роли и показать в основной очереди';
+      restoreBtn.addEventListener('click', () =>
+        restoreVacancyFromCard(item, restoreBtn, 'Показали в основной очереди')
+      );
+    }
+  } else if (item.status === 'rejected' || item.status === 'approved') {
+    const autoPrefix = item.status === 'rejected' ? autoRejectDoneReasonPrefix(item) : '';
     doneReason.textContent = item.feedbackReason
-      ? `Комментарий: ${item.feedbackReason}`
-      : '';
+      ? `${autoPrefix}Комментарий: ${item.feedbackReason}`
+      : item.status === 'rejected'
+        ? autoPrefix
+          ? `${autoPrefix.trim()}`
+          : 'Отклонено'
+        : 'Отмечено как подходит';
+    if (restoreBtn) {
+      restoreBtn.hidden = false;
+      restoreBtn.textContent =
+        item.status === 'approved' ? COPY.restoreFromApproved : COPY.restoreToQueue;
+      restoreBtn.addEventListener('click', () =>
+        restoreVacancyFromCard(
+          item,
+          restoreBtn,
+          item.status === 'approved' ? 'Одобрение отменено' : 'Вернули в очередь'
+        )
+      );
+    }
+    if (item.status === 'rejected') {
+      const suggest = inferRejectLearningPattern(item);
+      const foot = node.querySelector('.card-foot--v4') || node.querySelector('.card-foot');
+      if (foot && suggest) {
+        const ruleBtn = document.createElement('button');
+        ruleBtn.type = 'button';
+        ruleBtn.className = 'btn btn-ghost btn-sm ui-expert-only';
+        ruleBtn.textContent = 'В правила';
+        ruleBtn.title = `Добавить «${suggest.pattern}» в таргетинг`;
+        ruleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          void learnFalsePositivePattern(suggest.pattern, suggest.target);
+        });
+        foot.appendChild(ruleBtn);
+      }
+    }
+  } else if (doneReason) {
+    doneReason.textContent = '';
   }
 
   return node;
@@ -3231,6 +4068,7 @@ function paintJobProgressBox(box, p, st, { scoped = false } = {}) {
   }
 
   box.hidden = false;
+  box.classList.add('hh-status-strip');
   box.classList.toggle('job-progress--done', p.phase === 'done');
   box.classList.toggle('job-progress--error', p.phase === 'error');
   box.classList.toggle('job-progress--paused', p.phase === 'paused');
@@ -3377,7 +4215,7 @@ function renderRoutingHealthBanner(st) {
 function updateJobControlButtons(st) {
   updateBrowserSideJobButtons(st);
   renderRoutingHealthBanner(st);
-  const row = document.getElementById('job-control-row');
+  const row = document.getElementById('job-control-actions');
   const labelEl = document.getElementById('job-control-label');
   const pauseBtn = document.getElementById('btn-job-pause');
   const stopBtn = document.getElementById('btn-job-stop');
@@ -3976,6 +4814,12 @@ function renderDashboardStats(stats) {
   const compact = panel?.classList.contains('stats-panel--crm');
   const invitePct = f.inviteRatePct ?? stats.rates?.invitePct ?? 0;
   const viewPct = f.viewRatePct ?? stats.rates?.viewPct ?? 0;
+  const weekly = stats.weeklyInvite || {};
+  const weeklyTrend =
+    weekly.trendDelta != null
+      ? `${weekly.trendDelta > 0 ? '+' : ''}${weekly.trendDelta} п.п.`
+      : '';
+  const noEditPct = stats.letterNoEdit?.noEditPct;
   const q = stats.queue || {};
   const roll = stats.appliedRolling || {};
   const items = compact
@@ -3989,6 +4833,21 @@ function renderDashboardStats(stats) {
         { label: '% просм.', value: `${viewPct}%` },
         { label: 'Пригл.', value: stats.invited ?? f.invited ?? 0, highlight: true },
         { label: '% пригл.', value: `${invitePct}%`, highlight: true },
+        {
+          label: 'Неделя',
+          value: weekly.currentInvitePct != null ? `${weekly.currentInvitePct}%${weeklyTrend ? ` (${weeklyTrend})` : ''}` : '—',
+          title: 'Конверсия приглашений за текущую неделю',
+        },
+        ...(noEditPct != null
+          ? [
+              {
+                label: 'Без правки',
+                value: `${noEditPct}%`,
+                title: 'Отклики без правки письма (K-01) — открыть настройки писем',
+                statAction: 'letters',
+              },
+            ]
+          : []),
         { label: 'Ждём', value: stats.awaiting ?? 0 },
         { label: 'Отказы', value: stats.declined ?? f.declined ?? 0 },
         { label: 'Анкеты', value: stats.withQuestionnaire ?? 0 },
@@ -4024,8 +4883,9 @@ function renderDashboardStats(stats) {
   grid.replaceChildren(
     ...items.map((it) => {
       const div = document.createElement('div');
-      div.className = `stat-item${it.wide ? ' stat-item--wide' : ''}`;
+      div.className = `stat-item${it.wide ? ' stat-item--wide' : ''}${it.statAction ? ' stat-item--clickable' : ''}`;
       if (it.title) div.title = it.title;
+      if (it.statAction) div.dataset.statAction = it.statAction;
       const val = document.createElement('span');
       val.className = `stat-value${it.highlight ? ' stat-highlight' : ''}`;
       val.textContent = String(it.value);
@@ -4036,6 +4896,11 @@ function renderDashboardStats(stats) {
       return div;
     })
   );
+  grid.querySelectorAll('[data-stat-action="letters"]').forEach((el) => {
+    el.addEventListener('click', () =>
+      openDashboardSettings('letters', { focusId: 'settings-letters-presets' })
+    );
+  });
 
   const extraEl = document.getElementById('stats-extra');
   if (extraEl) {
@@ -4048,6 +4913,290 @@ function renderDashboardStats(stats) {
       extraEl.hidden = true;
     }
   }
+}
+
+function renderTopFalsePositives(data) {
+  const host = document.getElementById('fp-top-panel');
+  if (!host) return;
+  if (!host.dataset.bindClick) {
+    host.dataset.bindClick = '1';
+    host.addEventListener('click', (e) => {
+      const el = e.target instanceof Element ? e.target : null;
+      const applyAllBtn = el?.closest('[data-fp-apply-all]');
+      if (applyAllBtn) {
+        void applyLearningSuggestionsBatch();
+        return;
+      }
+      const learnBtn = el?.closest('[data-fp-learn]');
+      if (learnBtn) {
+        const pattern = learnBtn.getAttribute('data-fp-pattern') || '';
+        const target = learnBtn.getAttribute('data-fp-target') || 'irrelevant';
+        if (pattern) {
+          void learnFalsePositivePattern(pattern, target);
+        }
+        return;
+      }
+      const focusBtn = el?.closest('[data-fp-key]');
+      if (!focusBtn) return;
+      const key = focusBtn.getAttribute('data-fp-key') || '';
+      applyFalsePositiveFocus(key);
+    });
+  }
+  if (!data) {
+    host.innerHTML = '<p class="fp-top__placeholder">Загрузка…</p>';
+    host.classList.remove('fp-top--alert');
+    return;
+  }
+  const total = Number(data.totalFalsePositives || 0);
+  host.classList.toggle('fp-top--alert', total > 0);
+  const trend = data.trend || {};
+  const trendDelta = Number(trend.deltaTotal || 0);
+  const trendHtml =
+    trendDelta !== 0
+      ? ` <span class="fp-top__trend fp-top__trend--${trendDelta > 0 ? 'up' : 'down'}" title="Изменение с прошлого снимка">${trendDelta > 0 ? '▲' : '▼'}${Math.abs(trendDelta)}</span>`
+      : '';
+  const rate = Number(data.falsePositiveRate || 0);
+  const top = Array.isArray(data.top) ? data.top : [];
+  if (!top.length) {
+    host.innerHTML =
+      `<p class="fp-top__ok">${escapeHtml(glossaryLabel('fpOk', dashboardUi.uiMode))}.</p>`;
+    return;
+  }
+  host.innerHTML =
+    `<p class="fp-top__meta">Осталось: <strong>${total}</strong>${trendHtml}${rate ? ` · ${rate}%` : ''}</p>` +
+    `<ul class="fp-top__list">` +
+    top
+      .map((row) => {
+        const samples = (row.samples || [])
+          .slice(0, 2)
+          .map((s) => escapeHtml(s.title || '—'))
+          .join(' · ');
+        const suggestion = falsePositiveSuggestedPattern(row);
+        return `<li class="fp-top__item"><button type="button" class="fp-top__focus" data-fp-key="${escapeHtml(row.key || 'прочее')}" title="Показать отклонённые этой категории">${escapeHtml(row.key || 'прочее')}</button><strong class="fp-top__count">${Number(row.count || 0)}</strong>${suggestion ? `<button type="button" class="fp-top__learn" data-fp-learn="1" data-fp-pattern="${escapeHtml(suggestion.pattern)}" data-fp-target="${escapeHtml(suggestion.target)}" title="Добавить в правила">+ ${escapeHtml(suggestion.pattern)}</button>` : ''}<span class="fp-top__samples">${samples}</span></li>`;
+      })
+      .join('') +
+    '</ul>' +
+    renderLearningSuggestionsMini();
+}
+
+function renderLearningSuggestionsMini() {
+  const rows = Array.isArray(learningSuggestionsCache) ? learningSuggestionsCache.slice(0, 4) : [];
+  const history = Array.isArray(learningHistoryCache) ? learningHistoryCache.slice(0, 3) : [];
+  if (!rows.length && !history.length) return '';
+  const items = rows
+    .map(
+      (r) =>
+        `<li><code>${escapeHtml(r.pattern || '')}</code><span>· ${escapeHtml(
+          r.target || 'irrelevant'
+        )} · ${Number(r.count || 0)}</span></li>`
+    )
+    .join('');
+  const historyHtml = history.length
+    ? `<p class="fp-top__suggest-title">Последние применения</p><ul class="fp-top__history-list">${history
+        .map((h) => {
+          const when = h.at ? new Date(h.at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+          if (h.source === 'single') {
+            return `<li>${when} · ${escapeHtml(h.pattern || '—')} · ${escapeHtml(h.target || 'irrelevant')} · ${h.added ? 'добавлено' : 'уже было'}</li>`;
+          }
+          return `<li>${when} · пакет: +${Number(h.added || 0)} из ${Number(h.total || 0)}</li>`;
+        })
+        .join('')}</ul>`
+    : '';
+  const fpCount = Number(topFalsePositivesCache?.totalFalsePositives || 0);
+  const suggestTitle =
+    fpCount > 0
+      ? glossaryLabel('fpSuggestTitle', dashboardUi.uiMode)
+      : glossaryLabel('fpSuggestTitleManual', dashboardUi.uiMode);
+  const suggestHtml = rows.length
+    ? `<p class="fp-top__suggest-title">${escapeHtml(suggestTitle)}</p><ul class="fp-top__suggest-list">${items}</ul><button type="button" class="fp-top__apply-all" data-fp-apply-all="1">${fpCount > 0 ? `Применить пакет (сейчас ${fpCount})` : 'Применить топ-пакет'}</button>`
+    : '';
+  return `<div class="fp-top__suggest">${suggestHtml}${historyHtml}</div>`;
+}
+
+function falsePositiveSuggestedPattern(row) {
+  const key = String(row?.key || '').toLowerCase();
+  const sampleTitle = String(row?.samples?.[0]?.title || '').toLowerCase();
+  const fromSample = (re, fallback) => {
+    const m = sampleTitle.match(re);
+    return (m?.[1] || fallback || '').trim();
+  };
+  if (key.includes('senior') || key.includes('lead')) {
+    return { pattern: fromSample(/\b((?:team|tech)\s*lead|head of [a-z]+|senior [a-z]+)/i, 'team lead'), target: 'senior' };
+  }
+  if (key.includes('dev вне профиля')) {
+    return { pattern: fromSample(/\b(go-разработ\w*|java-разработ\w*|python-разработ\w*|android-разработ\w*|php-разработ\w*|frontend developer|backend developer)\b/i, 'go-разработ'), target: 'developer' };
+  }
+  if (key.includes('смежные')) {
+    return { pattern: fromSample(/\b(тестировщик|qa|аналитик|product manager|project manager)\b/i, 'тестировщик'), target: 'irrelevant' };
+  }
+  if (key.includes('индустриальные')) {
+    return { pattern: fromSample(/\b(инженер-проектировщик|пусконалад\w*|сервисный инженер|сметчик)\b/i, 'инженер-проектировщик'), target: 'irrelevant' };
+  }
+  if (key.includes('sales')) {
+    return { pattern: fromSample(/\b(менеджер по продажам|sales manager|presale)\b/i, 'менеджер по продажам'), target: 'irrelevant' };
+  }
+  return null;
+}
+
+/** @param {object} item */
+function inferRejectLearningPattern(item) {
+  const title = String(item.title || '').toLowerCase();
+  if (/\bgo\b|\bgolang\b|\bjava\b|\bpython\b/i.test(title)) {
+    return { pattern: 'go-разработ', target: 'developer' };
+  }
+  if (/\bsenior\b|\blead\b|ведущ|архитект/i.test(title)) {
+    return { pattern: 'team lead', target: 'senior' };
+  }
+  const chunk = String(item.title || '')
+    .split(/\s+/)
+    .slice(0, 3)
+    .join(' ')
+    .trim()
+    .slice(0, 48);
+  if (chunk.length >= 4) return { pattern: chunk, target: 'irrelevant' };
+  return null;
+}
+
+async function learnFalsePositivePattern(pattern, target) {
+  try {
+    const r = await api('/api/learning/add-pattern', {
+      method: 'POST',
+      body: JSON.stringify({ pattern, target }),
+    });
+    showToast(r.message || `Добавлено: ${pattern}`, r.added ? 'good' : 'neutral');
+    await refreshTopFalsePositives(true);
+    await load({ preserveScroll: true });
+  } catch (e) {
+    showToast(e.message || 'Не удалось сохранить правило', 'bad');
+  }
+}
+
+async function refreshLearningSuggestions() {
+  try {
+    const [s, h] = await Promise.all([
+      api('/api/learning/suggestions?limit=6'),
+      api('/api/learning/history?limit=8'),
+    ]);
+    learningSuggestionsCache = Array.isArray(s.suggestions) ? s.suggestions : [];
+    learningHistoryCache = Array.isArray(h.items) ? h.items : [];
+  } catch {
+    learningSuggestionsCache = [];
+    learningHistoryCache = [];
+  }
+}
+
+async function applyLearningSuggestionsBatch() {
+  const items = (learningSuggestionsCache || []).slice(0, 4).map((x) => ({
+    pattern: x.pattern,
+    target: x.target,
+  }));
+  if (!items.length) {
+    showToast('Нет новых предложений для применения', 'neutral');
+    return;
+  }
+  try {
+    const r = await api('/api/learning/add-patterns', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    });
+    showToast(r.message || 'Пакет правил применён', r.added > 0 ? 'good' : 'neutral');
+    await refreshLearningSuggestions();
+    await refreshTopFalsePositives(true);
+    await load({ preserveScroll: true });
+  } catch (e) {
+    showToast(e.message || 'Не удалось применить пакет правил', 'bad');
+  }
+}
+
+function falsePositiveQueryByKey(key) {
+  const k = String(key || '').toLowerCase();
+  if (k.includes('senior') || k.includes('lead')) return 'senior lead ведущ';
+  if (k.includes('dev вне профиля')) return 'разработчик developer backend frontend fullstack android ios java php python go golang';
+  if (k.includes('смежные')) return 'qa тестировщик analyst аналитик product project scrum agile';
+  if (k.includes('индустриальные')) return 'инженер проектировщик сервисный scada плк кипиа монтаж';
+  if (k.includes('sales')) return 'sales presale продажи аккаунт';
+  if (k.includes('support')) return 'support поддержка helpdesk service desk';
+  return '';
+}
+
+function applyFalsePositiveFocus(key) {
+  applyViewTabsEl?.querySelector('[data-apply-view="queue"]')?.click();
+  vacancyTabsEl?.querySelector('[data-status="rejected"]')?.click();
+  const q = falsePositiveQueryByKey(key);
+  if (filterSearchEl) {
+    filterSearchEl.value = q;
+  }
+  if (q) {
+    showToast(`Фокус: ${key}`, 'neutral');
+  }
+  renderListFromCache(null);
+}
+
+let learningAutoApplyDone = false;
+
+async function tryAutoApplyLearningPatterns(fpTotal) {
+  if (learningAutoApplyDone) return;
+  if (dashboardPreferences.learningAutoApplyPatterns !== true) return;
+  if (Number(fpTotal || 0) < 5) return;
+  const hasSuggestions = (learningSuggestionsCache || []).some((x) => Number(x.count || 0) >= 3);
+  if (!hasSuggestions) return;
+  const dayKey = new Date().toISOString().slice(0, 10);
+  try {
+    if (sessionStorage.getItem('hh-learning-auto-apply-day') === dayKey) {
+      learningAutoApplyDone = true;
+      return;
+    }
+  } catch {
+    /* ignore */
+  }
+  learningAutoApplyDone = true;
+  try {
+    const r = await api('/api/learning/auto-apply-safe', { method: 'POST', body: '{}' });
+    try {
+      sessionStorage.setItem('hh-learning-auto-apply-day', dayKey);
+    } catch {
+      /* ignore */
+    }
+    if (r.added > 0) {
+      showToast(r.message || `Авто-правила: +${r.added}`, 'good');
+      await refreshLearningSuggestions();
+      await refreshTopFalsePositives(true);
+      await load({ preserveScroll: true });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+async function refreshTopFalsePositives(force = false) {
+  const now = Date.now();
+  if (!force && now - topFalsePositivesTs < 60_000) {
+    renderTopFalsePositives(topFalsePositivesCache);
+    return;
+  }
+  if (topFalsePositivesInFlight) return;
+  topFalsePositivesInFlight = Promise.all([
+    api('/api/top-false-positives?limit=5'),
+    refreshLearningSuggestions(),
+  ])
+    .then(([data]) => {
+      const prev = Number(topFalsePositivesCache?.totalFalsePositives || 0);
+      topFalsePositivesCache = data;
+      topFalsePositivesTs = Date.now();
+      renderTopFalsePositives(data);
+      const next = Number(data?.totalFalsePositives || 0);
+      if (next > 0 && prev === 0) {
+        showToast(glossaryLabel('fpFoundToast', dashboardUi.uiMode, { n: next }), 'neutral');
+      }
+      void tryAutoApplyLearningPatterns(next);
+    })
+    .catch(() => {
+      renderTopFalsePositives(topFalsePositivesCache);
+    })
+    .finally(() => {
+      topFalsePositivesInFlight = null;
+    });
+  await topFalsePositivesInFlight;
 }
 
 async function refreshJobStatus() {
@@ -4066,6 +5215,7 @@ async function refreshJobStatus() {
     const { main, msgs } = formatHumanJobStatus(st);
     if (st.applyRates) renderApplyRateMeters(st.applyRates);
     renderDashboardStats(st.dashboardStats || st.conversion);
+    void refreshTopFalsePositives();
     initOnboardingPanel(st);
     el.textContent = main;
     el.title = formatJobStatusTooltip(st, { msgs });
@@ -4110,6 +5260,9 @@ async function refreshJobStatus() {
           (skipped ? `, пропуск ${skipped}` : '') +
           (failed ? `, ошибок ${failed}` : '');
         showToast(msg, failed ? 'neutral' : skipped ? 'neutral' : 'good');
+        invalidateLetterStatsCache();
+        void load();
+        void refreshLetterStatsSidebar(true);
         if (skipped || failed) {
           setTimeout(() => openBatchReportModal(), 400);
         }
@@ -4198,16 +5351,14 @@ function restoreListScroll(state) {
 
 function updateListCount(items, counts) {
   const host = document.getElementById('list-breadcrumbs-host');
-  const countEl = document.getElementById('list-count');
   const filters = readFiltersFromUI();
   const hasLocalFilter =
-    filters.search || filters.company || filters.minScore || filters.onlySalary;
+    filters.search || filters.minScore || filters.onlySalary || filters.onlyLetterIssues;
   const shown = items.length;
   const total = cachedRawItems.length;
 
   if (!counts) {
     if (host) host.innerHTML = '<span class="list-breadcrumbs__item">Загрузка…</span>';
-    if (countEl) countEl.textContent = 'Загрузка…';
     return;
   }
 
@@ -4224,15 +5375,27 @@ function updateListCount(items, counts) {
       hasLocalFilter: Boolean(hasLocalFilter),
     })
   );
+}
 
-  if (countEl) {
-    countEl.hidden = true;
-    countEl.textContent = `${shown} карточек`;
+function updateLetterQualityFilterButton() {
+  const filters = readFiltersFromUI();
+  const issueCount = cachedRawItems.filter((it) => hasLetterQualityIssue(it)).length;
+  const fixableCount = cachedRawItems.filter((it) => it.letterQuality?.fixable).length;
+  if (filterLetterQualityBtnEl) {
+    filterLetterQualityBtnEl.textContent = `Письма: проверка${issueCount > 0 ? ` (${issueCount})` : ''}`;
+    filterLetterQualityBtnEl.classList.toggle('active', Boolean(filters.onlyLetterIssues));
+    filterLetterQualityBtnEl.setAttribute('aria-pressed', filters.onlyLetterIssues ? 'true' : 'false');
+  }
+  if (btnBulkImproveLettersEl) {
+    btnBulkImproveLettersEl.hidden = fixableCount === 0;
+    btnBulkImproveLettersEl.textContent =
+      fixableCount > 0 ? `Подготовить письма (${fixableCount})` : 'Подготовить письма';
   }
 }
 
 function renderListFromCache(scrollState) {
   const filters = readFiltersFromUI();
+  updateLetterQualityFilterButton();
   const items = applyClientFilters(cachedRawItems, filters);
   updateListCount(items, cachedCounts);
   listEl.innerHTML = '';
@@ -4284,11 +5447,24 @@ function renderListFromCache(scrollState) {
         ])
       );
     } else {
+      const emptyActions = [];
+      if (cachedQueueMeta?.demoAvailable) {
+        emptyActions.push({
+          label: `Загрузить демо (${cachedQueueMeta.demoCount || '—'})`,
+          primary: true,
+          onClick: () => void loadDemoQueue().catch((e) => showToast(e.message || String(e), 'bad')),
+        });
+      }
+      emptyActions.push(
+        {
+          label: COPY.harvestRun,
+          primary: !cachedQueueMeta?.demoAvailable,
+          onClick: () => document.getElementById('btn-run-harvest')?.click(),
+        },
+        { label: COPY.openSettings, onClick: () => document.getElementById('btn-open-settings')?.click() }
+      );
       listEl.appendChild(
-        renderEmptyState('Очередь пуста. Сначала соберите вакансии с hh.ru.', [
-          { label: COPY.harvestRun, primary: true, onClick: () => document.getElementById('btn-run-harvest')?.click() },
-          { label: COPY.openSettings, onClick: () => document.getElementById('btn-open-settings')?.click() },
-        ])
+        renderEmptyState('Очередь пуста. Загрузите демо для знакомства или соберите вакансии с hh.ru.', emptyActions)
       );
     }
     restoreListScroll(scrollState);
@@ -4364,10 +5540,58 @@ async function maybeAutoReprobeQuestionnaires() {
   }
 }
 
+function renderListSkeleton(count = 6) {
+  listEl.replaceChildren();
+  const browseMode = currentBrowseMode();
+  for (let i = 0; i < count; i += 1) {
+    const el = document.createElement('div');
+    el.className = browseMode ? 'card-tile card-tile--skeleton' : 'card card--skeleton';
+    el.setAttribute('aria-hidden', 'true');
+    listEl.appendChild(el);
+  }
+}
+
+async function refreshQueueMeta() {
+  try {
+    cachedQueueMeta = await api('/api/queue-meta');
+  } catch {
+    cachedQueueMeta = null;
+  }
+  return cachedQueueMeta;
+}
+
+async function loadDemoQueue(opts = {}) {
+  try {
+    const data = await api('/api/load-demo-queue', {
+      method: 'POST',
+      body: JSON.stringify({ replace: Boolean(opts.replace) }),
+    });
+    if (!data.ok) {
+      throw new Error(data.error || data.reason || 'Не удалось загрузить демо');
+    }
+    showToast(`Демо-очередь: ${data.count} вакансий`, 'good');
+    await refreshQueueMeta();
+    await load({ preserveScroll: true });
+    return data;
+  } catch (e) {
+    if (e.status === 409 && !opts.replace) {
+      if (
+        confirm(
+          'Очередь не пуста. Заменить текущие записи демо-очередью?\n\nТекущие данные будут перезаписаны.'
+        )
+      ) {
+        return loadDemoQueue({ replace: true });
+      }
+      throw new Error('Загрузка демо отменена');
+    }
+    throw e;
+  }
+}
+
 async function load(opts = {}) {
   const scrollState = opts.preserveScroll ? captureListScroll(opts.anchorCardId) : null;
   if (!opts.preserveScroll) {
-    listEl.innerHTML = '<p class="empty">Загрузка…</p>';
+    renderListSkeleton();
   }
   try {
     if (!settingsHydrated) await loadDashboardSettings();
@@ -4393,8 +5617,21 @@ async function load(opts = {}) {
     items = filterItemsForApplyView(items);
     cachedRawItems = items;
     cachedCounts = counts;
+    await refreshQueueMeta();
+    if (
+      cachedQueueMeta?.empty &&
+      cachedQueueMeta?.demoAvailable &&
+      !demoEmptyToastShown &&
+      currentApplyView === 'queue' &&
+      currentStatus === 'pending' &&
+      !filters.search
+    ) {
+      demoEmptyToastShown = true;
+      showToast('Очередь пуста — нажмите «Загрузить демо» для быстрого старта', 'neutral');
+    }
     updateApplyViewTabCounts(counts);
     renderListFromCache(scrollState);
+    void refreshLetterStatsSidebar();
   } catch (e) {
     listEl.innerHTML = `<p class="err">${e.message}</p>`;
     restoreListScroll(scrollState);
@@ -4439,30 +5676,7 @@ document.querySelectorAll('#panel-score-band .tab-band').forEach((btn) => {
   });
 });
 
-async function runBatch({ minScore, maxScore, label }) {
-  const batchScope = batchScopeForCurrentView();
-  if (!batchScope) {
-    showToast(`${COPY.batch} недоступна в разделе «Отклики»`, 'neutral');
-    return;
-  }
-  const limit = getBatchLimitForRun();
-  const section = batchScopeUiLabel(batchScope);
-  let confirmMsg = `${label}\nРаздел: «${section}»\nДо ${limit} откликов · PDF резюме + письмо из пула.`;
-  if (batchScope === 'hidden') {
-    confirmMsg =
-      `Внимание: батч по скрытым вакансиям (Senior/Lead, 1С, разработчик и т.п.).\n\n${confirmMsg}`;
-  } else if (batchScope === 'questionnaire') {
-    confirmMsg +=
-      '\n\nБатч по анкетам: вопросы сохраняются, ответы генерируются (CV/LLM), подстановка и повторная отправка (HH_BATCH_QUESTIONNAIRE_AUTO=1 по умолчанию).';
-  } else if (batchScope === 'noQuestionnaire') {
-    confirmMsg +=
-      '\n\nЕсли при отклике на hh.ru появится анкета работодателя, отклик не будет отправлен: вопросы сохранятся, карточка перейдёт в раздел «Анкета», батч продолжит следующую вакансию.';
-  } else if (batchScope === 'queue') {
-    confirmMsg += '\n\nВ «Очереди» могут быть вакансии с анкетой — они тоже попадут в батч.';
-  }
-  confirmMsg += '\n\nНецелевые вакансии (не IT) пропускаются автоматически до открытия браузера.';
-  confirmMsg += '\n\nПродолжить?';
-  if (!confirm(confirmMsg)) return;
+async function launchApplyBatchFromUi({ minScore, maxScore, limit, batchScope }) {
   try {
     const st0 = await api('/api/job-status');
     if (st0.batchActive) {
@@ -4485,15 +5699,141 @@ async function runBatch({ minScore, maxScore, label }) {
       /* ignore */
     }
     const body = { limit, batchScope };
+    if (batchScope === 'queue' && (currentStatus === 'pending' || currentStatus === 'approved')) {
+      body.queueStatus = currentStatus;
+    }
     if (minScore != null) body.minScore = minScore;
     if (maxScore != null) body.maxScore = maxScore;
     const res = await api('/api/hh-launch-apply-batch', { method: 'POST', body: JSON.stringify(body) });
     showToast(res.message || `${COPY.batch} запущена`, 'neutral');
-    openApplyLogModal();
     startJobLogPoll();
     refreshJobStatus();
   } catch (e) {
     alert(e.message);
+  }
+}
+
+async function runBatch({ minScore, maxScore, label }) {
+  const batchScope = batchScopeForCurrentView();
+  if (!batchScope) {
+    showToast(`${COPY.batch} недоступна в разделе «Отклики»`, 'neutral');
+    return;
+  }
+  const limit = getBatchLimitForRun();
+  const section = batchScopeUiLabel(batchScope);
+  const queueTabLabel =
+    batchScope === 'queue' && currentStatus === 'approved'
+      ? 'Подходят'
+      : batchScope === 'queue' && currentStatus === 'pending'
+        ? 'На проверке'
+        : null;
+  if (batchScope === 'queue' && currentStatus === 'rejected') {
+    showToast(
+      'Авто-отклики для вкладки «Отказные» недоступны — переключитесь на «На проверке» или «Подходят»',
+      'neutral'
+    );
+    return;
+  }
+
+  let precheck = null;
+  try {
+    precheck = await fetchBatchPrecheck(minScore, maxScore);
+  } catch {
+    precheck = null;
+  }
+
+  if (
+    precheck &&
+    Number(precheck.fixableLetterQuality || 0) > 0 &&
+    dashboardPreferences.batchAutoPrepareLetters !== false
+  ) {
+    try {
+      const imp = await runBulkLetterPrepare(minScore, maxScore);
+      if (imp.improved > 0) {
+        showToast(imp.message || `Подготовлено писем: ${imp.improved}`, 'good');
+        precheck = await fetchBatchPrecheck(minScore, maxScore);
+        await load();
+        void refreshLetterStatsSidebar(true);
+      }
+    } catch (e) {
+      showToast(e.message, 'bad');
+    }
+  }
+
+  for (;;) {
+    const action = await openBatchPrecheckModal({
+      precheck,
+      label,
+      limit,
+      section,
+      queueTabLabel,
+      reasonLabel: batchPrecheckReasonLabel,
+    });
+    if (action === false) return;
+
+    if (action === 'prepare') {
+      try {
+        const imp = await runBulkLetterPrepare(minScore, maxScore);
+        showToast(imp.message || `Подготовлено: ${imp.improved || 0}`, imp.improved ? 'good' : 'neutral');
+        precheck = await fetchBatchPrecheck(minScore, maxScore);
+        updateBatchPrecheckModal(precheck);
+        await load();
+        void refreshLetterStatsSidebar(true);
+      } catch (e) {
+        showToast(e.message, 'bad');
+      }
+      continue;
+    }
+
+    if (action === 'regen') {
+      try {
+        const failN = precheck?.blocked?.letterQuality || 15;
+        const res = await requestCoverLetterRegenerateWeak({
+          mode: 'fail',
+          limit: Math.min(40, Math.max(5, failN)),
+        });
+        showToast(res.message || 'Перегенерация запущена', 'good');
+      } catch (e) {
+        showToast(e.message, 'bad');
+      }
+      continue;
+    }
+
+    if (action === 'filter') {
+      setLetterIssuesFilter(true);
+      renderListFromCache(null);
+      showToast('Фильтр «Письма: проверка» включён', 'neutral');
+      continue;
+    }
+
+    if (action === 'start') {
+      if (precheck && Number(precheck.ready || 0) === 0) {
+        showToast('Нет готовых карточек — исправьте блокеры или смените фильтр', 'neutral');
+        continue;
+      }
+      if (precheck?.falsePositiveGuardrail) {
+        const fpN = Number(precheck.falsePositives || 0);
+        const fpMax = Number(precheck.falsePositiveMax || 20);
+        if (
+          !confirm(
+            glossaryLabel('batchFpConfirm', dashboardUi.uiMode, { fpN, fpMax })
+          )
+        ) {
+          continue;
+        }
+      }
+      if (batchScope === 'hidden') {
+        if (
+          !confirm(
+            'Внимание: батч по скрытым вакансиям (Senior/Lead, 1С, разработчик). Запустить серию?'
+          )
+        ) {
+          continue;
+        }
+      }
+      await launchApplyBatchFromUi({ minScore, maxScore, limit, batchScope });
+      return;
+    }
   }
 }
 
@@ -4917,14 +6257,116 @@ document.getElementById('btn-run-harvest')?.addEventListener('click', async () =
 
 document.getElementById('filter-reset')?.addEventListener('click', () => {
   if (filterSearchEl) filterSearchEl.value = '';
-  if (filterCompanyEl) filterCompanyEl.value = '';
+  if (filterLetterQualityBtnEl) {
+    filterLetterQualityBtnEl.classList.remove('active');
+    filterLetterQualityBtnEl.setAttribute('aria-pressed', 'false');
+  }
   if (filterMinScoreEl) filterMinScoreEl.value = '';
   if (filterSortEl) filterSortEl.value = 'score-desc';
   if (filterSalaryEl) filterSalaryEl.checked = false;
   renderListFromCache(null);
 });
 
-for (const el of [filterSearchEl, filterCompanyEl, filterMinScoreEl, filterSortEl, filterSalaryEl]) {
+filterLetterQualityBtnEl?.addEventListener('click', () => {
+  const next = !(filterLetterQualityBtnEl.getAttribute('aria-pressed') === 'true');
+  filterLetterQualityBtnEl.setAttribute('aria-pressed', next ? 'true' : 'false');
+  filterLetterQualityBtnEl.classList.toggle('active', next);
+  if (next && filterLetterWeakBtnEl) {
+    filterLetterWeakBtnEl.setAttribute('aria-pressed', 'false');
+    filterLetterWeakBtnEl.classList.remove('active');
+  }
+  renderListFromCache(null);
+  showToast(
+    next ? 'Фильтр: только карточки с проблемами письма' : 'Фильтр писем снят',
+    'neutral'
+  );
+});
+
+filterLetterWeakBtnEl?.addEventListener('click', () => {
+  const next = !(filterLetterWeakBtnEl.getAttribute('aria-pressed') === 'true');
+  filterLetterWeakBtnEl.setAttribute('aria-pressed', next ? 'true' : 'false');
+  filterLetterWeakBtnEl.classList.toggle('active', next);
+  if (next && filterLetterQualityBtnEl) {
+    filterLetterQualityBtnEl.setAttribute('aria-pressed', 'false');
+    filterLetterQualityBtnEl.classList.remove('active');
+  }
+  renderListFromCache(null);
+  showToast(next ? 'Фильтр: письма с оценкой ниже 6/10' : 'Фильтр «Письмо <6» снят', 'neutral');
+});
+
+btnLetterCenterPrepareEl?.addEventListener('click', () => btnBulkImproveLettersEl?.click());
+
+btnLetterCenterRegenEl?.addEventListener('click', async () => {
+  btnLetterCenterRegenEl.disabled = true;
+  try {
+    const res = await requestCoverLetterRegenerateWeak({ mode: 'fail', limit: 25 });
+    showToast(res.message || 'Перегенерация в фоне', 'good');
+  } catch (e) {
+    showToast(e.message, 'bad');
+  } finally {
+    btnLetterCenterRegenEl.disabled = false;
+  }
+});
+
+btnLetterCenterFilterEl?.addEventListener('click', () => {
+  setLetterIssuesFilter(true);
+  renderListFromCache(null);
+});
+
+btnLetterCenterFixableEl?.addEventListener('click', (ev) => {
+  if (ev.shiftKey) {
+    openDashboardSettings('letters');
+    return;
+  }
+  letterCenterKindFilter = letterCenterKindFilter === 'fixable' ? 'all' : 'fixable';
+  reapplyLetterCenterFromCache();
+});
+
+btnLetterCenterFailEl?.addEventListener('click', () => {
+  letterCenterKindFilter = letterCenterKindFilter === 'fail' ? 'all' : 'fail';
+  reapplyLetterCenterFromCache();
+});
+
+btnLetterCenterMissingEl?.addEventListener('click', () => {
+  letterCenterKindFilter = letterCenterKindFilter === 'missing' ? 'all' : 'missing';
+  reapplyLetterCenterFromCache();
+});
+
+btnLetterCenterMoreEl?.addEventListener('click', () => openLetterQualityHubModal());
+
+letterStatsBodyEl?.addEventListener('click', () => openLetterQualityHubModal());
+letterStatsBodyEl?.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' || ev.key === ' ') {
+    ev.preventDefault();
+    openLetterQualityHubModal();
+  }
+});
+letterHubExtraEl?.addEventListener('click', () => openLetterQualityHubModal());
+
+btnBulkImproveLettersEl?.addEventListener('click', async () => {
+  const batchScope = batchScopeForCurrentView();
+  if (!batchScope) {
+    showToast('Подготовка писем доступна в разделах очереди/батча', 'neutral');
+    return;
+  }
+  btnBulkImproveLettersEl.disabled = true;
+  try {
+    const imp = await requestCoverLetterBulkImprove({
+      batchScope,
+      queueStatus: batchScope === 'queue' && currentStatus === 'approved' ? 'approved' : 'pending',
+      minScore: Math.max(0, Number(filterMinScoreEl?.value || 0)),
+    });
+    showToast(imp.message || `Готово: ${imp.improved || 0}`, imp.improved ? 'good' : 'neutral');
+    await load();
+    void refreshLetterStatsSidebar(true);
+  } catch (e) {
+    showToast(e.message, 'bad');
+  } finally {
+    btnBulkImproveLettersEl.disabled = false;
+  }
+});
+
+for (const el of [filterSearchEl, filterMinScoreEl, filterSortEl, filterSalaryEl]) {
   el?.addEventListener('input', rerenderListDebounced);
   el?.addEventListener('change', rerenderListDebounced);
 }
@@ -4938,6 +6380,7 @@ for (const el of document.querySelectorAll('[data-pref]')) {
         updateScoreBandTabLabels();
       }
     }
+    markSettingsDirty();
     scheduleSaveSettings();
   });
   el.addEventListener('change', () => {
@@ -4948,6 +6391,19 @@ for (const el of document.querySelectorAll('[data-pref]')) {
         updateScoreBandTabLabels();
       }
     }
+    markSettingsDirty();
+    scheduleSaveSettings();
+  });
+}
+for (const el of document.querySelectorAll('[data-pref-bool]')) {
+  el.addEventListener('change', () => {
+    markSettingsDirty();
+    scheduleSaveSettings();
+  });
+}
+for (const el of document.querySelectorAll('[data-pref-select]')) {
+  el.addEventListener('change', () => {
+    markSettingsDirty();
     scheduleSaveSettings();
   });
 }
@@ -5004,29 +6460,54 @@ async function ensureChatTemplates() {
   return chatTemplatesCache;
 }
 
-function openDashboardSettings(tabId = 'apply', { focusId } = {}) {
+function openDashboardSettings(tabId = 'system', { focusId, clearUrl = true, layout } = {}) {
   closeServiceDrawer();
   const settingsModal = document.getElementById('settings-modal');
   if (!settingsModal) return;
+  if (!settingsTabSetter) {
+    console.error('[dashboard] settings UI not initialized — check console for module load errors');
+    showToast('Настройки не загрузились — обновите страницу (Ctrl+F5)', 'bad');
+    return;
+  }
   let tab = tabId;
   if (!tab) {
     try {
-      tab = sessionStorage.getItem('hh-settings-tab') || 'apply';
+      tab = sessionStorage.getItem('hh-settings-tab') || 'system';
     } catch {
-      tab = 'apply';
+      tab = 'system';
     }
   }
-  settingsTabSetter?.(tab);
+  const normalizedTab = normalizeSettingsTab(tab);
+  const alreadyOpen = !settingsModal.hidden && settingsModal.classList.contains('modal--open');
+  settingsTabSetter?.(normalizedTab);
   settingsModal.hidden = false;
-  openModalEl(settingsModal);
-  if (focusId) {
-    requestAnimationFrame(() => {
-      const el = document.getElementById(focusId);
-      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      const input = el?.querySelector('input');
-      if (input && typeof input.focus === 'function') input.focus({ preventScroll: true });
-    });
+  if (!alreadyOpen) openModalEl(settingsModal);
+  applySettingsOpenLayout(layout);
+  settingsModalHooks?.onOpen(normalizedTab);
+  if (focusId) focusSettingsField(focusId);
+  if (clearUrl) clearSettingsLocationParams();
+}
+
+function openDashboardSettingsFromUrl() {
+  const req = parseSettingsFromLocation();
+  if (!req) return;
+  openDashboardSettings(req.tab, { focusId: req.focus, layout: req.layout, clearUrl: true });
+}
+
+function initDashboardDeepLinks() {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('batchReport') === '1') {
+    url.searchParams.delete('batchReport');
+    const qs = url.searchParams.toString();
+    window.history.replaceState({}, '', url.pathname + (qs ? `?${qs}` : '') + url.hash);
+    void openBatchReportModal();
   }
+}
+
+/** @param {unknown} err @param {string} [fallback] */
+function toastApiError(err, fallback = 'Ошибка') {
+  const msg = humanApiError(err instanceof Error ? err : String(err ?? ''));
+  showToast(msg || fallback, 'bad');
 }
 
 function hardReloadDashboard() {
@@ -5049,20 +6530,6 @@ function initLimitsStatusLink() {
     e.preventDefault();
     open();
   });
-}
-
-function initTopCtaBar() {
-  const mirror = (fromId, toId) => {
-    document.getElementById(fromId)?.addEventListener('click', () => {
-      document.getElementById(toId)?.click();
-    });
-  };
-  mirror('btn-top-harvest', 'btn-run-harvest');
-  mirror('btn-top-batch-auto', 'btn-batch-auto');
-  mirror('btn-daily-routine-menubar', 'btn-daily-routine');
-  mirror('btn-run-harvest-menubar', 'btn-run-harvest');
-  mirror('btn-batch-auto-menubar', 'btn-batch-auto');
-  mirror('btn-batch-manual-menubar', 'btn-batch-manual');
 }
 
 function initLayoutSettingsUi() {
@@ -5098,6 +6565,7 @@ function initLayoutSettingsUi() {
 }
 
 function initCrmUi() {
+  initBatchReportSettingsLinks();
   const shell = document.getElementById('app-shell');
   const sidebarModeBtns = document.querySelectorAll('[data-sidebar-mode]');
   function setSidebarMode(mode) {
@@ -5137,7 +6605,10 @@ function initCrmUi() {
   const settingsModal = document.getElementById('settings-modal');
   const settingsTabBtns = settingsModal?.querySelectorAll('[data-settings-tab]') || [];
   const settingsPanels = {
+    system: document.getElementById('settings-panel-system'),
+    targeting: document.getElementById('settings-panel-targeting'),
     apply: document.getElementById('settings-panel-apply'),
+    letters: document.getElementById('settings-panel-letters'),
     appearance: document.getElementById('settings-panel-appearance'),
   };
 
@@ -5159,6 +6630,7 @@ function initCrmUi() {
       panel.classList.toggle('active', on);
       panel.hidden = !on;
     }
+    settingsModalHooks?.onTabChange(id);
   }
 
   settingsTabBtns.forEach((btn) => {
@@ -5166,17 +6638,47 @@ function initCrmUi() {
   });
 
   settingsTabSetter = setSettingsTab;
-  const closeSettings = () => {
-    if (!settingsModal) return;
-    settingsModal.hidden = true;
-    closeModalEl(settingsModal);
-  };
+  settingsModalHooks = initSettingsModal({
+    api,
+    scheduleSaveSettings,
+    flushSaveSettings,
+    setSettingsTab,
+    openLetterQualityHubModal,
+    resetAppearanceSection: resetAppearanceSettingsSection,
+    setSettingsHint,
+    showToast,
+    openServiceFromSettings: () => {
+      if (!tryCloseSettingsModal()) return;
+      closeSettingsModal();
+      openServiceDrawer();
+    },
+    applyPreferencesResponse: (res) => {
+      if (!res?.preferences) return;
+      applyPreferencesToSettingsUI(res.preferences, prefBounds);
+      applyDashboardUiFromPreferences(res.preferences, res.ui);
+      if (res.applyRates) renderApplyRateMeters(res.applyRates);
+      settingsModalHooks?.syncDerivedState?.();
+      invalidateLettersSnapshot();
+    },
+    hasCompletedBatch: () => (lastJobStatus?.batchLastReport?.done || 0) > 0,
+  });
   document.getElementById('btn-open-settings')?.addEventListener('click', () => openDashboardSettings());
-  settingsModal?.querySelector('[data-close-settings]')?.addEventListener('click', closeSettings);
-  settingsModal?.querySelector('.modal-close--settings')?.addEventListener('click', closeSettings);
+  settingsModal?.querySelector('[data-close-settings]')?.addEventListener('click', closeSettingsModal);
+  settingsModal?.querySelector('.modal-close--settings')?.addEventListener('click', closeSettingsModal);
+
+  window.addEventListener('hh-open-settings', (ev) => {
+    const detail = ev.detail || {};
+    const precheck = document.getElementById('batch-precheck-modal');
+    if (precheck && !precheck.hidden) closeModalEl(precheck);
+    const tab = detail.tab ? normalizeSettingsTab(detail.tab) : undefined;
+    openDashboardSettings(tab, {
+      focusId: detail.focus || '',
+      layout: detail.layout || '',
+      clearUrl: false,
+    });
+  });
 
   initServiceDrawer();
-  initTopCtaBar();
   initLayoutSettingsUi();
   initWorkspaceDocks();
   initMobileShell({
@@ -5188,6 +6690,9 @@ function initCrmUi() {
     getApplyView: () => currentApplyView,
     onApplyView: (view) => {
       applyViewTabsEl?.querySelector(`[data-apply-view="${view}"]`)?.click();
+    },
+    onQueueStatus: (status) => {
+      vacancyTabsEl?.querySelector(`[data-status="${status}"]`)?.click();
     },
   });
 }
@@ -5221,7 +6726,7 @@ function openServiceDrawer() {
 function initServiceDrawer() {
   const open = () => openServiceDrawer();
   document.getElementById('btn-open-service')?.addEventListener('click', open);
-  document.querySelectorAll('.btn-open-service-alt, [data-open-service]').forEach((el) => {
+  document.querySelectorAll('[data-open-service]').forEach((el) => {
     el.addEventListener('click', open);
   });
   document.querySelectorAll('[data-close-service]').forEach((el) => {
@@ -5276,8 +6781,71 @@ function initCommandPaletteAndShortcuts() {
     {
       id: 'settings',
       label: COPY.openSettings,
-      keywords: 'настройки limits',
+      keywords: 'настройки system preferences',
+      run: () => openDashboardSettings('system'),
+    },
+    {
+      id: 'settings-fullscreen',
+      label: 'Настройки: полный экран',
+      hint: 'Alt+F в окне настроек',
+      keywords: 'настройки fullscreen полноэкранный',
+      run: () => {
+        const m = document.getElementById('settings-modal');
+        if (!m || m.hidden) openDashboardSettings('system', { layout: 'fullscreen' });
+        else toggleSettingsModalFullscreen();
+      },
+    },
+    {
+      id: 'settings-wide',
+      label: 'Настройки: широкое окно',
+      hint: 'Пресет для писем и таргетинга',
+      keywords: 'настройки wide широкое окно layout',
+      run: () => openDashboardSettings('letters', { layout: 'wide' }),
+    },
+    {
+      id: 'settings-before-batch',
+      label: 'Настройки: перед батчем',
+      hint: 'Письма и порог',
+      keywords: 'батч письма пресет',
+      run: () => openDashboardSettings('letters', { focusId: 'settings-letters-presets' }),
+    },
+    {
+      id: 'settings-targeting',
+      label: 'Настройки: таргетинг',
+      keywords: 'настройки remote salary targeting',
+      run: () => openDashboardSettings('targeting'),
+    },
+    {
+      id: 'settings-letters',
+      label: 'Настройки: письма и батч',
+      keywords: 'настройки letter quality batch precheck',
+      run: () => openDashboardSettings('letters'),
+    },
+    {
+      id: 'settings-apply',
+      label: 'Настройки: отклики и лимиты',
+      keywords: 'настройки threshold batch limits',
       run: () => openDashboardSettings('apply'),
+    },
+    {
+      id: 'settings-appearance',
+      label: 'Настройки: интерфейс',
+      keywords: 'настройки theme layout panels',
+      run: () => openDashboardSettings('appearance'),
+    },
+    {
+      id: 'chat-inbox',
+      label: 'Чаты hh.ru — inbox',
+      hint: 'Ответы и черновики',
+      keywords: 'chat inbox чаты переписка',
+      run: () => void openChatInboxModal(),
+    },
+    {
+      id: 'load-demo-queue',
+      label: 'Загрузить демо-очередь',
+      hint: '10 вакансий для знакомства с UI',
+      keywords: 'demo демо очередь empty',
+      run: () => void loadDemoQueue().catch((e) => showToast(e.message || String(e), 'bad')),
     },
     {
       id: 'service',
@@ -5290,6 +6858,19 @@ function initCommandPaletteAndShortcuts() {
       label: 'Воронка и конверсия',
       keywords: 'stats funnel график',
       run: () => openFunnelModal(),
+    },
+    {
+      id: 'letter-issues',
+      label: 'Фильтр: проблемы писем',
+      hint: 'В списке только карточки с проверкой письма',
+      keywords: 'письмо letter quality filter',
+      run: () => toggleLetterIssuesFilter(),
+    },
+    {
+      id: 'letter-hub',
+      label: 'Качество писем — подробнее',
+      keywords: 'письмо hub golden',
+      run: () => openLetterQualityHubModal(),
     },
     {
       id: 'log',
@@ -5322,6 +6903,7 @@ function initCommandPaletteAndShortcuts() {
       const n = draftModalState.variants.length;
       draftModalState.selectVariant?.((draftModalState.selectedIndex + 1) % n);
     },
+    onToggleLetterIssuesFilter: () => toggleLetterIssuesFilter(),
     onExportFocused: () => {
       const id = lastFocusedVacancyId;
       const item = id ? cachedRawItems.find((x) => x.id === id) : cachedRawItems[0];
@@ -5342,6 +6924,11 @@ function initCommandPaletteAndShortcuts() {
 loadDailyRoutineSteps();
 applyCopyToDom();
 initServiceActions();
+initChatInboxUi({ api, showToast });
+document.addEventListener('hh-open-chat-inbox', (e) => {
+  const id = e.detail?.id;
+  void openChatInboxModal({ threadId: id || undefined, filter: 'needs_reply' });
+});
 initFunnelUi();
 initJobProgressOpenLog();
 document.getElementById('btn-batch-report')?.addEventListener('click', () => openBatchReportModal());
@@ -5351,7 +6938,11 @@ initLimitsStatusLink();
 initShortcutsModal();
 initCommandPaletteAndShortcuts();
 initListKeyboardNav(listEl, () => [...listEl.querySelectorAll('.card, .card-tile')]);
-loadDashboardSettings().then(() => load());
+loadDashboardSettings().then(() => {
+  openDashboardSettingsFromUrl();
+  initDashboardDeepLinks();
+  return load();
+});
 refreshJobStatus();
 setInterval(refreshJobStatus, 2000);
 probeBatchControlApi();

@@ -2,6 +2,7 @@
 
 import { openVacancyDetail } from './vacancy-detail.mjs';
 import { buildCardStatusChips, vacancyQuestionnairePending } from './card-status.mjs';
+import { buildScoreHumanHint } from './score-human-hint.mjs';
 
 const tileTpl = document.getElementById('card-tile-tpl');
 
@@ -10,6 +11,7 @@ const HINT_TAGS = {
   questionnaire: 'Анкета',
   invited: 'Приглашение',
   letter: 'Письмо',
+  'letter-quality': 'Письмо',
   summary: 'Суть',
   resume: 'Резюме',
   score: 'Балл',
@@ -63,7 +65,8 @@ function formatSalarySnippet(item) {
 
 /** @param {string} kind */
 function hintPriority(kind) {
-  if (['risk', 'questionnaire', 'invited', 'off-target', 'letter'].includes(kind)) return 'high';
+  if (['risk', 'questionnaire', 'invited', 'off-target', 'letter', 'letter-quality'].includes(kind))
+    return 'high';
   if (['summary', 'resume', 'score'].includes(kind)) return 'mid';
   return 'low';
 }
@@ -166,13 +169,57 @@ export function buildTileHint(item, scoreThreshold = 50) {
   const s = Number(item.scoreOverall ?? item.geminiScore ?? 0) || 0;
 
   if (item.targeting?.eligible === false) {
-    return { kind: 'off-target', text: 'Вне целевого профиля — проверьте перед откликом' };
+    const why = clipText(
+      item.targeting?.skipReason || item.skipReason || 'Вне целевого профиля',
+      140
+    );
+    return { kind: 'off-target', text: why };
+  }
+  if (item.status === 'rejected') {
+    const hint = buildScoreHumanHint(item);
+    if (hint) return { kind: 'off-target', text: hint };
+  }
+  if (item.readiness?.targetingEligible && item.readiness?.score < 55) {
+    const parts = [];
+    if (item.letterQuality?.pass === false) {
+      parts.push(`письмо: ${clipText(item.letterQuality?.reason || 'проверка', 60)}`);
+    } else if (item.readiness?.parts?.letter < 12) {
+      parts.push('нет утверждённого письма');
+    }
+    if (parts.length) {
+      return {
+        kind: 'letter-quality',
+        text: `Готовность ${item.readiness.score}% — ${parts.join('; ')}`,
+      };
+    }
   }
   if (risks && item.targeting?.eligible !== false) {
     return { kind: 'risk', text: risks };
   }
   if (vacancyQuestionnairePending(item)) {
     return { kind: 'questionnaire', text: 'Требуется анкета работодателя' };
+  }
+  const l10 = item.letterQuality?.letterScore10 ?? item.readiness?.letterScore10;
+  if (item.letterQuality?.fixable) {
+    return {
+      kind: 'letter-quality',
+      text: Number.isFinite(l10)
+        ? `Письмо ${l10}/10 — можно улучшить кнопкой «Подготовить»`
+        : 'Письмо: автоподготовка (полировка / роль)',
+    };
+  }
+  if (item.letterQuality?.pass && Number.isFinite(l10) && l10 >= 8) {
+    return {
+      kind: 'letter',
+      text: `Письмо ${l10}/10 — готово к батчу`,
+    };
+  }
+  if (item.letterQuality?.pass === false) {
+    const scorePart = Number.isFinite(l10) ? `${l10}/10 · ` : '';
+    return {
+      kind: 'letter-quality',
+      text: `Письмо ${scorePart}${clipText(item.letterQuality?.reason || 'нужна проверка', 120)}`,
+    };
   }
   if (cl?.status === 'approved' && cl?.approvedText) {
     return { kind: 'letter', text: clipText(cl.approvedText, 120) || 'Письмо подготовлено' };
@@ -217,7 +264,7 @@ function primaryStatusLabel(chips) {
     deferred: 'отложено',
     'off-target': 'нецелевая',
     resume: 'резюме',
-    chat: 'чат',
+    chat: 'ответ',
   };
   return {
     label: short[c.kind] || c.label,
@@ -296,14 +343,29 @@ export function renderCardTile(item, scoreThreshold, renderFullCard, bindDismiss
   const title = item.title || item.url || 'Вакансия';
   const overall = item.scoreOverall ?? item.geminiScore;
   const scoreText = formatScoreDisplay(overall);
+  const l10 = item.letterQuality?.letterScore10 ?? item.readiness?.letterScore10;
 
   const scoreEl = node.querySelector('.card-tile__score');
-  if (scoreEl) scoreEl.textContent = scoreText;
+  if (scoreEl) {
+    scoreEl.textContent = scoreText;
+    if (Number.isFinite(l10)) {
+      scoreEl.dataset.letter = String(l10);
+      if (l10 < 6) scoreEl.classList.add('card-tile__score--letter-weak');
+      else if (l10 >= 8) scoreEl.classList.add('card-tile__score--letter-strong');
+    } else delete scoreEl.dataset.letter;
+  }
   const ring = node.querySelector('.card-tile__score-ring');
   if (ring) {
-    const scoreLabel = s > 0 ? `Балл ${scoreText}` : 'Без оценки';
+    const r = item.readiness?.score;
+    const letterSuffix = Number.isFinite(l10) ? ` · письмо ${l10}/10` : '';
+    const readySuffix = Number.isFinite(r) ? ` · готовность ${r}%` : '';
+    const scoreLabel = (s > 0 ? `Балл ${scoreText}` : 'Без оценки') + letterSuffix + readySuffix;
     ring.title = scoreLabel;
     ring.setAttribute('aria-label', scoreLabel);
+    if (Number.isFinite(r) && r < 55) node.classList.add('card-tile--readiness-low');
+    else if (Number.isFinite(r) && r >= 75) node.classList.add('card-tile--readiness-ok');
+    if (Number.isFinite(l10) && l10 < 6) node.classList.add('card-tile--letter-weak');
+    else if (Number.isFinite(l10) && l10 >= 8) node.classList.add('card-tile--letter-strong');
   }
 
   const titleEl = node.querySelector('.card-tile__title');
@@ -376,19 +438,23 @@ export function renderCardTile(item, scoreThreshold, renderFullCard, bindDismiss
   bindDismiss(node, item);
 
   const openDetail = () => openVacancyDetail(item, renderFullCard);
+  const titleText = node.querySelector('.card-tile__title')?.textContent?.trim() || 'Вакансия';
 
-  node.setAttribute('role', 'button');
-  node.setAttribute('tabindex', '0');
-  node.addEventListener('click', (e) => {
-    if (e.target.closest('.card-dismiss, .card-tile__hh, .card-tile__open')) return;
+  const hit = node.querySelector('.card-tile__hit');
+  if (hit) {
+    hit.setAttribute('aria-label', `Открыть: ${titleText}`);
+    hit.addEventListener('click', openDetail);
+    hit.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openDetail();
+      }
+    });
+  }
+
+  node.querySelector('.card-tile__score-ring')?.addEventListener('click', (e) => {
+    if (e.target.closest('.card-dismiss, .card-tile__hh')) return;
     openDetail();
-  });
-  node.addEventListener('keydown', (e) => {
-    if (e.target.closest('.card-dismiss, .card-tile__hh, .card-tile__open')) return;
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      openDetail();
-    }
   });
 
   node.querySelector('.card-tile__open')?.addEventListener('click', (e) => {

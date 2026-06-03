@@ -9,7 +9,16 @@ const STORAGE_KEY = 'hh-dashboard-docks-v3';
 const LEGACY_KEYS = ['hh-dashboard-docks-v2', 'hh-dashboard-docks-v1'];
 const MIN_W = 160;
 const MINI_W = 52;
-const SPLIT_W = '5px';
+const EDGE_W = 12;
+const SPLIT_W = `${EDGE_W}px`;
+const CLICK_THRESHOLD = 4;
+const DOCK_HINT_KEY = 'hh-dashboard-dock-splitter-hint';
+/** @type {number} */
+let lastExpandAt = 0;
+/** @type {number} */
+let suppressHoverExpandUntil = 0;
+/** @type {Record<'left'|'right', boolean>} */
+const hoverExpandArmed = { left: false, right: false };
 const MAX_W_RATIO = 0.36;
 const MIN_CENTER_W = 320;
 const DEFAULT_LEFT = 240;
@@ -19,7 +28,7 @@ const DEFAULT_RIGHT = 272;
 /** @typedef {{ left: DockSideState, right: DockSideState }} DockState */
 
 /** @returns {DockState} */
-function defaultState() {
+export function defaultState() {
   return {
     left: { width: DEFAULT_LEFT, collapsed: false, hidden: false, pinned: true },
     right: { width: DEFAULT_RIGHT, collapsed: false, hidden: false, pinned: true },
@@ -51,6 +60,10 @@ export function loadDockState() {
       if (typeof s.collapsed === 'boolean') d[side].collapsed = s.collapsed;
       if (typeof s.hidden === 'boolean') d[side].hidden = s.hidden;
       if (typeof s.pinned === 'boolean') d[side].pinned = s.pinned;
+      if (d[side].collapsed && !d[side].hidden) {
+        d[side].hidden = true;
+        d[side].collapsed = false;
+      }
     }
     return sanitizeDockState(d);
   } catch {
@@ -77,10 +90,7 @@ export function sanitizeDockState(state) {
   }
   let leftW = state.left.hidden ? 0 : state.left.collapsed ? MINI_W : state.left.width;
   let rightW = state.right.hidden ? 0 : state.right.collapsed ? MINI_W : state.right.width;
-  const splitCount =
-    (state.left.hidden || state.left.collapsed ? 0 : 1) +
-    (state.right.hidden || state.right.collapsed ? 0 : 1);
-  const used = leftW + rightW + splitCount * 5;
+  const used = leftW + rightW + EDGE_W * 2;
   if (used > window.innerWidth - MIN_CENTER_W) {
     const excess = used - (window.innerWidth - MIN_CENTER_W);
     for (const side of ['left', 'right']) {
@@ -101,15 +111,15 @@ function cap(side) {
  * @param {DockState} state
  * @returns {string}
  */
-function buildStageColumns(state) {
+export function buildStageColumns(state) {
   const cols = [];
   if (!state.left.hidden) {
     cols.push(state.left.collapsed ? `${MINI_W}px` : `${state.left.width}px`);
-    if (!state.left.collapsed) cols.push(SPLIT_W);
   }
+  cols.push(SPLIT_W);
   cols.push('minmax(0, 1fr)');
+  cols.push(SPLIT_W);
   if (!state.right.hidden) {
-    if (!state.right.collapsed) cols.push(SPLIT_W);
     cols.push(state.right.collapsed ? `${MINI_W}px` : `${state.right.width}px`);
   }
   return cols.join(' ');
@@ -157,60 +167,75 @@ export function applyDockState(state) {
     rightDock.classList.toggle('dock--hidden', state.right.hidden);
     rightDock.classList.toggle('dock--unpinned', !state.right.pinned);
   }
-  if (leftSplit) {
-    leftSplit.style.display = state.left.hidden || state.left.collapsed ? 'none' : '';
-  }
-  if (rightSplit) {
-    rightSplit.style.display = state.right.hidden || state.right.collapsed ? 'none' : '';
-  }
-
-  syncDockChrome(state);
-  syncMenubarToggles(state);
-  syncCollapseButtons(state);
-}
-
-/** @param {DockState} state */
-function syncDockChrome(state) {
   for (const side of /** @type {('left'|'right')[]} */ (['left', 'right'])) {
-    const s = state[side];
-    const pinBtn = document.querySelector(`[data-dock-pin="${side}"]`);
-    if (pinBtn) {
-      pinBtn.classList.toggle('dock__btn--active', s.pinned);
-      pinBtn.setAttribute('aria-pressed', s.pinned ? 'true' : 'false');
-      pinBtn.title = s.pinned ? 'Открепить' : 'Закрепить панель';
-    }
+    const splitter = side === 'left' ? leftSplit : rightSplit;
+    if (!splitter) continue;
+    const hidden = state[side].hidden;
+    splitter.style.display = mobile ? 'none' : '';
+    splitter.classList.toggle('dock-splitter--panel-hidden', hidden);
+    splitter.setAttribute(
+      'title',
+      hidden
+        ? 'Наведите или нажмите, чтобы показать панель'
+        : 'Нажмите, чтобы скрыть · перетащите для ширины'
+    );
+    splitter.setAttribute(
+      'aria-label',
+      hidden
+        ? side === 'left'
+          ? 'Показать левую панель'
+          : 'Показать правую панель'
+        : side === 'left'
+          ? 'Скрыть левую панель или изменить ширину'
+          : 'Скрыть правую панель или изменить ширину'
+    );
   }
 }
 
-/** @param {DockState} state */
-function syncCollapseButtons(state) {
-  for (const side of /** @type {('left'|'right')[]} */ (['left', 'right'])) {
-    const s = state[side];
-    const label = s.hidden ? 'Панель скрыта' : s.collapsed ? 'Развернуть меню' : 'Свернуть меню';
-    document.querySelectorAll(`[data-dock-collapse="${side}"]`).forEach((btn) => {
-      btn.title = label;
-      btn.setAttribute('aria-label', label);
-      btn.classList.toggle('dock__btn--panel-open', !s.collapsed && !s.hidden);
-    });
-  }
+/** @type {DockState | null} */
+let liveState = null;
+
+/** @param {'left'|'right'} side */
+export function toggleDockPanel(side) {
+  if (!liveState) return;
+  if (liveState[side].hidden || liveState[side].collapsed) expandDock(liveState, side);
+  else hideDock(liveState, side);
 }
 
-/** @param {DockState} state */
-function syncMenubarToggles(state) {
-  document.querySelectorAll('[data-dock-toggle]').forEach((btn) => {
-    const side = btn.dataset.dockToggle;
-    if (side !== 'left' && side !== 'right') return;
-    const off = state[side].hidden;
-    btn.classList.toggle('workspace-menubar__dock-toggle--off', off);
-    btn.setAttribute('aria-pressed', off ? 'false' : 'true');
-    btn.title = off
-      ? side === 'left'
-        ? 'Показать левую панель'
-        : 'Показать правую панель'
-      : side === 'left'
-        ? 'Скрыть левую панель'
-        : 'Скрыть правую панель';
-  });
+/** @param {(msg: string, variant?: string) => void} [showToast] */
+export function showDockPanelsHint(showToast) {
+  if (typeof localStorage !== 'undefined' && localStorage.getItem(DOCK_HINT_KEY) === '1') return;
+  if (typeof document !== 'undefined') {
+    const shell = document.getElementById('app-shell');
+    if (isMobileViewport() || shell?.classList.contains('workspace-shell--mobile')) return;
+  }
+  if (typeof localStorage !== 'undefined') localStorage.setItem(DOCK_HINT_KEY, '1');
+  showToast?.(
+    'Подсказка: полоска между панелью и списком скрывает меню — наведите на неё, чтобы вернуть',
+    'neutral'
+  );
+}
+
+/** @param {DockState} state @param {'left'|'right'} side */
+function hideDock(state, side) {
+  state[side].hidden = true;
+  state[side].collapsed = false;
+  hoverExpandArmed[side] = false;
+  suppressHoverExpandUntil = Date.now() + 450;
+  applyDockState(state);
+  saveDockState(state);
+}
+
+/** @param {DockState} state @param {'left'|'right'} side */
+function expandDock(state, side) {
+  state[side].hidden = false;
+  state[side].collapsed = false;
+  if (state[side].width < MIN_W) {
+    state[side].width = side === 'left' ? DEFAULT_LEFT : DEFAULT_RIGHT;
+  }
+  lastExpandAt = Date.now();
+  applyDockState(state);
+  saveDockState(state);
 }
 
 /** @param {DockState} state @param {'left'|'right'} side @param {boolean} mini */
@@ -236,27 +261,6 @@ function toggleMini(state, side) {
   saveDockState(state);
 }
 
-/** @param {'left'|'right'} side */
-function toggleMenubarDock(state, side) {
-  state[side].hidden = !state[side].hidden;
-  if (!state[side].hidden && state[side].width < MIN_W) {
-    state[side].width = side === 'left' ? DEFAULT_LEFT : DEFAULT_RIGHT;
-  }
-  applyDockState(state);
-  saveDockState(state);
-}
-
-/** @param {'left'|'right'} side */
-function togglePinned(state, side) {
-  state[side].pinned = !state[side].pinned;
-  if (state[side].pinned && state[side].collapsed && !state[side].hidden) {
-    setMini(state, side, false);
-    return;
-  }
-  applyDockState(state);
-  saveDockState(state);
-}
-
 function startResize(state, side, startX) {
   if (state[side].collapsed || state[side].hidden) return;
   const startW = state[side].width;
@@ -277,21 +281,6 @@ function startResize(state, side, startX) {
   document.body.classList.add('workspace-resizing');
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
-}
-
-function initHoverExpand(state, side) {
-  const dock = document.getElementById(`dock-${side}`);
-  if (!dock) return;
-  let hideTimer = null;
-  const scheduleMini = () => {
-    if (state[side].pinned || state[side].collapsed || state[side].hidden) return;
-    clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => {
-      if (!state[side].pinned) setMini(state, side, true);
-    }, 700);
-  };
-  dock.addEventListener('mouseenter', () => clearTimeout(hideTimer));
-  dock.addEventListener('mouseleave', scheduleMini);
 }
 
 function clickEl(id) {
@@ -362,54 +351,106 @@ export function syncDockMiniActiveView(applyView) {
   });
 }
 
+/** @param {'left'|'right'} side */
+function canHoverExpand(side) {
+  if (Date.now() < suppressHoverExpandUntil) return false;
+  return hoverExpandArmed[side];
+}
+
+/** @param {DockState} state @param {'left'|'right'} side */
+function initSplitter(state, side) {
+  const splitter = document.getElementById(`splitter-${side}`);
+  if (!splitter) return;
+
+  splitter.addEventListener('mouseleave', () => {
+    if (state[side].hidden) hoverExpandArmed[side] = true;
+  });
+
+  splitter.addEventListener('mouseenter', () => {
+    if (isMobileViewport()) return;
+    if (!state[side].hidden) return;
+    if (!canHoverExpand(side)) return;
+    expandDock(state, side);
+    hoverExpandArmed[side] = false;
+  });
+
+  splitter.addEventListener('mousedown', (e) => {
+    if (isMobileViewport()) return;
+    if (e.button !== 0) return;
+    if (state[side].hidden) {
+      e.preventDefault();
+      expandDock(state, side);
+      return;
+    }
+    if (state[side].collapsed) {
+      e.preventDefault();
+      expandDock(state, side);
+      return;
+    }
+
+    const startX = e.clientX;
+    let resizing = false;
+
+    const onMove = (ev) => {
+      if (!resizing && Math.abs(ev.clientX - startX) > CLICK_THRESHOLD) {
+        resizing = true;
+        startResize(state, side, startX);
+        document.removeEventListener('mousemove', onMove);
+      }
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (!resizing && Date.now() - lastExpandAt > 280) hideDock(state, side);
+    };
+
+    e.preventDefault();
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  splitter.addEventListener('dblclick', () => {
+    if (state[side].hidden || state[side].collapsed) return;
+    state[side].width = side === 'left' ? DEFAULT_LEFT : DEFAULT_RIGHT;
+    applyDockState(state);
+    saveDockState(state);
+  });
+
+  splitter.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    if (state[side].hidden) expandDock(state, side);
+    else hideDock(state, side);
+  });
+}
+
 export function initWorkspaceDocks() {
   const state = loadDockState();
+  liveState = state;
   applyDockState(state);
-
-  document.querySelectorAll('[data-dock-collapse]').forEach((btn) => {
-    const side = btn.dataset.dockCollapse;
-    if (side !== 'left' && side !== 'right') return;
-    btn.addEventListener('click', () => toggleMini(state, side));
-  });
-
-  document.querySelectorAll('[data-dock-pin]').forEach((btn) => {
-    const side = btn.dataset.dockPin;
-    if (side !== 'left' && side !== 'right') return;
-    btn.addEventListener('click', () => togglePinned(state, side));
-  });
-
-  document.querySelectorAll('[data-dock-toggle]').forEach((btn) => {
-    const side = btn.dataset.dockToggle;
-    if (side !== 'left' && side !== 'right') return;
-    btn.addEventListener('click', () => toggleMenubarDock(state, side));
-  });
 
   initDockMiniNav(state);
 
   for (const side of /** @type {('left'|'right')[]} */ (['left', 'right'])) {
-    const splitter = document.getElementById(`splitter-${side}`);
-    splitter?.addEventListener('mousedown', (e) => {
-      if (state[side].collapsed || state[side].hidden) return;
-      e.preventDefault();
-      startResize(state, side, e.clientX);
-    });
-    splitter?.addEventListener('dblclick', () => {
-      state[side].width = side === 'left' ? DEFAULT_LEFT : DEFAULT_RIGHT;
-      applyDockState(state);
-      saveDockState(state);
-    });
-    initHoverExpand(state, side);
+    initSplitter(state, side);
   }
 
   window.addEventListener('resize', () => {
     sanitizeDockState(state);
-    if (!isMobileViewport()) applyDockState(state);
+    applyDockState(state);
     saveDockState(state);
   });
 
   window.addEventListener('hh-docks-refresh', () => {
     sanitizeDockState(state);
     applyDockState(state);
+  });
+
+  window.addEventListener('hh-mobile-sheet-open', (e) => {
+    const side = e.detail?.side;
+    if (side !== 'left' && side !== 'right') return;
+    if (state[side].hidden || state[side].collapsed) expandDock(state, side);
   });
 
   return state;

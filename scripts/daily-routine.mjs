@@ -60,6 +60,16 @@ async function main() {
   } catch (e) {
     console.warn('[daily-digest] пропуск:', e.message || e);
   }
+  if (String(process.env.HH_REMOTE_STATS_PUSH ?? '0').trim() === '1') {
+    try {
+      const { isRemotePushConfigured } = await import('../lib/remote-stats.mjs');
+      if (isRemotePushConfigured()) {
+        await runNode('push-remote-stats.mjs');
+      }
+    } catch (e) {
+      console.warn('[remote:push-stats] пропуск:', e.message || e);
+    }
+  }
   console.log('\nГотово. Откройте дашборд → «Без анкет» → батч.');
   setSideJobPid('dailyRoutine', null);
 }

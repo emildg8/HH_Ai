@@ -35,6 +35,7 @@ import { appendApplyChatLog, appendApplyChatRunHeader } from '../lib/apply-chat-
 import { formatLogLine } from '../lib/log-line.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
 import { getDashboardBatchSizeCap } from '../lib/dashboard-preferences.mjs';
+import { playwrightDisplayEnv } from '../lib/playwright-display-mode.mjs';
 import { normalizeBatchScope, filterForBatchScope } from '../lib/batch-scope.mjs';
 import { setBatchPid, isProcessAlive } from '../lib/job-pids.mjs';
 import { HH_APPLY_EXIT_ALREADY_RESPONDED, HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED } from '../lib/hh-apply-exit-codes.mjs';
@@ -59,7 +60,13 @@ import { pruneRespondedFromActiveQueue, pruneVacancyFromActiveQueue } from '../l
 import { assessVacancyForApply } from '../lib/vacancy-targeting.mjs';
 import { runBatchPreflight, repairProfileIfNeeded } from '../lib/batch-preflight.mjs';
 import { writeBatchRunReport } from '../lib/batch-run-report.mjs';
+import { pickBatchPrefsSnapshot } from '../lib/batch-prefs-diff.mjs';
 import { logBatchSkipReason } from '../lib/batch-skip-reason.mjs';
+import { assessLetterQuality } from '../lib/letter-quality.mjs';
+import { prepareCoverLetterForSend } from '../lib/cover-letter-prepare.mjs';
+import { autoPrepareLettersForBatch } from '../lib/batch-auto-prepare-letters.mjs';
+import { appendLetterMetric } from '../lib/letter-metrics.mjs';
+import { writeLetterQualityReport } from '../lib/batch-letter-quality-report.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BATCH_LOCK_FILE = path.join(DATA_DIR, 'apply-batch.lock');
@@ -118,6 +125,10 @@ function scoreOf(rec) {
   return Number(rec.scoreOverall ?? rec.geminiScore ?? 0) || 0;
 }
 
+function assessmentResumeRole(rec, status) {
+  return assessVacancyForApply(rec, { userApproved: status === 'approved' }).resumeRole || 'devops';
+}
+
 function logBatch(msg) {
   const body = `[batch] ${msg}`;
   console.log(formatLogLine(body));
@@ -148,15 +159,15 @@ function runApplyForId(id, { tailorResume, dryRun }) {
     if (tailorResume) args.push('--tailor-resume');
     const batchQAuto = String(process.env.HH_BATCH_QUESTIONNAIRE_AUTO ?? '1').trim() !== '0';
     if (process.env.HH_QUESTIONNAIRE_AUTO === '1' || batchQAuto) args.push('--questionnaire-auto');
+    const batchPrefs = loadPreferences();
+    const pwEnv = playwrightDisplayEnv('batch', batchPrefs);
     const child = spawnBackground(process.execPath, args, {
       cwd: ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
+        ...pwEnv,
         HH_BATCH: '1',
-        // Свёрнутое окно; HH_BATCH_HEADLESS=1 — полный headless (эскалация при капче). Игнорирует HH_HEADLESS из .env.
-        HH_HEADLESS: process.env.HH_BATCH_HEADLESS === '1' ? '1' : '0',
-        HH_BROWSER_BACKGROUND: process.env.HH_BROWSER_BACKGROUND ?? '1',
         /** Батч: быстрый fill и короткие паузы (как одиночный отклик из дашборда). HH_FAST=0 — «человечный» режим. */
         HH_FAST: String(process.env.HH_FAST ?? '1'),
       },
@@ -260,6 +271,9 @@ async function main() {
   } catch {
     /* ignore */
   }
+  const strictRemoteWork = prefs.batchRequireRemote !== undefined
+    ? prefs.batchRequireRemote !== false
+    : prefs.requireRemote !== false;
 
   const processedIds = new Set(saved?.processedIds ?? []);
   let done = Number(saved?.done) || 0;
@@ -294,6 +308,8 @@ async function main() {
     console.log('Нет вакансий для отклика (очередь, min-score, или все уже обработаны).');
     process.exit(0);
   }
+
+  autoPrepareLettersForBatch({ candidates, prefs, log: logBatch });
 
   const planned = limit;
   const batchParams = {
@@ -382,17 +398,62 @@ async function main() {
       const stepTitle = (rec.title || rec.id || '').slice(0, 60);
 
       if (skipOffTarget && !dryRun) {
-        const assessment = assessVacancyForApply(rec);
+        const assessment = assessVacancyForApply(rec, {
+          userApproved: status === 'approved',
+          strictRemoteWork,
+          prefs,
+        });
         if (!assessment.eligible) {
           skipped++;
           offTargetSkipped++;
           processedIds.add(rec.id);
-          bumpSkip('off-target');
+          const skipKey =
+            assessment.category === 'work-format'
+              ? 'формат работы'
+              : assessment.category === 'off-target-blue-collar'
+                ? 'рабочие специальности'
+                : assessment.category === 'off-target-sales'
+                  ? 'продажи/presale'
+                  : assessment.category === 'off-target-network'
+                    ? 'сетевые/телеком'
+                    : assessment.category === 'off-target-industrial'
+                      ? 'промышленные/полевые'
+                      : assessment.category === 'off-target-l1'
+                        ? 'L1 поддержка'
+                        : assessment.category === 'off-target-no-it-profile'
+                          ? 'нет IT-профиля'
+                  : assessment.category === 'off-target-promo'
+                    ? 'промо/служебные'
+                          : 'нецелевая';
+          bumpSkip(skipKey);
           logBatchSkipReason(assessment.skipReason || 'нецелевая вакансия');
-          logBatch(`OFF-TARGET ${stepNum}/${planned}: ${stepTitle}`);
+          const skipTag =
+            skipKey === 'формат работы'
+              ? 'FORMAT'
+              : skipKey === 'рабочие специальности'
+                ? 'BLUE-COLLAR'
+                : skipKey === 'продажи/presale'
+                  ? 'SALES'
+                  : skipKey === 'сетевые/телеком'
+                    ? 'NETWORK'
+                    : skipKey === 'промышленные/полевые'
+                      ? 'INDUSTRIAL'
+                      : skipKey === 'L1 поддержка'
+                        ? 'L1'
+                        : skipKey === 'нет IT-профиля'
+                          ? 'NO-IT'
+                          : skipKey === 'промо/служебные'
+                            ? 'PROMO'
+                : 'OFF-TARGET';
+          logBatch(`${skipTag} ${stepNum}/${planned}: ${stepTitle}`);
           reportItems.push({
             title: stepTitle,
-            status: 'off-target',
+            status:
+              assessment.category === 'work-format'
+                ? 'work-format'
+                : assessment.category === 'off-target-blue-collar'
+                  ? 'off-target-blue-collar'
+                  : 'off-target',
             resumeRole: assessment.resumeRole,
             reason: assessment.skipReason,
           });
@@ -430,6 +491,52 @@ async function main() {
           processedIds: [...processedIds],
         });
         continue;
+      }
+
+      if (!dryRun) {
+        const plannedRole = assessmentResumeRole(rec, status);
+        const preparedLetter = prepareCoverLetterForSend(rec, letter, plannedRole, prefs);
+        if (preparedLetter && preparedLetter !== letter) {
+          letter = preparedLetter;
+          updateVacancyRecord(rec.id, {
+            coverLetter: {
+              ...rec.coverLetter,
+              approvedText: preparedLetter,
+              updatedAt: new Date().toISOString(),
+            },
+          });
+        } else {
+          letter = preparedLetter;
+        }
+        const letterCheck = assessLetterQuality(rec, letter, plannedRole, prefs);
+        if (!letterCheck.pass) {
+          skipped++;
+          processedIds.add(rec.id);
+          bumpSkip('качество письма');
+          logBatchSkipReason(letterCheck.reason || 'некачественное письмо');
+          appendLetterMetric('batch_skip_letter', {
+            vacancyId: rec.id,
+            title: stepTitle,
+            reason: letterCheck.reason,
+          });
+          logBatch(`LETTER ${stepNum}/${planned}: ${stepTitle}`);
+          reportItems.push({
+            id: rec.id,
+            title: stepTitle,
+            status: 'letter-quality',
+            resumeRole: plannedRole,
+            reason: letterCheck.reason,
+          });
+          syncBatchCounters({
+            done,
+            failed,
+            skipped,
+            letterIdx,
+            processedIds: [...processedIds],
+          });
+          batchProgress.step(done, `Пропуск (письмо) ${stepNum}/${planned}`, { done, failed, skipped });
+          continue;
+        }
       }
 
       batchProgress.runningVacancy(stepNum, planned, `Отклик ${stepNum}/${planned}: ${stepTitle}`, {
@@ -473,7 +580,7 @@ async function main() {
         recordApplyLaunch();
         done++;
         processedIds.add(rec.id);
-        const plannedRole = assessVacancyForApply(rec).resumeRole || 'devops';
+        const plannedRole = assessmentResumeRole(rec, status);
         resumeUsage[plannedRole] = (resumeUsage[plannedRole] || 0) + 1;
         const afterRec = getVacancyRecord(rec.id);
         const resumeTitle =
@@ -559,7 +666,13 @@ async function main() {
     if (prunedEnd.changed > 0) {
       logBatch(`После батча убрано из очереди ещё ${prunedEnd.changed} карточек с откликом (responded)`);
     }
-    writeBatchRunReport({
+    let prefsSnapshot = null;
+    try {
+      prefsSnapshot = pickBatchPrefsSnapshot(loadPreferences());
+    } catch {
+      /* ignore */
+    }
+    const batchReportPayload = {
       startedAt,
       finishedAt: new Date().toISOString(),
       planned,
@@ -569,10 +682,28 @@ async function main() {
       offTargetSkipped,
       stopReason,
       batchScope,
+      queueStatus: status,
       resumeUsage,
       skipReasons,
       items: reportItems,
-    });
+      prefsSnapshot,
+    };
+    writeBatchRunReport(batchReportPayload);
+    writeLetterQualityReport(batchReportPayload);
+    try {
+      const { notifyBatchComplete } = await import('../lib/batch-notify.mjs');
+      await notifyBatchComplete({
+        planned,
+        done,
+        failed,
+        skipped,
+        offTargetSkipped,
+        stopReason,
+        batchScope,
+      });
+    } catch (e) {
+      logBatch(`Telegram notify: ${e.message || e}`);
+    }
   }
 }
 

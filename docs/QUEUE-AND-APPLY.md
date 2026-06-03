@@ -56,3 +56,12 @@ npm run devops:probe-response-resumes -- --id=<uuid>
 - Отклик на вакансии, где hh.ru **никогда** не предлагает нужное резюме (первый отклик другим CV)
 
 См. [ROADMAP.md](ROADMAP.md) (R2.x — invited в эталоны писем, метрики).
+
+## Качество писем перед батчем
+
+Утверждённое сопроводительное проверяется правилами (`lib/letter-quality.mjs`). В дашборде: сайдбар **«Письма»**, precheck серии, оценка **0–10** на карточке. Подробно: [COVER-LETTER-PLAN.md](COVER-LETTER-PLAN.md), [BATCH.md](BATCH.md).
+
+```bash
+npm run quality:check
+npm run devops:regenerate-letters -- --only-fail --limit=30
+```

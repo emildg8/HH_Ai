@@ -18,6 +18,9 @@ import {
  *   onDraftPrevVariant?: () => void,
  *   onDraftNextVariant?: () => void,
  *   onExportFocused?: () => void,
+ *   onToggleDockLeft?: () => void,
+ *   onToggleDockRight?: () => void,
+ *   onToggleLetterIssuesFilter?: () => void,
  * }} ShortcutHandlers */
 
 /**
@@ -106,6 +109,25 @@ export function initKeyboardShortcuts(handlers = {}) {
     if (mod && e.shiftKey && e.key.toLowerCase() === 'e' && !inEditable) {
       e.preventDefault();
       handlers.onExportFocused?.();
+      return;
+    }
+
+    if (!inEditable && !draftOpen && !mod && e.altKey && e.key.toLowerCase() === 'l') {
+      e.preventDefault();
+      handlers.onToggleLetterIssuesFilter?.();
+      return;
+    }
+
+    if (!inEditable && !draftOpen && !mod && !e.altKey) {
+      if (e.key === '[') {
+        e.preventDefault();
+        handlers.onToggleDockLeft?.();
+        return;
+      }
+      if (e.key === ']') {
+        e.preventDefault();
+        handlers.onToggleDockRight?.();
+      }
     }
   });
 }

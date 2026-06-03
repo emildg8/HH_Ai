@@ -50,6 +50,94 @@
   --z-modal: 100;
   --z-toast: 200;
   --z-palette: 300;
+
+  /* UI shell — единая подложка + блоки + плитки кнопок */
+  --ui-canvas: #101116;
+  --ui-chrome: #101116;
+  --ui-surface: #181b24;
+  --ui-tile: #1e222c;
+  --ui-tile-hover: color-mix(in srgb, var(--ds-accent) 11%, var(--ui-tile));
+  --ui-inset: var(--ui-tile);
+  --ui-border: rgba(255, 255, 255, 0.07);
+  --ui-text: var(--text);
+  --ui-muted: var(--text-secondary);
+
+  /* Card queue — Краткий / Средний / Полный (на той же шкале) */
+  --cq-surface: var(--ui-surface);
+  --cq-surface-border: var(--ui-border);
+  --cq-surface-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 18px rgba(0, 0, 0, 0.18);
+  --cq-surface-hover: var(--ds-accent-muted);
+  --cq-list-bg: var(--ui-surface);
+  --cq-list-border: var(--ui-border);
+  --cq-foot-bg: color-mix(in srgb, var(--bg-secondary) 45%, transparent);
+  --cq-foot-border: color-mix(in srgb, var(--border) 85%, transparent);
+  --cq-facts-bg: color-mix(in srgb, var(--bg-secondary) 55%, transparent);
+  --cq-tag-bg: color-mix(in srgb, var(--bg-secondary) 65%, transparent);
+  --cq-tag-border: color-mix(in srgb, var(--border) 75%, transparent);
+  --cq-score-neutral-bg: color-mix(in srgb, var(--bg-secondary) 70%, transparent);
+  --cq-score-neutral-border: color-mix(in srgb, var(--border) 80%, transparent);
+  --cq-score-high-bg: var(--ds-good-muted);
+  --cq-score-high-color: var(--ds-good);
+  --cq-score-high-border: color-mix(in srgb, var(--ds-good) 55%, transparent);
+  --cq-score-low-bg: var(--ds-warn-muted);
+  --cq-score-low-color: var(--ds-warn);
+  --cq-score-low-border: color-mix(in srgb, var(--ds-warn) 45%, transparent);
+  --cq-risks-bg: color-mix(in srgb, var(--risks) 10%, transparent);
+  --cq-good-bar: color-mix(in srgb, var(--ds-good) 55%, transparent);
+  --cq-warn-bar: color-mix(in srgb, var(--ds-warn) 45%, transparent);
+  --cq-accent-bar: var(--ds-accent);
+  --cq-radius: var(--radius-lg);
+  --cq-prose: var(--card-prose-fg);
+  --cq-prose-muted: var(--card-prose-muted);
+
+  /* HH Ai — единые панели и поверхности (дашборд v4) */
+  --hh-surface-canvas: var(--ui-canvas);
+  --hh-surface-elevated: var(--ui-surface);
+  --hh-surface-tile: var(--ui-tile);
+  --hh-panel-border: var(--ui-border);
+  --hh-panel-radius: var(--radius-md);
+  --hh-panel-radius-sm: var(--radius-sm);
+  --hh-panel-pad: var(--space-3) var(--space-4);
+  --hh-panel-pad-sm: var(--space-2) var(--space-3);
+  --hh-control-h: 2.25rem;
+
+  /* Chrome / typography (canonical; бывш. --v4-*) */
+  --hh-accent: var(--ds-accent);
+  --hh-accent-hover: color-mix(in srgb, var(--ds-accent) 88%, #000);
+  --hh-accent-muted: var(--ds-accent-muted);
+  --hh-chrome: var(--ui-chrome);
+  --hh-canvas: var(--ui-canvas);
+  --hh-panel: var(--ui-chrome);
+  --hh-elevated: var(--ui-surface);
+  --hh-tile: var(--ui-tile);
+  --hh-tile-hover: var(--ui-tile-hover);
+  --hh-border: var(--ui-border);
+  --hh-text: var(--ui-text);
+  --hh-muted: var(--ui-muted);
+  --hh-warn: var(--ds-warn);
+  --hh-warn-muted: var(--ds-warn-muted);
+  --hh-success: var(--ds-good);
+  --hh-radius: var(--radius-lg);
+  --hh-radius-sm: var(--radius-sm);
+
+  /* Deprecated aliases (--v4-* → --hh-*) */
+  --v4-accent: var(--hh-accent);
+  --v4-accent-hover: var(--hh-accent-hover);
+  --v4-accent-muted: var(--hh-accent-muted);
+  --v4-chrome: var(--hh-chrome);
+  --v4-surface: var(--hh-canvas);
+  --v4-panel: var(--hh-panel);
+  --v4-elevated: var(--hh-elevated);
+  --v4-tile: var(--hh-tile);
+  --v4-tile-hover: var(--hh-tile-hover);
+  --v4-border: var(--hh-border);
+  --v4-text: var(--hh-text);
+  --v4-muted: var(--hh-muted);
+  --v4-warn: var(--hh-warn);
+  --v4-warn-muted: var(--hh-warn-muted);
+  --v4-success: var(--hh-success);
+  --v4-radius: var(--hh-radius);
+  --v4-radius-sm: var(--hh-radius-sm);
 }
 
 html[data-theme='light'] {
@@ -60,6 +148,13 @@ html[data-theme='light'] {
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.12);
   --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.18);
+  --cq-surface-shadow: 0 1px 0 rgba(255, 255, 255, 0.65), 0 4px 16px rgba(0, 0, 0, 0.06);
+  --ui-canvas: var(--bg);
+  --ui-chrome: var(--bg);
+  --ui-surface: var(--bg-elevated);
+  --ui-tile: var(--bg-secondary);
+  --ui-tile-hover: color-mix(in srgb, var(--ds-accent) 8%, var(--ui-tile));
+  --ui-border: var(--border);
 }
 
 :focus-visible {

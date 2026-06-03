@@ -25,6 +25,13 @@ jobs:
           for f in scripts/*.mjs lib/*.mjs; do
             node --check "$f"
           done
+          node scripts/check-dashboard-modules.mjs
+
+      - name: Quality tests (letters, targeting, baseline)
+        run: npm run test:ci-quality
+
+      - name: Golden regression (targeting + letters)
+        run: npm run audit:quality-golden
 
       - name: verify:local (export + PII, без дашборда)
         run: npm run verify:local
@@ -39,6 +46,9 @@ jobs:
       - name: Desktop smoke (sidecar + chromium check)
         run: npm run desktop:smoke
 
+      - name: Gate B (demo activation)
+        run: npm run gate-b
+
       - name: Dashboard UI smoke
         run: |
           cp dashboard/public/local-dashboard-defaults.example.mjs dashboard/public/local-dashboard-defaults.mjs
@@ -49,6 +59,12 @@ jobs:
             sleep 1
           done
           npm run devops:test-dashboard-ui
+          npm run test:dashboard-settings
+          npm run test:chat-inbox-ui
+          npm run test:dashboard-a11y
           kill $SERVER_PID 2>/dev/null || true
         env:
           HH_VACANCIES_QUEUE_FILE: ./docs/demo/vacancies-demo.json
+
+      - name: Dashboard screenshot regression (DS-07)
+        run: npm run test:dashboard-screenshots

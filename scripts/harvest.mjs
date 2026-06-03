@@ -32,6 +32,7 @@ import {
   closeContextSafe,
   clearStaleBrowserLock,
   formatBrowserLaunchError,
+  bringBrowserToFront,
 } from '../lib/chromium-session.mjs';
 import { createHarvestProgressTracker, writeHarvestError } from '../lib/job-progress.mjs';
 import {
@@ -40,7 +41,9 @@ import {
   shouldStopHarvest,
   finishHarvestControl,
 } from '../lib/harvest-control.mjs';
-import { ensureNoCaptchaBlocking } from '../lib/hh-captcha-wait.mjs';
+import { ensureNoCaptchaBlocking, registerCaptchaVisibleEscalation, unregisterCaptchaVisibleEscalation } from '../lib/hh-captcha-wait.mjs';
+import { escalateHeadlessToVisibleBrowser } from '../lib/hh-captcha-escalate.mjs';
+import { resolvePlaywrightDisplay } from '../lib/playwright-display-mode.mjs';
 
 const BROWSER_OWNER = 'harvest';
 import { parseVacancyPage, vacancyIdFromUrl } from '../lib/vacancy-parse.mjs';
@@ -71,8 +74,6 @@ for (const a of process.argv) {
 
 const DEFAULT_KEYWORDS_FILE = path.join(ROOT, 'config', 'search-keywords.txt');
 
-/** По умолчанию headless: headed Chromium на Windows часто падает сразу после launch. */
-const headless = process.env.HH_HEADLESS !== '0';
 const skipLlm =
   process.argv.includes('--skip-llm') || process.argv.includes('--skip-gemini');
 const skipQuestionnaireHarvestHint = String(process.env.HH_HARVEST_QUESTIONNAIRE_HINT || '').trim() === '0';
@@ -189,6 +190,10 @@ async function main() {
   console.log(`[harvest] Период на hh.ru: ${harvestPeriodLabel(periodDays)}`);
   console.log(`[harvest] Поиск: ${describeHhSearchUrlPolicy(prefs)}`);
 
+  const display = resolvePlaywrightDisplay('harvest', prefs);
+  const headless = display.headless;
+  console.log(`[harvest] Окно браузера: ${display.mode}${headless ? ' (headless)' : ''}`);
+
   let ctx;
   try {
     ctx = await launchPersistentContextSafe(
@@ -198,15 +203,62 @@ async function main() {
         viewport: { width: 1280, height: 800 },
         locale: 'ru-RU',
       },
-      { owner: BROWSER_OWNER }
+      { owner: BROWSER_OWNER, skipMinimize: !display.browserBackground }
     );
   } catch (e) {
     throw new Error(formatBrowserLaunchError(e));
   }
+
+  if (display.captchaEscalate) {
+    if (headless) {
+      let escalatedOnce = false;
+      registerCaptchaVisibleEscalation(async (p) => {
+        if (escalatedOnce) return p;
+        escalatedOnce = true;
+        const r = await escalateHeadlessToVisibleBrowser(p, ctx, {
+          profile,
+          owner: BROWSER_OWNER,
+          log: (s) => console.log(s),
+          launchBase: { viewport: { width: 1280, height: 800 }, locale: 'ru-RU' },
+        });
+        ctx = r.ctx;
+        return r.page;
+      });
+    } else {
+      registerCaptchaVisibleEscalation(async (p) => {
+        console.log('[hh-captcha] Капча: разворачиваю окно Chromium…');
+        await bringBrowserToFront(p.context());
+        return p;
+      });
+    }
+  }
+
   const page = ctx.pages()[0] || (await ctx.newPage());
 
+  if (!headless) {
+    console.log('[harvest] Окно Chromium открыто — переход на hh.ru…');
+  }
+
   try {
-    await page.goto('https://hh.ru/applicant', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    let gotoErr = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await page.goto('https://hh.ru/applicant', { waitUntil: 'domcontentloaded', timeout: 90_000 });
+        gotoErr = null;
+        break;
+      } catch (e) {
+        gotoErr = e;
+        if (attempt < 2) {
+          console.warn('[harvest] hh.ru не ответил — повтор через 3 с…');
+          await page.waitForTimeout(3000);
+        }
+      }
+    }
+    if (gotoErr) {
+      throw new Error(
+        `${gotoErr.message || gotoErr}. Проверьте интернет/VPN и доступ к hh.ru, затем повторите поиск.`
+      );
+    }
     await page.waitForTimeout(1500);
     await ensureNoCaptchaBlocking(page, { context: 'личный кабинет (harvest)' });
     if (looksLikeLoginUrl(page.url())) {
@@ -495,6 +547,9 @@ async function main() {
         remoteNote: filter.workFormatNote || filter.remoteReason,
         workFormat: filter.workFormat,
         salaryNote: filter.salaryReason,
+        employment: parsed.employment || '',
+        workFormatLine: parsed.workFormat || '',
+        address: parsed.address || '',
         descriptionPreview: parsed.description.slice(0, 600),
         descriptionForLlm: parsed.description.slice(0, 6000),
         llmProvider:
@@ -572,6 +627,7 @@ async function main() {
       console.warn('[harvest] Telegram:', e.message || e);
     }
   } finally {
+    unregisterCaptchaVisibleEscalation();
     await closeContextSafe(ctx, BROWSER_OWNER);
     finishHarvestControl({ reason: shouldStopHarvest() ? 'stop' : 'complete' });
   }

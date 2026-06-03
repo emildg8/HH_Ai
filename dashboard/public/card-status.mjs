@@ -1,6 +1,8 @@
 /**
  * Статусные метки для карточек и плиток (единая логика).
  */
+import { autoRejectChipLabel, isAutoRejectRecord } from './reject-source.mjs';
+import { dispatchOpenSettingsForCategory } from './settings-targeting-nav.mjs';
 
 /** @param {{ editRatioPct?: number } | null | undefined} metrics */
 function letterMetricsLabel(metrics) {
@@ -44,6 +46,10 @@ export function buildCardStatusChips(item) {
     chips.push({ kind: 'off-target', label: 'нецелевая', warn: true });
   }
 
+  if (item.status === 'rejected' && isAutoRejectRecord(item)) {
+    chips.unshift({ kind: 'auto-reject', label: autoRejectChipLabel(item), warn: true });
+  }
+
   if (item.deferUntil && isVacancyDeferredClient(item)) {
     const until = new Date(item.deferUntil).toLocaleString('ru-RU', {
       day: '2-digit',
@@ -85,8 +91,8 @@ export function buildCardStatusChips(item) {
     chips.push({ kind: 'awaiting', label: 'ждём' });
   }
 
-  if (h?.chatSummary?.needsReply) {
-    chips.push({ kind: 'chat', label: 'ответ в чат', warn: true });
+  if (h?.chatSummary?.needsReply || h?.chatSummary?.questionNeedsReply) {
+    chips.push({ kind: 'chat', label: 'нужен ответ', warn: true });
   }
 
   return chips;
@@ -99,13 +105,40 @@ export function buildCardStatusChips(item) {
 export function renderStatusChips(host, item) {
   if (!host) return;
   const chips = buildCardStatusChips(item);
-  host.replaceChildren(
-    ...chips.map((c) => {
-      const span = document.createElement('span');
-      span.className = `status-chip status-chip--${c.kind}${c.warn ? ' status-chip--warn' : ''}`;
-      span.textContent = c.label;
-      return span;
-    })
-  );
-  host.hidden = chips.length === 0;
+  const frag = document.createDocumentFragment();
+  for (const c of chips) {
+    if (c.kind === 'chat') {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `status-chip status-chip--${c.kind} status-chip--warn status-chip--clickable`;
+      btn.textContent = c.label;
+      btn.title = 'Открыть чат в inbox';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        document.dispatchEvent(new CustomEvent('hh-open-chat-inbox', { detail: { id: item.id } }));
+      });
+      frag.appendChild(btn);
+      continue;
+    }
+    const span = document.createElement('span');
+    span.className = `status-chip status-chip--${c.kind}${c.warn ? ' status-chip--warn' : ''}`;
+    span.textContent = c.label;
+    frag.appendChild(span);
+  }
+  if (item.targeting?.eligible === false) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'status-chip-link';
+    btn.textContent = 'Почему?';
+    btn.title = item.targeting?.skipReason || 'Почему не подходит и что изменить в настройках';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dispatchOpenSettingsForCategory(item.targeting?.category);
+    });
+    frag.appendChild(btn);
+  }
+  host.replaceChildren(frag);
+  host.hidden = chips.length === 0 && item.targeting?.eligible !== false;
 }

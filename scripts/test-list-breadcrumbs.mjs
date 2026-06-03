@@ -30,6 +30,15 @@ const appliedItems = buildListBreadcrumbItems({
 });
 assert.ok(appliedItems.some((x) => x.label === 'Приглашения'));
 
+const rejectedItems = buildListBreadcrumbItems({
+  applyView: 'queue',
+  scoreBand: 'all',
+  status: 'rejected',
+  count: 2,
+  rejectedSource: 'auto',
+});
+assert.ok(rejectedItems.some((x) => x.label === 'Авто'));
+
 const html = renderListBreadcrumbsHtml(queueItems);
 assert.match(html, /list-breadcrumbs/);
 assert.match(html, /12 карточек/);

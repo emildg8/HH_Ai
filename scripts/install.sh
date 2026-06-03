@@ -38,6 +38,12 @@ copy_if_missing config/resume-raise-schedule.example.json config/resume-raise-sc
 
 mkdir -p data CV
 
+node --input-type=module -e "
+import { copyDemoToQueueIfMissing } from './lib/demo-queue.mjs';
+const r = copyDemoToQueueIfMissing();
+if (r.ok) console.log('  + demo queue:', r.count, 'vacancies');
+"
+
 echo ""
 echo "Проверка настройки:"
 node scripts/setup-check.mjs

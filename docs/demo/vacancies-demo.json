@@ -27,7 +27,30 @@
     "coverLetter": {
       "status": "approved",
       "approvedText": "Здравствуйте!\n\nОткликаюсь на DevOps: опыт Linux, Docker, CI/CD и мониторинга. Готов обсудить задачи команды."
-    }
+    },
+    "hhApply": {
+      "responseSubmitted": true,
+      "chatUrl": "https://hh.ru/chat/demo-thread-1",
+      "chatSummary": {
+        "needsReply": false,
+        "lastPreview": "Здравствуйте! Уточните, пожалуйста, опыт с Terraform?",
+        "questionNeedsReply": false
+      },
+      "chatMessages": [
+        {
+          "who": "Работодатель",
+          "text": "Здравствуйте! Уточните, пожалуйста, опыт с Terraform?",
+          "isMine": false
+        }
+      ],
+      "chatLastSentAt": "2026-06-03T09:48:01.027Z",
+      "chatReplyDraft": {
+        "reply": "gate-c",
+        "source": "sent",
+        "at": "2026-06-03T09:48:01.027Z"
+      }
+    },
+    "updatedAt": "2026-06-03T09:48:01.028Z"
   },
   {
     "id": "demo-0002-bbbb-cccc-dddd-222222222222",

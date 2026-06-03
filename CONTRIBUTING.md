@@ -40,12 +40,21 @@ npm run verify:local
 3. Проверки:
 
 ```bash
+npm run quality:check
 npm run verify:local
 npm run export:public
 # dist/hh-ai-public — без sk-or-v1, очередей, session
 ```
 
-4. При изменении UI: `npm run devops:test-dashboard-ui`
+При изменении писем, таргетинга или `lib/cover-letter-*`: `npm run test:letters` и `npm run test:targeting`.
+
+4. При изменении UI дашборда:
+
+```bash
+npm run quality:dashboard        # check:dashboard + unit static
+npm run test:dashboard-settings  # Playwright: модалка настроек
+npm run devops:test-dashboard-ui # общий smoke UI
+```
 
 ## Новый профиль вакансий
 
@@ -58,9 +67,14 @@ npm run profile:init -- --id=my-role --title="My Role"
 ## Релиз для пользователей
 
 ```bash
+# 1. Поднять VERSION, package.json, desktop, CHANGELOG [X.Y.Z]
+npm run verify:release           # gate-b, screenshots, a11y, chat, smoke:release
 npm run release:public
+git tag vX.Y.Z
 gh release create vX.Y.Z --repo emildg8/HH_Ai ...
 ```
+
+Быстрая проверка без smoke export: `npm run verify:release -- --skip-smoke`.
 
 См. [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md).
 

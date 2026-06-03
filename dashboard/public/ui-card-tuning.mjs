@@ -330,7 +330,6 @@ export function applyCardTuningFlash(tuning) {
   applyCardLayout(cardLayoutForTuning(t));
   if (t.sizePreset) root.dataset.cardSize = t.sizePreset;
   root.dataset.cardTextAmount = String(t.textAmount);
-  applyTileStyle(readTileStyle());
 }
 
 function initCardSizePresetControls() {

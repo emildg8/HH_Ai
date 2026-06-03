@@ -111,6 +111,16 @@ HH_PROFILE=backend
 
 Фильтры зарплаты и «не разработчик» — в **`config/preferences.json`** (редактируется и из дашборда).
 
+### Батч и качество писем (дашборд → Настройки)
+
+| Ключ | По умолчанию | Смысл |
+|------|--------------|--------|
+| `batchAutoPrepareLetters` | вкл. | Перед батчем: «Подготовить» fixable без LLM |
+| `batchFalsePositiveMax` | 20 | Предупреждение, если много «Неподходит» при eligible таргетинге |
+| `learningAutoApplyPatterns` | выкл. | Авто-правила из повторяющихся FP (count ≥ 3) |
+
+Подробнее: [COVER-LETTER-PLAN.md](COVER-LETTER-PLAN.md), [BATCH.md](BATCH.md).
+
 ---
 
 ## Шаг 3. Резюме на hh.ru

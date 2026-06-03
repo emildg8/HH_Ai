@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "off-heat",
+      "title": "Инженер-теплотехник",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "off-sales",
+      "title": "Менеджер по продажам B2B",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "off-blue",
+      "title": "Слесарь",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "on-devops",
+      "title": "Middle DevOps Engineer",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": true }
+    },
+    {
+      "id": "on-data",
+      "title": "Data Engineer (SRE)",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": true }
+    },
+    {
+      "id": "on-support-l2",
+      "title": "Инженер технической поддержки L2",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": true }
+    },
+    {
+      "id": "on-platform",
+      "title": "Platform engineer",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": true }
+    },
+    {
+      "id": "vague-it-desc",
+      "title": "Системный инженер",
+      "record": {
+        "workFormatLine": "Формат работы: удалённо",
+        "descriptionPreview": "Kubernetes, Grafana, Linux, мониторинг"
+      },
+      "expect": { "eligible": true }
+    },
+    {
+      "id": "vague-no-desc",
+      "title": "Системный инженер",
+      "record": {},
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "off-qa-title",
+      "title": "QA Engineer",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "off-senior-devops",
+      "title": "Senior DevOps Engineer",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "off-java-dev",
+      "title": "Java-разработчик",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "off-hh-pro",
+      "title": "hh PRO — преимущества подписки",
+      "record": {},
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "off-architect",
+      "title": "Solution Architect",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "off-product",
+      "title": "Product Manager",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "off-network-telecom",
+      "title": "Инженер сетей и телекоммуникаций",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "on-sre",
+      "title": "Site Reliability Engineer",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": true }
+    },
+    {
+      "id": "on-dba",
+      "title": "DBA PostgreSQL",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": true }
+    },
+    {
+      "id": "off-ios",
+      "title": "iOS-разработчик",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "off-hr",
+      "title": "HR Business Partner",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    },
+    {
+      "id": "on-mlops-desc",
+      "title": "MLOps engineer",
+      "record": {
+        "workFormatLine": "Формат работы: удалённо",
+        "descriptionPreview": "Kubernetes, ML pipeline, Docker, CI/CD"
+      },
+      "expect": { "eligible": true }
+    },
+    {
+      "id": "off-presale",
+      "title": "Presale инженер",
+      "record": { "workFormatLine": "Формат работы: удалённо" },
+      "expect": { "eligible": false }
+    }
+  ]
+}

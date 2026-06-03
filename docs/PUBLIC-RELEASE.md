@@ -1,14 +1,16 @@
-# HH Ai 3.0.0 — для нового пользователя
+# HH Ai 3.2.0 — для нового пользователя
 
 **Скачать:** [Releases](https://github.com/emildg8/HH_Ai/releases/latest)
 
 | Артефакт | Для кого |
 |----------|----------|
 | **HH-Ai_*-setup.exe** | Windows — приложение «как программа» (рекомендуется) |
-| **hh-ai-public-v3.0.0.zip** | Любая ОС с Node.js — portable / git-free |
-| **hh-ru-apply-win-x64-v3.0.0.zip** | То же, альias для Windows |
+| **hh-ai-public-v3.2.0.zip** | Любая ОС с Node.js — portable / git-free |
+| **hh-ru-apply-win-x64-v3.2.0.zip** | То же, alias для Windows |
 
 **Минимум ручного труда:** [FIRST-RUN.md](FIRST-RUN.md) · **5 шагов:** [QUICKSTART.md](QUICKSTART.md)
+
+**Новое в 3.2.0:** на пустой установке можно сразу загрузить **демо-очередь** и посмотреть дашборд; **входящие чаты** в menubar; полировка UI и автоматические QA-gates в CI.
 
 ---
 
@@ -55,6 +57,8 @@ npm run dashboard
 
 → **http://127.0.0.1:3849**
 
+На пустой очереди — кнопка **«Загрузить демо»** или `npm run setup:first-run`.
+
 ---
 
 ## Что внутри zip
@@ -63,7 +67,7 @@ npm run dashboard
 |------|------------------------|
 | Код, дашборд, примеры конфигов | Сессия hh.ru |
 | `docs/`, `EXPORT-README.md`, `start-dashboard.bat` | Ваши вакансии и CV |
-| `data/vacancies-queue.example.json` — демо | API-ключи, hash резюме |
+| `docs/demo/vacancies-demo.json` — демо-очередь | API-ключи, hash резюме |
 | `config/*.example.*`, `scripts/install-portable.ps1` | Логи и скриншоты ошибок |
 
 ---

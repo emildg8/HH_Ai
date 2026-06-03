@@ -29,6 +29,13 @@ const FUNNEL_LABELS = {
   declined: 'Отказы',
 };
 
+/** @type {Record<string, string>} */
+const REJECTED_SOURCE_LABELS = {
+  all: 'Все',
+  auto: 'Авто',
+  manual: 'Вручную',
+};
+
 /**
  * @param {{
  *   applyView: string,
@@ -38,6 +45,7 @@ const FUNNEL_LABELS = {
  *   total?: number,
  *   threshold?: number,
  *   appliedFunnel?: string,
+ *   rejectedSource?: string,
  *   hasLocalFilter?: boolean,
  * }} ctx
  * @returns {Array<{ label: string, current?: boolean }>}
@@ -51,6 +59,9 @@ export function buildListBreadcrumbItems(ctx) {
     else if (ctx.scoreBand === 'low') items.push({ label: `Ручной <${t}` });
     else items.push({ label: 'Все баллы' });
     items.push({ label: STATUS_LABELS[ctx.status] || ctx.status });
+    if (ctx.status === 'rejected' && ctx.rejectedSource && ctx.rejectedSource !== 'all') {
+      items.push({ label: REJECTED_SOURCE_LABELS[ctx.rejectedSource] || ctx.rejectedSource });
+    }
   }
 
   if (ctx.applyView === 'applied' && ctx.appliedFunnel && ctx.appliedFunnel !== 'all') {

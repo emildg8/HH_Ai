@@ -67,6 +67,8 @@ function main() {
     'package.json',
     'docs/QUICKSTART.md',
     'docs/CONFIG-GUIDE.md',
+    'docs/demo/vacancies-demo.json',
+    'data/vacancies-queue.example.json',
     'config/presets/README.md',
     'scripts/install.ps1',
     'scripts/install.sh',
@@ -76,6 +78,8 @@ function main() {
   ]) {
     if (!fs.existsSync(path.join(OUT, must))) fail(`нет ${must}`);
   }
+  const example = JSON.parse(fs.readFileSync(path.join(OUT, 'data/vacancies-queue.example.json'), 'utf8'));
+  if (!Array.isArray(example) || example.length < 5) fail('vacancies-queue.example.json < 5 items');
   console.log('[smoke:release] структура OK');
 
   console.log('[smoke:release] npm install (может занять минуту)…');
@@ -90,6 +94,13 @@ function main() {
       if (r.status !== 0) fail(`syntax ${dir}/${name}`);
     }
   }
+
+  console.log('[smoke:release] activation (demo → API)…');
+  const act = spawnSync(process.execPath, ['scripts/smoke-activation-check.mjs', OUT, '3858'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+  });
+  if (act.status !== 0) fail('activation check');
 
   console.log('[smoke:release] ВСЁ OK');
 }

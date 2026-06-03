@@ -43,9 +43,9 @@
 | ID | Задача | Результат | Статус |
 |----|--------|-----------|--------|
 | R1.1 | `scripts/install.ps1` / `install.sh` | Установка Node deps + Playwright + .env | [x] |
-| R1.2 | **Portable ZIP** из CI | `hh-ru-apply-win-x64-vX.zip` на GitHub Releases | [ ] |
-| R1.3 | `install-portable.ps1` внутри zip | Распаковал → install → ярлык дашборда | [~] |
-| R1.4 | **Release assets** | Тег `v*` → CI [release.yml](../.github/workflows/release.yml) + zip | [~] |
+| R1.2 | **Portable ZIP** из CI | `hh-ru-apply-win-x64-vX.zip` на GitHub Releases | [x] 3.2 |
+| R1.3 | `install-portable.ps1` внутри zip | Распаковал → install → ярлык дашборда | [x] |
+| R1.4 | **Release assets** | Тег `v*` → CI [release.yml](../.github/workflows/release.yml) + zip | [x] 3.2 |
 | R1.5 | Страница «Скачать» в README | Таблица: zip, git clone, требования | [x] |
 | R1.6 | `npm run setup` интерактив | Профиль, пресет LLM (`scripts/setup-wizard.mjs`) | [x] |
 | R1.7 | Проверка на чистой VM Win10/11 | Чеклист [QA-CLEAN-INSTALL.md](QA-CLEAN-INSTALL.md) | [~] |
@@ -94,6 +94,9 @@
 | R4.3 | Статистика откликов/день | [x] |
 | R4.4 | Экспорт карточки в markdown | [x] |
 | R4.5 | Горячие клавиши (approve/reject) | [x] |
+| R4.6 | Модалка настроек: 3 вкладки, пресеты писем (см. [SETTINGS-MODAL-PLAN.md](SETTINGS-MODAL-PLAN.md)) | [x] |
+| R4.7 | Настройки: dirty-state, deep link, онбординг (S5–S7, S9) | [x] |
+| R4.8 | E2E модалки настроек (S8) | [ ] |
 
 ---
 
@@ -118,12 +121,40 @@
 
 ---
 
+## Качество писем и таргетинг (2026-06)
+
+| ID | Задача | Статус |
+|----|--------|--------|
+| Q1 | `rawPass` в retry LLM, кэш брифа, company name | [x] |
+| Q2 | Precheck + автоподготовка + letter-center в дашборде | [x] |
+| Q3 | Golden set + `audit:targeting-golden` + FP guardrail | [x] |
+| Q4 | `test:ci-quality` в CI, workflow `quality-audit.yml` | [x] |
+| Q5 | Baseline API + сайдбар, `letterScore10`, отчёт батча | [x] |
+| Q6 | `devops:suggest-targeting-golden` из rejected | [x] |
+| Q7 | [COVER-LETTER-PLAN.md](COVER-LETTER-PLAN.md) | [x] |
+| Q8 | `quality:check`, `audit:quality-golden`, quality-hub, suggest letter `--write` | [x] |
+| Q9 | Модалка настроек: вкладка «Письма», пресеты, `settings-modal.mjs` | [x] |
+| Q10 | Настройки: dirty-state, deep link, precheck→settings, сброс UI | [x] |
+| Q11 | E2E настроек (`test:dashboard-settings`) | [x] |
+| Q12 | Подсказки полей, сброс темы, JSON писем, Alt+1…3 | [x] |
+| Q13 | Статика дашборда: `check:dashboard`, DOM-контракт настроек, CI | [x] |
+| Q14 | Дизайн: дашборд unify + Track 1 (DS-A…D) | [~] DS-07/08 MVP [x] |
+| Q15 | Опыт продукта: карточки, голос, каналы (Tracks 2–4) | [x] activation + chat inbox |
+| Q16 | Дистрибуция и аналитика UX (Tracks 5–6) | [~] **Gate B** 2026-06-03 (`npm run gate-b`) |
+| Q17 | Чаты & follow-up в workflow (Track 7, [PHASE2 §16](DEVELOPMENT-PLAN-2026-06-PHASE2.md)) | [x] Gate C (`test:chat-inbox-ui`) |
+| Q18 | Intelligence loop + platform (Tracks 8–9, [PRODUCT-STRATEGY](PRODUCT-STRATEGY-2026.md)) | [ ] |
+
+Документация: [PRODUCT-STRATEGY-2026.md](PRODUCT-STRATEGY-2026.md) · [DEVELOPMENT-PLAN-2026-06-PHASE2.md](DEVELOPMENT-PLAN-2026-06-PHASE2.md) · [DESIGN-ECOSYSTEM-INDEX.md](DESIGN-ECOSYSTEM-INDEX.md) · [COVER-LETTER-PLAN.md](COVER-LETTER-PLAN.md) · [SETTINGS-MODAL-PLAN.md](SETTINGS-MODAL-PLAN.md) · [DESIGN-SYSTEM-PLAN-2026-06.md](DESIGN-SYSTEM-PLAN-2026-06.md) · перед релизом: `npm run quality:check`.
+
+---
+
 ## Метрики
 
 | Метрика | Сейчас | Цель Q3 2026 |
 |---------|--------|----------------|
 | Отклики без правки письма | — | ≥60% |
 | verify-local ok | CI на push/PR | ежедневно + перед тегом |
+| `test:ci-quality` | CI на push/PR | [x] |
 | Время harvest→отклик | — | <5 мин/вакансия |
 | Утечки секретов в git | 0 | 0 |
 

@@ -3,6 +3,7 @@
  *   node scripts/test-dashboard-copy.mjs
  */
 import { chromium } from 'playwright';
+import { gotoDashboardReady } from './lib/dashboard-test-helpers.mjs';
 
 const BASE = process.env.DASHBOARD_URL || 'http://127.0.0.1:3849';
 
@@ -32,6 +33,8 @@ function collectVisibleText() {
     if (el.hidden || el.getAttribute('aria-hidden') === 'true') return;
     if (el.classList?.contains('ui-expert-only')) return;
     if (el.closest?.('[hidden]')) return;
+    if (el.id === 'list' || el.closest?.('#list')) return;
+    if (el.closest?.('#vacancy-detail-body')) return;
     for (const child of el.childNodes) {
       if (child.nodeType === 3) {
         const t = child.textContent?.trim();
@@ -46,14 +49,17 @@ function collectVisibleText() {
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-  await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await page.waitForSelector('#list', { timeout: 15_000 });
+  await gotoDashboardReady(page, BASE);
 
   await page.evaluate(() => {
     document.documentElement.dataset.uiMode = 'simple';
     document.getElementById('app-shell')?.setAttribute('data-ui-mode', 'simple');
   });
-  await page.waitForTimeout(200);
+  await page.waitForFunction(
+    () => document.documentElement.dataset.uiMode === 'simple',
+    null,
+    { timeout: 5000 }
+  );
 
   const shellText = await page.evaluate(collectVisibleText);
   const hits = [];

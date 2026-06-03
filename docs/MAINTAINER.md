@@ -18,8 +18,9 @@
 
 ```powershell
 cd <корень-проекта>
-npm run smoke:release
-npm run verify:local
+npm run verify:release
+npm run quickstart:gate
+npm run quality:check
 npm run release:public
 ```
 
@@ -33,6 +34,16 @@ npm run release:public
 **Не коммитить:** `data/vacancies-devops.json`, `config/secrets.local.env`, `config/profiles/*.env`, `CV/`, `data/session/`.
 
 **Демо для скринов и QA:** `docs/demo/vacancies-demo.json` — не смешивать с личной очередью.
+
+### Дашборд (UI в `dashboard/public/`)
+
+| Действие | Команда / файл |
+|----------|----------------|
+| Статика + контракт настроек | `npm run check:dashboard` |
+| E2E модалки «Настройки» | `npm run test:dashboard-settings` (дашборд на :3849) |
+| Сброс кэша у пользователей | `lib/dashboard-asset-version.mjs` — `DASHBOARD_APP_JS_VERSION`, `DASHBOARD_V4_CSS_VERSION` → те же `?v=` в `index.html` |
+
+После правок `app.js` / `settings-modal.mjs` — bump **APP** version; после правок `dashboard-v4.css` (настройки) — bump **V4 CSS** version. `check:dashboard` сверяет оба.
 
 ---
 

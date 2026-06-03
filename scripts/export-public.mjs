@@ -112,6 +112,8 @@ npm run dashboard
 
 Откройте http://127.0.0.1:3849
 
+**Пустая очередь?** После install-portable.ps1 / install.ps1 демо копируется автоматически. Иначе — «Загрузить демо» в дашборде или npm run setup:first-run -- --demo.
+
 ## Документация
 
 - docs/README.md — оглавление всей документации HH Ai

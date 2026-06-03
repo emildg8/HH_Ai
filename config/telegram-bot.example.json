@@ -5,6 +5,6 @@
   "pollIntervalMs": 1500,
   "enableHarvest": true,
   "enableRoutine": true,
-  "enableBatchControl": false,
+  "enableBatchControl": true,
   "_comment": "Скопируйте в config/telegram-bot.json. Chat ID узнайте через @userinfobot или /start у бота после добавления TELEGRAM_CHAT_ID."
 }

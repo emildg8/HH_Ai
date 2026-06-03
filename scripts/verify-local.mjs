@@ -4,11 +4,16 @@
  *   npm run verify:local -- --start-dashboard
  */
 
-import { spawn, spawnSync } from 'child_process';
+import { spawn, spawnSync, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { loadEnv } from '../lib/load-env.mjs';
+import { applyStoredProfile } from '../lib/profile-prefs.mjs';
 import { ROOT } from '../lib/paths.mjs';
 import { shouldIgnoreExport } from '../lib/export-ignore.mjs';
+
+loadEnv();
+applyStoredProfile();
 
 const startDash = process.argv.includes('--start-dashboard');
 const BASE = process.env.DASHBOARD_URL || 'http://127.0.0.1:3849';
@@ -26,6 +31,29 @@ function fail(msg) {
   console.error(` FAIL ${msg}`);
 }
 
+function killDashboardPort() {
+  const port = Number(process.env.DASHBOARD_PORT) || 3849;
+  try {
+    if (process.platform === 'win32') {
+      const out = execSync(
+        `powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique"`,
+        { encoding: 'utf8', cwd: ROOT }
+      ).trim();
+      for (const pid of out.split(/\s+/).filter((x) => /^\d+$/.test(x))) {
+        try {
+          execSync(`taskkill /PID ${pid} /F`, { cwd: ROOT, stdio: 'ignore' });
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
+    execSync(`lsof -ti :${port} | xargs -r kill -9`, { cwd: ROOT, stdio: 'ignore' });
+  } catch {
+    /* порт свободен */
+  }
+}
+
 function checkSyntax() {
   const dirs = ['scripts', 'lib'];
   for (const dir of dirs) {
@@ -36,7 +64,18 @@ function checkSyntax() {
       if (r.status !== 0) fail(`syntax ${dir}/${name}`);
     }
   }
-  if (!failures.some((f) => f.startsWith('syntax'))) pass('syntax scripts/lib');
+  const dashCheck = spawnSync(process.execPath, [path.join(ROOT, 'scripts/check-dashboard-modules.mjs')], {
+    encoding: 'utf8',
+    cwd: ROOT,
+  });
+  if (dashCheck.status !== 0) {
+    if (dashCheck.stdout) process.stdout.write(dashCheck.stdout);
+    if (dashCheck.stderr) process.stderr.write(dashCheck.stderr);
+    fail('check:dashboard');
+  }
+  if (!failures.some((f) => f.startsWith('syntax') || f === 'check:dashboard')) {
+    pass('syntax scripts/lib + check:dashboard');
+  }
 }
 
 const PII_PATTERNS = [
@@ -135,7 +174,11 @@ async function checkDashboard(child) {
     'scripts/test-dashboard-integration.mjs',
     'test-dashboard-integration (API + кнопки/тогглы)'
   );
+  runDashboardScript('scripts/test-restore-action.mjs', 'test-restore-action (restore/unhide API)');
+  runDashboardScript('scripts/test-rejected-filter.mjs', 'test-rejected-filter (auto/manual API)');
+  runDashboardScript('scripts/test-section-counters.mjs', 'test-section-counters (вкладки раздела)');
   runDashboardScript('scripts/test-dashboard-copy.mjs', 'test-dashboard-copy (plain language)');
+  runDashboardScript('scripts/test-dashboard-docks.mjs', 'test-dashboard-docks (сплиттеры)');
   if (child) child.kill();
 }
 
@@ -151,6 +194,40 @@ function checkUxAndApply() {
     ['scripts/test-list-breadcrumbs.mjs', 'test-list-breadcrumbs'],
     ['scripts/test-apply-copy-dom.mjs', 'test-apply-copy-dom'],
     ['scripts/test-questionnaire-auto-reprobe.mjs', 'test-questionnaire-auto-reprobe'],
+    ['scripts/test-role-reject-learn.mjs', 'test-role-reject-learn'],
+    ['scripts/test-reject-source.mjs', 'test-reject-source'],
+    ['scripts/test-playwright-display-mode.mjs', 'test-playwright-display-mode'],
+    ['scripts/test-funnel-charts.mjs', 'test-funnel-charts'],
+    ['scripts/test-funnel-export.mjs', 'test-funnel-export'],
+    ['scripts/test-job-progress-ui.mjs', 'test-job-progress-ui'],
+    ['scripts/test-dashboard-preferences.mjs', 'test-dashboard-preferences'],
+    ['scripts/test-batch-scope.mjs', 'test-batch-scope'],
+    ['scripts/test-batch-candidates.mjs', 'test-batch-candidates'],
+    ['scripts/test-vacancy-work-format.mjs', 'test-vacancy-work-format'],
+    ['scripts/test-batch-letter-quality.mjs', 'test-batch-letter-quality'],
+    ['scripts/test-letters.mjs', 'test-letters'],
+    ['scripts/test-cover-letter-issues.mjs', 'test-cover-letter-issues'],
+    ['scripts/test-letter-quality-golden.mjs', 'test-letter-quality-golden'],
+    ['scripts/test-cover-letter-quality-hub.mjs', 'test-cover-letter-quality-hub'],
+    ['scripts/test-cover-letter-quality-scan.mjs', 'test-cover-letter-quality-scan'],
+    ['scripts/test-cover-letter-prepare.mjs', 'test-cover-letter-prepare'],
+    ['scripts/test-cover-letter-quality-retry.mjs', 'test-cover-letter-quality-retry'],
+    ['scripts/test-cover-letter-brief-cache.mjs', 'test-cover-letter-brief-cache'],
+    ['scripts/test-letter-invite-correlation.mjs', 'test-letter-invite-correlation'],
+    ['scripts/test-letter-style-learning.mjs', 'test-letter-style-learning'],
+    ['scripts/test-targeting-golden.mjs', 'test-targeting-golden'],
+    ['scripts/test-false-positive-analytics.mjs', 'test-false-positive-analytics'],
+    ['scripts/test-vacancy-targeting.mjs', 'test-vacancy-targeting'],
+    ['scripts/test-quality-baseline.mjs', 'test-quality-baseline'],
+    ['scripts/test-learning-auto-apply.mjs', 'test-learning-auto-apply'],
+    ['scripts/test-cover-letter-company-name.mjs', 'test-cover-letter-company-name'],
+    ['scripts/test-batch-letter-quality-report.mjs', 'test-batch-letter-quality-report'],
+    ['scripts/test-letter-score.mjs', 'test-letter-score'],
+    ['scripts/test-workspace-docks-logic.mjs', 'test-workspace-docks-logic'],
+    ['scripts/test-vacancy-defer.mjs', 'test-vacancy-defer'],
+    ['scripts/test-telegram-bot.mjs', 'test-telegram-bot'],
+    ['scripts/test-chat-inbox.mjs', 'test-chat-inbox'],
+    ['scripts/test-remote-stats.mjs', 'test-remote-stats'],
   ];
   for (const [script, label] of steps) {
     const r = spawnSync(process.execPath, [script], { cwd: ROOT, encoding: 'utf8' });
@@ -167,12 +244,15 @@ async function main() {
 
   let child = null;
   if (startDash) {
+    killDashboardPort();
+    await new Promise((r) => setTimeout(r, 500));
     child = spawn(process.execPath, ['scripts/dashboard-server.mjs'], {
       cwd: ROOT,
       stdio: 'ignore',
       detached: false,
+      env: { ...process.env },
     });
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 2500));
   } else {
     try {
       const res = await fetch(BASE);

@@ -1,0 +1,16 @@
+[Unit]
+Description=HH Ai Telegram webhook (Vdsina)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/hh-ai-webhook
+EnvironmentFile=/opt/hh-ai-webhook/.env
+ExecStart=/opt/hh-ai-webhook/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

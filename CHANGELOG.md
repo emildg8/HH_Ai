@@ -2,6 +2,33 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версии — [SemVer](https://semver.org/lang/ru/).
 
+## [Unreleased]
+
+### Добавлено
+
+- **Release prep:** `npm run quickstart:gate`, `smoke-activation-check.mjs`, activation smoke в `smoke:release`; `releases/RELEASE-v3.2.0-notes.md`; docs 3.2.0 (DISTRIBUTION, QUICKSTART North Star).
+
+## [3.2.0] — 2026-06-03
+
+Релиз **UX v3**: первый запуск без пустой очереди, чаты в дашборде, полировка UI и автоматические gate-проверки перед тегом.
+
+### Добавлено
+
+- **Первый запуск:** демо-очередь (`POST /api/load-demo-queue`), empty state с кнопкой «Загрузить демо», `npm run setup:first-run`; demo в `install.ps1` / `install.sh` / `install-portable.ps1` и шаг `demo-queue` в `qa:clean-install`.
+- **Чаты в дашборде:** модалка `#chat-inbox-modal`, badge в menubar, chip «нужен ответ» → inbox; Gate C (`npm run test:chat-inbox-ui`).
+- **UX и аналитика:** AI-подсказки к score (tooltip + плитки), KPI «Без правки» → настройки писем, live preview таргетинга при смене пресета, accordion в service drawer.
+- **Дизайн-система v3:** токены `--hh-*`, `dashboard-unify.css`, UI trim (lean toolbar/dock), workflow hint strip, funnel unify, skeleton load.
+- **Качество писем:** сайдбар «Письма», letter-center, precheck батча, golden set (22+9), `quality:check` / nightly audit.
+- **QA / CI:** `npm run gate-b`, `test:dashboard-screenshots` (DS-07, baseline в `docs/screenshots/baseline/`), `test:dashboard-a11y` (DS-08), `check:dashboard`, расширенный `test:dashboard-settings`; **`npm run verify:release`** — pre-tag чеклист.
+
+### Исправлено
+
+- Модалка «Настройки» не открывалась из‑за незакрытого JSDoc в `settings-modal.mjs`.
+
+### Изменено
+
+- Сайдбар писем: один запрос quality-hub; батч-отчёт с `id` карточки для перехода; pre-commit hook для `dashboard/public/`.
+
 ## [3.0.5] — 2026-05-30
 
 ### Исправлено

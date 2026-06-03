@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "timezone": "Europe/Moscow",
+  "slots": [10, 18],
+  "windowMinutes": 45,
+  "inviteNudgeAfterDays": 2,
+  "autoSyncChats": true,
+  "autoDraftNudges": true,
+  "telegramNotify": true
+}

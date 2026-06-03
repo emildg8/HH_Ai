@@ -3,6 +3,7 @@
  *   node scripts/test-dashboard-integration.mjs
  */
 import { chromium } from 'playwright';
+import { gotoDashboardReady } from './lib/dashboard-test-helpers.mjs';
 
 const BASE = process.env.DASHBOARD_URL || 'http://127.0.0.1:3849';
 
@@ -20,13 +21,23 @@ const GET_APIS = [
   '/api/profiles',
   '/api/preferences/save',
   '/api/questionnaire/reprobe-candidates',
-  '/api/chat-templates',
+  '/api/chat-inbox',
+  '/api/queue-meta',
+  '/api/settings/targeting-preview',
+  '/api/chat-follow-up-schedule',
+  '/api/chat-follow-ups',
   '/api/daily-routine',
   '/api/resume-sync-report',
   '/api/routing-health',
   '/api/batch-report',
   '/api/resume-raise-schedule',
   '/api/daily-digest',
+  '/api/cover-letter/quality-hub',
+  '/api/cover-letter/metrics-summary',
+  '/api/quality/baseline',
+  '/api/targeting/golden-regression',
+  '/api/cover-letter/stats?batchScope=noQuestionnaire&queueStatus=pending&minScore=0',
+  '/api/batch-precheck?batchScope=noQuestionnaire&queueStatus=pending&minScore=0&maxScore=0',
 ];
 
 const REQUIRED_IDS = [
@@ -37,18 +48,24 @@ const REQUIRED_IDS = [
   'btn-open-settings',
   'btn-open-service',
   'btn-open-shortcuts',
-  'btn-daily-routine-menubar',
-  'btn-run-harvest-menubar',
-  'btn-batch-auto-menubar',
-  'btn-open-settings',
   'filter-search',
-  'filter-company',
   'filter-reset',
   'score-threshold-input',
   'batch-limit',
   'settings-modal',
   'service-drawer',
-  'mobile-bar',
+  'funnel-modal',
+  'job-progress',
+  'job-control-actions',
+  'btn-job-pause',
+  'btn-job-stop',
+  'btn-job-resume',
+  'letter-stats-body',
+  'letter-center-panel',
+  'btn-letter-center-prepare',
+  'batch-precheck-modal',
+  'chat-inbox-modal',
+  'btn-open-chat-inbox',
 ];
 
 async function waitModalOpen(page, id) {
@@ -113,8 +130,7 @@ async function main() {
     await dialog.dismiss();
   });
 
-  await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await page.waitForSelector('#list', { timeout: 15_000 });
+  await gotoDashboardReady(page, BASE);
 
   const dockSectionsOk = await page.evaluate(() => {
     const routine = document.getElementById('btn-daily-routine');
@@ -172,6 +188,7 @@ async function main() {
     'import-interview-notes',
     'daily-digest',
     'chat-reply-batch',
+    'open-chat-inbox',
     'questionnaire-reprobe',
     'questionnaire-prep',
   ]);
@@ -223,8 +240,7 @@ async function main() {
   await page.locator('[data-apply-view="queue"]').click();
   await page.waitForTimeout(80);
 
-  await page.locator('#filter-search').fill('test');
-  await page.locator('#filter-company').fill('company');
+  await page.locator('#filter-search').fill('test company');
 
   await page.locator('#btn-open-settings').click();
   await waitModalOpen(page, 'settings-modal');
@@ -233,8 +249,7 @@ async function main() {
   await page.locator('#filter-reset').click();
   const filtersCleared = await page.evaluate(() => {
     const s = document.getElementById('filter-search')?.value || '';
-    const c = document.getElementById('filter-company')?.value || '';
-    return s === '' && c === '';
+    return s === '';
   });
   if (!filtersCleared) errors.push('filter-reset: поля не очистились');
   await page.locator('[data-settings-tab="apply"]').click();
@@ -255,7 +270,7 @@ async function main() {
   await page.locator('#btn-open-settings').click();
   await waitModalOpen(page, 'settings-modal');
 
-  for (const tab of ['apply', 'appearance']) {
+  for (const tab of ['apply', 'letters', 'appearance']) {
     await page.locator(`[data-settings-tab="${tab}"]`).click();
     await page.waitForTimeout(80);
     const panelVisible = await page.evaluate((t) => {
@@ -318,15 +333,68 @@ async function main() {
   await page.locator('#settings-modal .modal-close').click();
   await waitModalHidden(page, 'settings-modal');
 
-  await page.locator('[data-dock-toggle="left"]').click();
+  await page.locator('#splitter-left').click({ position: { x: 6, y: 200 } });
   await page.waitForTimeout(150);
-  await page.locator('[data-dock-toggle="left"]').click();
+  await page.locator('#splitter-left').hover();
   await page.waitForTimeout(150);
 
   await page.locator('#btn-open-shortcuts').click();
   await waitModalOpen(page, 'shortcuts-modal');
   await page.keyboard.press('Escape');
   await waitModalHidden(page, 'shortcuts-modal');
+
+  const onboardingVisible = await page.evaluate(() => {
+    const panel = document.getElementById('onboarding-panel');
+    return Boolean(panel && !panel.hidden);
+  });
+  if (onboardingVisible) {
+    const clicked = await page.evaluate(() => {
+      const btn = document.querySelector('[data-onboarding-action="harvest"]');
+      if (!btn) return false;
+      btn.click();
+      return true;
+    });
+    if (clicked) {
+      try {
+        await page.waitForFunction(
+          () => document.getElementById('btn-run-harvest')?.classList.contains('onboarding-target'),
+          null,
+          { timeout: 3000 }
+        );
+      } catch {
+        errors.push('onboarding: CTA «Поиск» не подсвечивает кнопку');
+      }
+    }
+  }
+
+  await page.locator('.crm-kpi').click();
+  await waitModalOpen(page, 'funnel-modal');
+  try {
+    await page.waitForFunction(
+      () => {
+        const body = document.getElementById('funnel-modal-body');
+        return Boolean(
+          body &&
+            body.querySelector('.funnel-modal-grid') &&
+            body.querySelector('.funnel-gauge-grid, .funnel-panel')
+        );
+      },
+      null,
+      { timeout: 8000 }
+    );
+  } catch {
+    errors.push('funnel-modal: нет сетки графиков после открытия');
+  }
+  await page.locator('#funnel-modal .modal-close--funnel').click();
+  await waitModalHidden(page, 'funnel-modal');
+
+  const jobUiOk = await page.evaluate(() => {
+    const jp = document.getElementById('job-progress');
+    const actions = document.getElementById('job-control-actions');
+    const btns = actions ? actions.querySelectorAll('.btn').length : 0;
+    return Boolean(jp && actions && btns === 3);
+  });
+  if (!jobUiOk) errors.push('job-progress: блок управления задачей повреждён');
 
   const digestOk = await page.evaluate(async () => {
     const r = await fetch('/api/daily-digest', { method: 'POST', body: JSON.stringify({ sendTelegram: false }) });
@@ -336,17 +404,54 @@ async function main() {
   if (!digestOk) errors.push('POST /api/daily-digest: нет digest');
 
   await page.setViewportSize({ width: 900, height: 800 });
-  await page.waitForTimeout(200);
+  await page.waitForFunction(
+    () => document.getElementById('app-shell')?.classList.contains('workspace-shell--mobile'),
+    null,
+    { timeout: 5000 }
+  );
+  await page.waitForFunction(
+    () => Boolean(document.getElementById('app-shell')?.style.getPropertyValue('--mobile-bar-h')),
+    null,
+    { timeout: 3000 }
+  );
   const mobileBarVisible = await page.evaluate(() => {
     const bar = document.getElementById('mobile-bar');
-    return bar && getComputedStyle(bar).display !== 'none';
+    return bar && !bar.hidden && getComputedStyle(bar).display !== 'none';
   });
   if (!mobileBarVisible) errors.push('mobile: нижняя панель не видна при 900px');
 
   await page.locator('#mobile-bar [data-mobile-sheet="left"]').click();
-  await page.waitForTimeout(200);
+  await page.waitForFunction(
+    () => {
+      const dock = document.getElementById('dock-left');
+      if (!dock?.classList.contains('mobile-sheet--open')) return false;
+      const tr = getComputedStyle(dock).transform;
+      return tr === 'none' || !tr.includes('105%');
+    },
+    null,
+    { timeout: 5000 }
+  );
+  const sheetAboveBar = await page.evaluate(() => {
+    const dock = document.getElementById('dock-left');
+    const bar = document.getElementById('mobile-bar');
+    const shell = document.getElementById('app-shell');
+    if (!dock || !bar || !shell) return false;
+    const dockRect = dock.getBoundingClientRect();
+    const barRect = bar.getBoundingClientRect();
+    const cssBottom = parseFloat(getComputedStyle(dock).bottom) || 0;
+    const barH = barRect.height;
+    const aligned = Math.abs(dockRect.bottom - barRect.top) <= 6;
+    const cssOk = Math.abs(cssBottom - barH) <= 8 || Boolean(shell.style.getPropertyValue('--mobile-bar-h'));
+    return aligned || cssOk;
+  });
+  if (!sheetAboveBar) errors.push('mobile: левый sheet перекрывается нижним bar');
+
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(150);
+  await page.waitForFunction(
+    () => !document.getElementById('dock-left')?.classList.contains('mobile-sheet--open'),
+    null,
+    { timeout: 5000 }
+  );
 
   await page.setViewportSize({ width: 1920, height: 1080 });
 
@@ -356,11 +461,23 @@ async function main() {
     await page.waitForTimeout(200);
   }
 
+  await page.goto(`${BASE}/?settings=letters&focus=fp`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.waitForSelector('#settings-modal:not([hidden])', { timeout: 12_000 });
+  const deepLinkOk = await page.evaluate(() => {
+    const panel = document.getElementById('settings-panel-letters');
+    const fp = document.getElementById('batch-false-positive-max');
+    const url = new URL(location.href);
+    return Boolean(panel && !panel.hidden && fp && !url.searchParams.has('settings'));
+  });
+  if (!deepLinkOk) errors.push('settings deep link: letters+fp или очистка URL');
+  await page.locator('#settings-modal .modal-close--settings').click();
+  await waitModalHidden(page, 'settings-modal');
+
   await browser.close();
 
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(
-    `OK: ${GET_APIS.length} GET API, workflow, вкладки, фильтры, service drawer, settings save, layout, mobile`
+    `OK: ${GET_APIS.length} GET API, workflow, вкладки, фильтры, service drawer, settings save, deep link, layout, mobile`
   );
 }
 

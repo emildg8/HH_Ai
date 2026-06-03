@@ -2,15 +2,18 @@
  * Конструктор боковой панели: порядок (drag-and-drop) и видимость блоков.
  */
 
+import { SIDEBAR_PANELS } from './dashboard-ux.mjs';
 import {
-  SIDEBAR_PANELS,
-  SIDEBAR_BUILDER_PANEL_IDS,
-  normalizePanelOrder,
-  defaultPanelSides,
-} from './dashboard-ux.mjs';
+  buildPanelOrderFromColumns,
+  columnPanelOrder,
+  getDragAfterElement,
+} from './sidebar-layout.mjs';
+
+export { buildPanelOrderFromColumns, getDragAfterElement };
 
 /** @type {{ getUi: () => object, patchUi: (partial: object) => void, onPersist: () => void } | null} */
 let hooks = null;
+let dropCommittedThisDrag = false;
 
 function builderRoot() {
   return document.getElementById('sidebar-panel-builder');
@@ -32,21 +35,36 @@ function clearDragOver() {
   });
 }
 
-function handleDragOver(e) {
-  e.preventDefault();
-  const list = listForDropTarget(e.currentTarget);
-  if (!list) return;
-  const col = list.closest('.sidebar-builder-col');
-  col?.classList.add('sidebar-builder-col--over');
-  const after = getDragAfterElement(list, e.clientY);
-  const dragging = builderRoot()?.querySelector('.sidebar-builder__item--dragging');
-  if (!dragging) return;
-  if (after == null) list.appendChild(dragging);
-  else list.insertBefore(dragging, after);
+function readBuilderColumns() {
+  const left = [...(builderList('left')?.querySelectorAll('.sidebar-builder__item') || [])]
+    .map((el) => el.dataset.panelId)
+    .filter(Boolean);
+  const right = [...(builderList('right')?.querySelectorAll('.sidebar-builder__item') || [])]
+    .map((el) => el.dataset.panelId)
+    .filter(Boolean);
+  return { left, right };
+}
+
+function commitBuilderOrder() {
+  if (!hooks) return;
+  const { left, right } = readBuilderColumns();
+  const ui = hooks.getUi();
+  const prev = { ...(ui.panelSides || {}) };
+  /** @type {Record<string, string>} */
+  const panelSides = {};
+  for (const id of left) panelSides[id] = 'left';
+  for (const id of right) panelSides[id] = 'right';
+  for (const id of Object.keys(SIDEBAR_PANELS)) {
+    if (panelSides[id]) continue;
+    panelSides[id] = prev[id] === 'right' ? 'right' : 'left';
+  }
+  const panelOrder = buildPanelOrderFromColumns(left, right);
+  hooks.patchUi({ panelOrder, panelSides }, { reorder: true });
+  hooks.onPersist();
 }
 
 /**
- * @param {{ getUi: () => { panels: Record<string, boolean>, panelOrder: string[], panelSides?: Record<string, string> }, patchUi: (p: object) => void, onPersist: () => void }} h
+ * @param {{ getUi: () => object, patchUi: (partial: object, opts?: { reorder?: boolean }) => void, onPersist: () => void }} h
  */
 export function initSidebarBuilder(h) {
   hooks = h;
@@ -54,7 +72,19 @@ export function initSidebarBuilder(h) {
   if (!root) return;
   renderSidebarBuilder();
   root.querySelectorAll('.sidebar-builder-list, .sidebar-builder-col').forEach((zone) => {
-    zone.addEventListener('dragover', handleDragOver);
+    zone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      const list = listForDropTarget(e.currentTarget);
+      if (!list) return;
+      const col = list.closest('.sidebar-builder-col');
+      col?.classList.add('sidebar-builder-col--over');
+      const after = getDragAfterElement(list, e.clientY);
+      const dragging = builderRoot()?.querySelector('.sidebar-builder__item--dragging');
+      if (!dragging) return;
+      if (after == null) list.appendChild(dragging);
+      else list.insertBefore(dragging, after);
+    });
     zone.addEventListener('dragleave', (e) => {
       if (e.currentTarget.contains(e.relatedTarget)) return;
       e.currentTarget.classList?.remove('sidebar-builder-col--over');
@@ -62,6 +92,7 @@ export function initSidebarBuilder(h) {
     zone.addEventListener('drop', (e) => {
       e.preventDefault();
       clearDragOver();
+      dropCommittedThisDrag = true;
       commitBuilderOrder();
     });
   });
@@ -80,19 +111,31 @@ function createBuilderItem(id, ui) {
     `<input type="checkbox" data-sidebar-panel-toggle="${id}" ${ui.panels[id] !== false ? 'checked' : ''} />` +
     `<span class="sidebar-builder__text">${meta.label}</span>` +
     `</label>`;
-  li.addEventListener('dragstart', () => {
+
+  li.addEventListener('dragstart', (e) => {
+    if (e.target instanceof HTMLInputElement) {
+      e.preventDefault();
+      return;
+    }
+    dropCommittedThisDrag = false;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', id);
+    }
     li.classList.add('sidebar-builder__item--dragging');
   });
   li.addEventListener('dragend', () => {
     li.classList.remove('sidebar-builder__item--dragging');
     clearDragOver();
-    commitBuilderOrder();
+    if (!dropCommittedThisDrag) commitBuilderOrder();
+    dropCommittedThisDrag = false;
   });
+
   const input = li.querySelector('[data-sidebar-panel-toggle]');
   input?.addEventListener('change', () => {
     const current = hooks?.getUi();
     if (!current || !input) return;
-    hooks.patchUi({ panels: { ...current.panels, [id]: input.checked } });
+    hooks.patchUi({ panels: { ...current.panels, [id]: input.checked } }, { reorder: false });
     hooks.onPersist();
   });
   return li;
@@ -102,59 +145,17 @@ export function renderSidebarBuilder() {
   const root = builderRoot();
   if (!root || !hooks) return;
   const ui = hooks.getUi();
-  const sides = { ...defaultPanelSides(), ...ui.panelSides };
-  const order = normalizePanelOrder(ui.panelOrder).filter((id) => SIDEBAR_BUILDER_PANEL_IDS.includes(id));
-  for (const id of SIDEBAR_BUILDER_PANEL_IDS) {
-    if (!order.includes(id)) order.push(id);
-  }
   const leftList = builderList('left');
   const rightList = builderList('right');
   if (!leftList || !rightList) return;
   leftList.replaceChildren();
   rightList.replaceChildren();
-  for (const id of order) {
-    const meta = SIDEBAR_PANELS[id];
+  for (const id of columnPanelOrder(ui, 'left')) {
     const item = createBuilderItem(id, ui);
-    if (!item || !meta) continue;
-    const side = sides[id] === 'right' ? 'right' : 'left';
-    (side === 'right' ? rightList : leftList).appendChild(item);
+    if (item) leftList.appendChild(item);
   }
-}
-
-/** @param {HTMLElement} container @param {number} y */
-function getDragAfterElement(container, y) {
-  const items = [...container.querySelectorAll('.sidebar-builder__item:not(.sidebar-builder__item--dragging)')];
-  return items.reduce(
-    (closest, child) => {
-      const box = child.getBoundingClientRect();
-      const offset = y - box.top - box.height / 2;
-      if (offset < 0 && offset > closest.offset) return { offset, element: child };
-      return closest;
-    },
-    { offset: Number.NEGATIVE_INFINITY, element: null }
-  ).element;
-}
-
-function commitBuilderOrder() {
-  if (!hooks) return;
-  const left = [...(builderList('left')?.querySelectorAll('.sidebar-builder__item') || [])]
-    .map((el) => el.dataset.panelId)
-    .filter(Boolean);
-  const right = [...(builderList('right')?.querySelectorAll('.sidebar-builder__item') || [])]
-    .map((el) => el.dataset.panelId)
-    .filter(Boolean);
-  const ui = hooks.getUi();
-  const prev = { ...defaultPanelSides(), ...ui.panelSides };
-  /** @type {Record<string, string>} */
-  const panelSides = {};
-  for (const id of SIDEBAR_BUILDER_PANEL_IDS) {
-    if (left.includes(id)) panelSides[id] = 'left';
-    else if (right.includes(id)) panelSides[id] = 'right';
-    else panelSides[id] = prev[id] === 'right' ? 'right' : 'left';
+  for (const id of columnPanelOrder(ui, 'right')) {
+    const item = createBuilderItem(id, ui);
+    if (item) rightList.appendChild(item);
   }
-  hooks.patchUi({
-    panelOrder: normalizePanelOrder(['brand', ...left, ...right]),
-    panelSides,
-  });
-  hooks.onPersist();
 }

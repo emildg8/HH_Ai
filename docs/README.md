@@ -39,6 +39,16 @@ npx playwright install chromium
 |----------|------------|
 | [DASHBOARD.md](DASHBOARD.md) | CRM-вкладки, воронка, поиск, настройки, батч из UI |
 | [BATCH.md](BATCH.md) | Массовый отклик, области, пропуски, лимиты |
+| [COVER-LETTER-PLAN.md](COVER-LETTER-PLAN.md) | Качество писем, precheck, golden set, CI-тесты |
+| [SETTINGS-MODAL-PLAN.md](SETTINGS-MODAL-PLAN.md) | Модалка настроек: 5 вкладок, пресеты, раскладка окна, E2E |
+| [HANDOFF-SETTINGS-MODAL.md](HANDOFF-SETTINGS-MODAL.md) | **Снимок для агента** — контекст после перезапуска чата |
+| [DEVELOPMENT-PLAN-2026-06.md](DEVELOPMENT-PLAN-2026-06.md) | План QA дашборда / настройки (выполнен) |
+| [DEVELOPMENT-PLAN-2026-06-PHASE2.md](DEVELOPMENT-PLAN-2026-06-PHASE2.md) | **План доработок** P0–P8, Tracks 7–10 |
+| [PRODUCT-STRATEGY-2026.md](PRODUCT-STRATEGY-2026.md) | **Стратегия** 2026–2027, персоны, release train |
+| [DEVELOPMENT-IDEAS.md](DEVELOPMENT-IDEAS.md) | **Идеи развития** — приоритеты, бэклог, порядок работ |
+| [DESIGN-ECOSYSTEM-INDEX.md](DESIGN-ECOSYSTEM-INDEX.md) | **UX и дизайн** — индекс планов, карточек, Telegram, desktop |
+| [DESIGN-SYSTEM-PLAN-2026-06.md](DESIGN-SYSTEM-PLAN-2026-06.md) | План опыта продукта v3 (6 дорожек, S1–S12) |
+| [DASHBOARD-QA-SCORECARD.md](DASHBOARD-QA-SCORECARD.md) | **QA 10/10** — чеклист готовности дашборда |
 | [QUEUE-AND-APPLY.md](QUEUE-AND-APPLY.md) | Очередь, статусы отклика, prune, sync |
 | [QUESTIONNAIRE-AUTOMATION.md](QUESTIONNAIRE-AUTOMATION.md) | Probe, prep, автозаполнение анкеты |
 | [CONFIG.md](CONFIG.md) | `.env`, профили, `preferences.json`, `resume-routing.json` |

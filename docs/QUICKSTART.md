@@ -40,7 +40,7 @@ bash scripts/install.sh
 
 ### Без git
 
-1. Скачайте [hh-ai-public-v3.0.0.zip](https://github.com/emildg8/HH_Ai/releases/latest)
+1. Скачайте **`hh-ai-public-v3.2.0.zip`** с [Releases](https://github.com/emildg8/HH_Ai/releases/latest) (или актуальный `hh-ai-public-v*.zip`)
 2. Распакуйте в `C:\Tools\hh-ai` (без кириллицы в пути)
 3. `powershell -ExecutionPolicy Bypass -File scripts/install-portable.ps1`
 
@@ -90,6 +90,8 @@ npm run dashboard
 
 Откройте **http://127.0.0.1:3849**
 
+> **Пустая очередь?** Скрипты install копируют демо-вакансии автоматически. Иначе — кнопка **«Загрузить демо»** на пустом списке или `npm run setup:first-run -- --demo`.
+
 ![Очередь вакансий](screenshots/dashboard-queue.png)
 
 ---
@@ -104,6 +106,19 @@ npm run dashboard
 | Анкета работодателя | Вкладка **«Анкета»** → заполнить → отклик |
 
 ![Батч-отклик](screenshots/dashboard-batch.png)
+
+---
+
+## North Star (≤45 мин)
+
+Для **внешнего** тестера: пройдите шаги 1–5 с секундомером. Запишите friction в [UX-FRICTION-LOG.md](UX-FRICTION-LOG.md) или issue «Онбординг».
+
+Maintainer: автоматический прокси D0→D4 (без login):
+
+```bash
+npm run quickstart:gate
+# отчёт: data/quickstart-gate-last.json (цель automated ≤15 мин)
+```
 
 ---
 

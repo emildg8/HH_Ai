@@ -1,0 +1,86 @@
+name: Deploy Vdsina webhook
+
+on:
+  push:
+    branches: [main, HH_Ai]
+    paths:
+      - 'deploy/vdsina/**'
+      - '.github/workflows/deploy-vdsina.yml'
+      - 'lib/remote-stats.mjs'
+      - 'scripts/push-remote-stats.mjs'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vdsina
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check VPS secrets
+        id: cfg
+        run: |
+          if [ -z "${{ secrets.VDSINA_HOST }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::VDSINA_HOST не задан — деплой пропущен (см. docs/DEPLOY-VDSINA.md)"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.skip != 'true'
+
+      - name: Upload to VPS
+        if: steps.cfg.outputs.skip != 'true'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VDSINA_HOST }}
+          username: ${{ secrets.VDSINA_SSH_USER }}
+          key: ${{ secrets.VDSINA_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VDSINA_SSH_PORT || 22 }}
+          source: deploy/vdsina/
+          target: /tmp/hh-vdsina-staging
+          strip_components: 1
+
+      - name: Install and restart
+        if: steps.cfg.outputs.skip != 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VDSINA_HOST }}
+          username: ${{ secrets.VDSINA_SSH_USER }}
+          key: ${{ secrets.VDSINA_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VDSINA_SSH_PORT || 22 }}
+          script: |
+            set -e
+            APP_DIR="${{ secrets.VDSINA_APP_DIR }}"
+            if [ -z "$APP_DIR" ]; then APP_DIR="/opt/hh-ai-webhook"; fi
+            sudo mkdir -p "$APP_DIR/data"
+            sudo rsync -a /tmp/hh-vdsina-staging/ "$APP_DIR/"
+            sudo chown -R www-data:www-data "$APP_DIR"
+            if [ ! -d "$APP_DIR/venv" ]; then
+              sudo python3 -m venv "$APP_DIR/venv"
+            fi
+            sudo "$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/requirements.txt"
+            if [ ! -f /etc/systemd/system/hh-ai-webhook.service ]; then
+              sudo cp "$APP_DIR/systemd/hh-ai-webhook.service" /etc/systemd/system/
+              sudo systemctl daemon-reload
+              sudo systemctl enable hh-ai-webhook
+            fi
+            sudo systemctl restart hh-ai-webhook
+            sleep 2
+            curl -sf "http://127.0.0.1:8080/health"
+
+      - name: Set Telegram webhook
+        if: steps.cfg.outputs.skip != 'true' && secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_WEBHOOK_URL != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_WEBHOOK_URL: ${{ secrets.TELEGRAM_WEBHOOK_URL }}
+          TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+        run: |
+          BODY="url=${TELEGRAM_WEBHOOK_URL}"
+          if [ -n "$TELEGRAM_WEBHOOK_SECRET" ]; then
+            BODY="${BODY}&secret_token=${TELEGRAM_WEBHOOK_SECRET}"
+          fi
+          curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" -d "$BODY"
+          echo "Telegram webhook OK"

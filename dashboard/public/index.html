@@ -65,14 +65,15 @@
       } catch (_) {}
     </script>
     <link rel="stylesheet" href="/style.css?v=20260528layoutfix1" />
-    <link rel="stylesheet" href="/design-tokens.css?v=20260529ds1" />
+    <link rel="stylesheet" href="/design-tokens.css?v=20260603final2" />
     <link rel="stylesheet" href="/design-components.css?v=20260529ds1" />
     <link rel="stylesheet" href="/dashboard-shell.css?v=20260531w1" />
     <link rel="stylesheet" href="/dashboard-cards.css?v=20260531med5" />
     <link rel="stylesheet" href="/dashboard-card-tiles.css?v=20260531qc5" />
     <link rel="stylesheet" href="/dashboard-icons.css?v=20260529p2" />
     <link rel="stylesheet" href="/dashboard-light-polish.css?v=20260529p2" />
-    <link rel="stylesheet" href="/dashboard-v4.css?v=20260530v4p10" />
+    <link rel="stylesheet" href="/dashboard-v4.css?v=20260603final2" />
+    <link rel="stylesheet" href="/dashboard-unify.css?v=20260603final2" />
   </head>
   <body>
     <div id="app-shell" class="app crm-layout workspace-shell workspace-shell--v4" aria-label="HH Ai — дашборд откликов">
@@ -87,10 +88,9 @@
           <span class="brand-mark" aria-hidden="true">HH</span>
           <span class="brand-text">
             <span class="brand-title">HH Ai</span>
-            <span class="brand-subtitle ui-expert-only">Поиск · отклики · воронка</span>
           </span>
         </button>
-        <nav class="workflow-nav" aria-label="Шаги работы">
+        <nav class="workflow-nav ui-simple-trim" aria-label="Шаги работы">
           <button type="button" class="workflow-nav__step workflow-nav__step--active" data-workflow="find" data-tip="Поиск новых вакансий на hh.ru">
             <span class="workflow-nav__num">1</span><span class="workflow-nav__label">Найти</span>
           </button>
@@ -104,22 +104,20 @@
             <span class="workflow-nav__num">4</span><span class="workflow-nav__label">Следить</span>
           </button>
         </nav>
-        <nav class="workspace-menubar__nav" aria-label="Действия">
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-daily-routine-menubar" data-tip="Синхронизация откликов, кэш и чаты" data-copy="dailyRoutine">Утренний цикл</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-run-harvest-menubar" data-tip="Поиск вакансий на hh.ru" data-copy="harvest">Поиск</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-batch-auto-menubar" data-tip="Серия откликов ≥ порога" data-copy="batchAuto">Авто</button>
-          <button type="button" class="btn btn-ghost btn-sm ui-expert-only" id="btn-batch-manual-menubar" data-tip="Серия откликов ниже порога" data-copy="batchManual">Вручную</button>
-        </nav>
-        <div class="workspace-menubar__spacer" aria-hidden="true"></div>
         <div class="workspace-menubar__tools">
-          <button type="button" class="workspace-menubar__dock-toggle" data-dock-toggle="left" aria-pressed="true" title="Левая панель (управление)" aria-label="Левая панель"><span class="ui-icon dock-mini__icon--panel" aria-hidden="true"></span></button>
-          <button type="button" class="workspace-menubar__dock-toggle" data-dock-toggle="right" aria-pressed="true" title="Правая панель (сводка)" aria-label="Правая панель"><span class="ui-icon dock-mini__icon--panel dock-mini__icon--panel-flip" aria-hidden="true"></span></button>
-          <button type="button" class="btn btn-ghost btn-sm ui-expert-only" id="btn-open-service" data-tip="Подъём резюме, синхронизация, пакеты" data-copy="openService">Дополнительно</button>
-          <button type="button" class="btn btn-ghost btn-sm btn-settings" id="btn-open-settings" data-tip="Лимиты, интерфейс, карточки" data-copy="openSettings">Настройки</button>
+          <button type="button" class="workspace-menubar__dock-toggle ui-simple-trim" data-dock-toggle="left" aria-pressed="true" title="Левая панель (управление)" aria-label="Левая панель"><span class="ui-icon dock-mini__icon--panel" aria-hidden="true"></span></button>
+          <button type="button" class="workspace-menubar__dock-toggle ui-simple-trim" data-dock-toggle="right" aria-pressed="true" title="Правая панель (сводка)" aria-label="Правая панель"><span class="ui-icon dock-mini__icon--panel dock-mini__icon--panel-flip" aria-hidden="true"></span></button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-open-service" data-tip="Синхронизация, подъём, рутина" data-copy="openService">Сервисы</button>
+          <button type="button" class="btn btn-ghost btn-sm ui-expert-only" id="btn-open-chat-inbox" data-tip="Чаты hh.ru — переписка и ответы">
+            Чаты <span class="menubar-badge" data-chat-inbox-badge hidden></span>
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm btn-settings" id="btn-open-settings" data-tip="Все настройки · быстрые сценарии «Перед батчем»" data-copy="openSettings">Настройки</button>
           <button type="button" class="btn btn-ghost btn-sm btn-shortcuts-hint" id="btn-open-shortcuts" title="Горячие клавиши (?)" aria-label="Горячие клавиши"><kbd class="ds-kbd">?</kbd></button>
-          <button type="button" class="btn btn-ghost btn-sm btn-log-apply" data-tip="Журнал действий" data-copy="openLog">Журнал</button>
+          <button type="button" class="btn btn-ghost btn-sm btn-log-apply ui-simple-trim" data-tip="Журнал действий" data-copy="openLog">Журнал</button>
         </div>
       </header>
+
+      <div id="workflow-hint-strip" class="workflow-hint-strip hh-status-strip" role="status" aria-live="polite" hidden></div>
 
       <div class="workspace-stage">
         <aside class="dock dock--left sidebar crm-sidebar" id="dock-left" aria-label="Левая панель — управление">
@@ -129,15 +127,6 @@
             </button>
             <button type="button" class="dock-mini__btn" data-dock-mini="status" title="Статус и лимиты">
               <span class="dock-mini__icon dock-mini__icon--status" aria-hidden="true"></span>
-            </button>
-            <button type="button" class="dock-mini__btn" data-dock-mini="routine" title="Утренний цикл">
-              <span class="dock-mini__icon dock-mini__icon--routine" aria-hidden="true"></span>
-            </button>
-            <button type="button" class="dock-mini__btn" data-dock-mini="harvest" title="Поиск вакансий">
-              <span class="dock-mini__icon dock-mini__icon--harvest" aria-hidden="true"></span>
-            </button>
-            <button type="button" class="dock-mini__btn" data-dock-mini="batch-auto" title="Авто-отклики">
-              <span class="dock-mini__icon dock-mini__icon--batch" aria-hidden="true"></span>
             </button>
             <span class="dock-mini__sep" aria-hidden="true"></span>
             <button type="button" class="dock-mini__btn dock-mini__btn--active" data-dock-mini="queue" title="Очередь">
@@ -156,12 +145,6 @@
               <span class="dock-mini__icon dock-mini__icon--hidden" aria-hidden="true"></span>
             </button>
             <span class="dock-mini__spacer" aria-hidden="true"></span>
-            <button type="button" class="dock-mini__btn ui-expert-only" data-dock-mini="service" title="Сервис">
-              <span class="dock-mini__icon dock-mini__icon--service" aria-hidden="true"></span>
-            </button>
-            <button type="button" class="dock-mini__btn" data-dock-mini="settings" title="Настройки">
-              <span class="dock-mini__icon dock-mini__icon--settings" aria-hidden="true"></span>
-            </button>
           </nav>
           <header class="dock__chrome dock__chrome--expanded">
             <span class="dock__title">Меню</span>
@@ -178,7 +161,6 @@
           </header>
           <div class="dock__body dock__body--expanded">
         <div class="sidebar-scroll" id="sidebar-scroll">
-          <div class="sidebar-panel" data-panel="brand" hidden aria-hidden="true"></div>
 
           <div class="dock-section dock-section--onboard sidebar-panel" data-panel="onboard" id="onboarding-panel" hidden>
             <div class="onboarding-card onboarding-wizard">
@@ -205,11 +187,25 @@
             <p class="job-status" id="job-status" title="">Готов</p>
             <p class="crm-health-banner" id="crm-health-banner" hidden></p>
             <div class="apply-rate-meters" id="apply-rate-meters"></div>
+            <div class="letter-stats-mini" id="letter-stats-body" hidden role="button" tabindex="0" title="Качество утверждённых писем — нажмите для подробностей"></div>
+            <div class="letter-hub-extra" id="letter-hub-extra" hidden></div>
+            <div class="letter-center-panel ui-expert-only" id="letter-center-panel" hidden>
+              <p class="letter-center-meta" id="letter-center-meta" hidden></p>
+              <div class="letter-center-panel__actions">
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-letter-center-prepare">Подготовить</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-letter-center-regen">Переген.</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-letter-center-fixable" title="Фильтр: автоподготовка · Shift+клик — настройки писем">⚙</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-letter-center-fail" title="Только правка">✕</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-letter-center-missing" title="Без письма">?</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-letter-center-filter">В списке</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-letter-center-more">Подробнее</button>
+              </div>
+              <ul class="letter-center-list" id="letter-center-list"></ul>
+            </div>
           </div>
           </div>
 
           <div class="dock-section dock-section--actions">
-          <span class="dock-section__label">Действия</span>
           <section class="crm-actions-primary sidebar-panel" data-panel="actionsPrimary" aria-label="Главные действия">
             <button type="button" class="btn btn-primary btn-block btn-routine-hero" id="btn-daily-routine" data-tip="Синхронизация откликов, кэш и чаты" data-copy="dailyRoutine">
               Утренний цикл
@@ -217,11 +213,15 @@
             <div class="crm-action-grid">
               <button type="button" class="btn btn-secondary" id="btn-run-harvest" data-tip="Поиск вакансий на hh.ru" data-copy="harvestRun">Запустить поиск</button>
               <button type="button" class="btn btn-secondary" id="btn-batch-auto" data-tip="Серия откликов с баллом не ниже порога" data-copy="batchAuto">Авто-отклики</button>
-              <button type="button" class="btn btn-ghost btn-batch-manual" id="btn-batch-manual" data-tip="Серия откликов ниже порога" data-copy="batchManual">Ручные отклики</button>
+              <button type="button" class="btn btn-ghost btn-batch-manual ui-expert-only" id="btn-batch-manual" data-tip="Серия откликов ниже порога" data-copy="batchManual">Ручные отклики</button>
             </div>
-            <label class="crm-harvest-row sidebar-panel sidebar-panel__expandable" data-panel="harvestPeriod" title="За сколько дней искать вакансии">
-              <span class="crm-harvest-label" data-copy="harvestPeriod">Период поиска</span>
-              <select id="harvest-period" class="field-input field-input--compact">
+          </section>
+          </div>
+
+          <div class="dock-section dock-section--harvest sidebar-panel sidebar-panel__expandable" data-panel="harvestPeriod" title="За сколько дней искать вакансии">
+            <span class="dock-section__label" data-copy="harvestPeriod">Период поиска</span>
+            <label class="crm-harvest-row">
+              <select id="harvest-period" class="field-input field-input--compact" aria-label="Период поиска вакансий">
                 <option value="0">всё</option>
                 <option value="1">1 д</option>
                 <option value="3">3 д</option>
@@ -229,11 +229,9 @@
                 <option value="30">30 д</option>
               </select>
             </label>
-          </section>
           </div>
 
           <div class="dock-section dock-section--nav">
-          <span class="dock-section__label">Раздел</span>
           <nav class="crm-nav sidebar-panel" data-panel="nav" aria-label="Раздел">
             <div class="segmented apply-view-tabs crm-seg crm-seg--nav" role="tablist">
               <button type="button" data-apply-view="queue" class="tab seg-btn active" data-copy="navQueue">Очередь</button>
@@ -241,26 +239,12 @@
               <button type="button" data-apply-view="questionnaire" class="tab seg-btn" data-copy="navQuestionnaire">С анкетой</button>
               <button type="button" data-apply-view="applied" class="tab seg-btn" data-copy="navApplied">Отклики</button>
               <button type="button" data-apply-view="hidden" class="tab seg-btn" data-copy="navHidden">Скрытые</button>
-              <button type="button" data-apply-view="deferred" class="tab seg-btn" data-copy="navDeferred">Отложенные</button>
+              <button type="button" data-apply-view="deferred" class="tab seg-btn ui-expert-only" data-copy="navDeferred">Отложенные</button>
             </div>
           </nav>
           </div>
 
-          <div class="dock-section dock-section--sync">
-          <span class="dock-section__label">Синхронизация</span>
-          <section class="crm-actions-primary sidebar-panel sidebar-panel__expandable" data-panel="quickSync" aria-label="Синхронизация">
-            <div class="crm-action-grid">
-              <button type="button" class="btn btn-secondary" data-service-action="sync-hh-responses" data-copy="sidebarSyncResponses" data-tip="Синхр. откликов и статусов с hh.ru">Статусы</button>
-              <button type="button" class="btn btn-secondary" data-service-action="sync-hh-chats" data-copy="sidebarSyncChats" data-tip="Подтянуть чаты переговоров">Чаты</button>
-              <button type="button" class="btn btn-secondary" data-service-action="import-negotiations-queue" data-copy="sidebarSyncImport" data-tip="Импорт откликов hh в очередь">Импорт</button>
-              <button type="button" class="btn btn-secondary" data-service-action="sync-resume-from-source" data-copy="sidebarSyncResume" data-tip="Синхронизировать резюме с эталона">Резюме</button>
-              <button type="button" class="btn btn-ghost btn-open-service-alt sidebar-panel" data-panel="serviceLink" data-tip="Подъём резюме, проверка маршрутизации, пакеты">Дополнительно…</button>
-            </div>
-          </section>
-          </div>
-
-          <div class="dock-section dock-section--filters">
-          <span class="dock-section__label">Фильтры</span>
+          <div class="dock-section dock-section--filters ui-expert-only">
           <div class="sidebar-filters sidebar-panel sidebar-panel__expandable" data-panel="filters" id="sidebar-queue-filters" aria-label="Фильтры очереди">
             <div class="segmented sidebar-filters__controls crm-seg-tight">
               <div class="sidebar-filters__group score-band-tabs" id="panel-score-band" role="group" aria-label="Оценка">
@@ -287,12 +271,10 @@
           <div class="crm-toolbar">
             <label class="crm-search">
               <span class="visually-hidden">Поиск</span>
-              <input type="search" id="filter-search" class="field-input crm-search-input" placeholder="Поиск: вакансия, компания, резюме, чат…" autocomplete="off" title="Ищет в названии, компании, резюме, письме и сообщениях чата" />
+              <input type="search" id="filter-search" class="field-input crm-search-input" placeholder="Поиск…" autocomplete="off" title="Название, компания, резюме, письмо, чат" />
             </label>
-            <input type="text" id="filter-company" class="field-input crm-company-input" placeholder="Компания" autocomplete="off" />
             <div class="list-breadcrumbs-wrap">
               <div id="list-breadcrumbs-host"></div>
-              <p class="list-count list-count--toolbar list-count--sub" id="list-count" hidden>Загрузка…</p>
             </div>
             <div class="card-size-toolbar" role="group" aria-label="Размер карточек">
               <span class="card-size-toolbar__label" aria-hidden="true">Вид</span>
@@ -303,8 +285,33 @@
               </div>
             </div>
             <div class="crm-toolbar-actions workspace-toolbar__actions ui-expert-only">
-              <button type="button" class="btn btn-ghost btn-sm" id="btn-top-harvest" data-tip="Поиск вакансий">Поиск</button>
-              <button type="button" class="btn btn-ghost btn-sm" id="btn-top-batch-auto" data-tip="Авто-отклики">Авто</button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm ui-expert-only"
+                id="btn-filter-letter-quality"
+                aria-pressed="false"
+                data-tip="Показывать только карточки с проблемным письмом"
+              >
+                Письма: проверка
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm ui-expert-only"
+                id="btn-filter-letter-weak"
+                aria-pressed="false"
+                data-tip="Показать только письма с оценкой ниже 6/10"
+              >
+                Письмо &lt;6
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                id="btn-bulk-improve-letters"
+                hidden
+                data-tip="Полировка и фраза под роль без перегенерации LLM"
+              >
+                Подготовить письма
+              </button>
             </div>
           </div>
           <div class="crm-context-bar" id="main-context-bar" hidden>
@@ -355,11 +362,74 @@
             </div>
           </header>
           <div class="dock__body dock__body--right dock__body--expanded">
+            <section
+              class="dock-section dock-section--resume-raise sidebar-panel sidebar-panel__expandable service-block service-block--featured service-block--dock"
+              data-panel="resumeRaise"
+              aria-label="Подъём резюме"
+            >
+              <span class="dock-section__label">Подъём резюме</span>
+              <p class="service-block__desc service-block__desc--compact">На hh.ru — раз в ~4 ч. Авто: 8, 12, 16, 20 (МСК).</p>
+              <label class="field-check service-block__check">
+                <input type="checkbox" id="resume-raise-auto-enabled" checked />
+                <span>Авто-подъём по расписанию</span>
+              </label>
+              <p class="service-block__meta" id="resume-raise-schedule-status">—</p>
+              <div class="service-block__actions service-block__actions--raise">
+                <button type="button" class="btn btn-secondary" data-service-action="raise-resumes-all">Поднять все</button>
+                <button type="button" class="btn btn-secondary" data-service-action="raise-resumes-routing">По маршруту</button>
+                <label class="field field--row service-raise-role">
+                  <span class="field-label">Роль</span>
+                  <select id="resume-raise-role" class="field-input"></select>
+                </label>
+                <button type="button" class="btn btn-secondary" data-service-action="raise-resumes-role">Одно резюме</button>
+              </div>
+            </section>
+            <section
+              class="dock-section sidebar-panel sidebar-panel__expandable service-block service-block--dock"
+              data-panel="syncExtended"
+              aria-label="Синхронизация hh.ru"
+            >
+              <span class="dock-section__label">Синхронизация hh.ru</span>
+              <div class="crm-action-grid crm-action-grid--sync">
+                <button type="button" class="btn btn-secondary btn-sm" data-service-action="sync-hh-responses" data-tip="Отклики и статусы">Отклики</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-service-action="sync-hh-chats" data-tip="Чаты переговоров">Чаты</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-service-action="apply-negotiations-cache" data-tip="Статусы из кэша">Кэш</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-service-action="import-negotiations-queue" data-tip="Импорт в очередь">Импорт</button>
+              </div>
+            </section>
+            <section
+              class="dock-section sidebar-panel sidebar-panel__expandable service-block service-block--dock"
+              data-panel="serviceResume"
+              aria-label="Резюме и собеседования"
+            >
+              <span class="dock-section__label">Резюме</span>
+              <div class="service-block__actions service-block__actions--stack">
+                <button type="button" class="btn btn-secondary btn-sm" data-service-action="sync-resume-from-source">С эталона</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-service-action="sync-resume-variants">Обновить тексты</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-service-action="import-interview-notes">Заметки собесов</button>
+              </div>
+            </section>
+            <section
+              class="dock-section sidebar-panel sidebar-panel__expandable service-block service-block--dock"
+              data-panel="serviceRoutine"
+              aria-label="Рутина и пакеты"
+            >
+              <span class="dock-section__label">Рутина</span>
+              <div class="service-block__actions service-block__actions--stack">
+                <button type="button" class="btn btn-secondary btn-sm" data-service-action="daily-digest">Вечерний дайджест</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-service-action="chat-reply-batch">Черновики чатов</button>
+              </div>
+            </section>
             <section class="crm-kpi sidebar-panel sidebar-panel__expandable" data-panel="kpi" aria-label="Воронка и конверсия" title="Графики и конверсия">
               <div class="stats-panel stats-panel--crm" id="stats-panel">
                 <div class="funnel-mini" id="funnel-mini" aria-hidden="true"></div>
                 <div class="stats-grid" id="stats-grid"></div>
                 <p class="stats-extra" id="stats-extra" hidden></p>
+              </div>
+            </section>
+            <section class="dock-section sidebar-panel sidebar-panel__expandable ui-expert-only" data-panel="falsePositives" aria-label="Ложные пропуски">
+              <div class="fp-top" id="fp-top-panel">
+                <p class="fp-top__placeholder">Загрузка…</p>
               </div>
             </section>
             <div class="sidebar-footer sidebar-panel" data-panel="jobFooter">
@@ -383,7 +453,7 @@
                 <p class="job-progress-meta" id="job-progress-meta"></p>
                 <pre class="job-progress-log" id="job-progress-log" hidden></pre>
               </div>
-              <div class="job-control-row" id="job-control-row" hidden>
+              <div class="job-control-row job-control-actions" id="job-control-actions" hidden>
                 <span class="job-control-label" id="job-control-label">Задача</span>
                 <button type="button" class="btn btn-ghost btn-job-pause" id="btn-job-pause">Пауза</button>
                 <button type="button" class="btn btn-ghost btn-job-stop" id="btn-job-stop">Стоп</button>
@@ -557,8 +627,9 @@
             <button type="button" class="btn btn-reject bad">Не подходит</button>
           </div>
         </div>
+          <p class="done-reason"></p>
+          <button type="button" class="btn btn-secondary btn-sm btn-restore-queue card-restore-queue" hidden>Вернуть в очередь</button>
         </div>
-        <p class="done-reason"></p>
       </article>
     </template>
 
@@ -572,34 +643,12 @@
           <button type="button" class="modal-close service-drawer__close" data-close-service aria-label="Закрыть">×</button>
         </header>
         <div class="service-drawer__body">
-          <section class="service-block service-block--featured">
-            <h3 class="service-block__title">Подъём резюме в поиске</h3>
-            <p class="service-block__desc">На hh.ru — бесплатно раз в ~4 ч. Авто при открытом дашборде: 8, 12, 16, 20 (МСК).</p>
-            <label class="field-check service-block__check">
-              <input type="checkbox" id="resume-raise-auto-enabled" checked />
-              <span>Авто-подъём по расписанию</span>
-            </label>
-            <p class="service-block__meta" id="resume-raise-schedule-status">—</p>
-            <div class="service-block__actions service-block__actions--raise">
-              <button type="button" class="service-card service-card--primary" data-service-action="raise-resumes-all">
-                <span class="service-card__name">Поднять все</span>
-                <span class="service-card__hint">Кнопка на hh.ru «Поднять»</span>
-              </button>
-              <button type="button" class="service-card" data-service-action="raise-resumes-routing">
-                <span class="service-card__name">Все роли из списка</span>
-                <span class="service-card__hint">Как в настройках маршрутизации</span>
-              </button>
-              <label class="field field--row service-raise-role">
-                <span class="field-label">Роль</span>
-                <select id="resume-raise-role" class="field-input"></select>
-              </label>
-              <button type="button" class="service-card" data-service-action="raise-resumes-role">
-                <span class="service-card__name">Одно резюме</span>
-                <span class="service-card__hint">По роли вакансии</span>
-              </button>
-            </div>
-          </section>
           <section class="service-block">
+            <h3 class="service-block__title">Подъём резюме</h3>
+            <p class="service-block__desc">Основной блок — в правой панели «Сводка». Если не видно: Настройки → Списки и вид → «Подъём резюме».</p>
+            <button type="button" class="btn btn-secondary btn-sm" data-service-action="raise-resumes-all">Поднять все (быстро)</button>
+          </section>
+          <section class="service-block service-block--quick">
             <h3 class="service-block__title">Быстрые действия</h3>
             <div class="service-quick__grid" role="group" aria-label="Частые операции">
               <div class="service-quick__col">
@@ -611,13 +660,16 @@
               <div class="service-quick__col">
                 <span class="service-quick__label">Чаты</span>
                 <button type="button" class="service-quick__btn" data-service-action="sync-hh-chats" data-tip="Подтянуть чаты переговоров">Чаты</button>
+                <button type="button" class="service-quick__btn" data-open-chat-inbox data-tip="Inbox — ответы и черновики">Inbox</button>
                 <span class="service-quick__label service-quick__label--sub">Резюме</span>
                 <button type="button" class="service-quick__btn" data-service-action="sync-resume-from-source" data-tip="Синхронизировать резюме с эталона">Резюме</button>
               </div>
             </div>
           </section>
-          <section class="service-block">
-            <h3 class="service-block__title">Синхронизация hh.ru</h3>
+          <details class="service-accordion">
+            <summary class="service-accordion__summary">Синхронизация hh.ru</summary>
+            <div class="service-accordion__body">
+          <section class="service-block service-block--nested">
             <p class="service-block__desc">Отклики, чаты и статусы без серии откликов.</p>
             <div class="service-block__actions">
               <button type="button" class="service-card" data-service-action="sync-hh-responses">
@@ -642,8 +694,12 @@
               </button>
             </div>
           </section>
-          <section class="service-block">
-            <h3 class="service-block__title">Резюме и собеседования</h3>
+            </div>
+          </details>
+          <details class="service-accordion">
+            <summary class="service-accordion__summary">Резюме и собеседования</summary>
+            <div class="service-accordion__body">
+          <section class="service-block service-block--nested">
             <div class="service-block__actions">
               <button type="button" class="service-card" data-service-action="sync-resume-from-source">
                 <span class="service-card__name">С эталона резюме</span>
@@ -659,8 +715,12 @@
               </button>
             </div>
           </section>
-          <section class="service-block">
-            <h3 class="service-block__title">Рутина и пакеты</h3>
+            </div>
+          </details>
+          <details class="service-accordion">
+            <summary class="service-accordion__summary">Рутина и пакеты</summary>
+            <div class="service-accordion__body">
+          <section class="service-block service-block--nested">
             <label class="field-check service-block__check">
               <input type="checkbox" id="daily-routine-harvest" />
               <span>Утренний цикл + поиск вакансий</span>
@@ -685,6 +745,8 @@
               </button>
             </div>
           </section>
+            </div>
+          </details>
         </div>
       </aside>
     </div>
@@ -729,47 +791,94 @@
 
     <div id="settings-modal" class="modal" hidden>
       <div class="modal-backdrop" data-close-settings></div>
-      <div class="modal-dialog modal-dialog--wide settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" tabindex="-1">
+      <div class="modal-dialog modal-dialog--wide settings-dialog settings-dialog--v4" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" tabindex="-1">
         <div class="modal-head settings-dialog__head">
-          <div>
-            <h2 id="settings-modal-title" class="modal-title">Настройки</h2>
-            <p class="settings-dialog__lead">Отклики, лимиты и внешний вид дашборда</p>
+          <div class="settings-dialog__intro">
+            <div class="settings-dialog__titles">
+              <h2 id="settings-modal-title" class="modal-title">Настройки</h2>
+              <p class="settings-dialog__lead" title="Двойной клик — полноэкранный режим">Профиль, таргетинг, отклики, письма и интерфейс · автосохранение</p>
+            </div>
+            <div class="settings-dialog__chips" id="settings-dialog-summary" aria-live="polite"></div>
           </div>
-          <button type="button" class="modal-close modal-close--settings" aria-label="Закрыть">×</button>
+          <div class="modal-head-actions">
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm btn-settings-reset-size settings-head-btn"
+              aria-label="Размер по умолчанию"
+              title="Сбросить размер окна (пресет «Стандарт»)"
+            >
+              <span class="settings-layout-glyph" aria-hidden="true">↺</span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm btn-settings-fullscreen settings-head-btn"
+              aria-label="Полноэкранный режим"
+              title="Полноэкранный режим (Alt+F)"
+            >
+              <span class="ui-icon ui-icon--expand" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="modal-close modal-close--settings" aria-label="Закрыть">×</button>
+          </div>
         </div>
         <nav class="settings-tabs settings-tabs--v4" role="tablist" aria-label="Разделы настроек">
-          <button type="button" class="settings-tabs__btn active" role="tab" aria-selected="true" data-settings-tab="apply" id="settings-tab-apply">Отклики и лимиты</button>
-          <button type="button" class="settings-tabs__btn" role="tab" aria-selected="false" data-settings-tab="appearance" id="settings-tab-appearance">Список и вид</button>
+          <button type="button" class="settings-tabs__btn active" role="tab" aria-selected="true" data-settings-tab="system" id="settings-tab-system">
+            <span class="settings-tabs__label">Система</span>
+            <span class="settings-tabs__sub">Профиль · браузер</span>
+          </button>
+          <button type="button" class="settings-tabs__btn" role="tab" aria-selected="false" data-settings-tab="targeting" id="settings-tab-targeting">
+            <span class="settings-tabs__label">Таргетинг</span>
+            <span class="settings-tabs__sub">Формат · зарплата</span>
+          </button>
+          <button type="button" class="settings-tabs__btn" role="tab" aria-selected="false" data-settings-tab="apply" id="settings-tab-apply">
+            <span class="settings-tabs__label">Отклики</span>
+            <span class="settings-tabs__sub">Порог · лимиты</span>
+          </button>
+          <button type="button" class="settings-tabs__btn" role="tab" aria-selected="false" data-settings-tab="letters" id="settings-tab-letters">
+            <span class="settings-tabs__label">Письма</span>
+            <span class="settings-tabs__sub">Проверка · батч</span>
+          </button>
+          <button type="button" class="settings-tabs__btn" role="tab" aria-selected="false" data-settings-tab="appearance" id="settings-tab-appearance">
+            <span class="settings-tabs__label">Интерфейс</span>
+            <span class="settings-tabs__sub">Список · панели</span>
+          </button>
         </nav>
+        <div class="settings-toolbar" id="settings-toolbar">
+          <nav class="settings-quick-paths" aria-label="Быстрые сценарии">
+            <span class="settings-quick-paths__label">Быстро</span>
+            <button type="button" class="settings-quick-paths__btn" data-settings-path="batch">Перед батчем</button>
+            <button type="button" class="settings-quick-paths__btn" data-settings-path="off-target">Не подходит</button>
+            <button type="button" class="settings-quick-paths__btn" data-settings-path="limits">Лимиты</button>
+            <button type="button" class="settings-quick-paths__btn" data-settings-path="profile">Профиль</button>
+          </nav>
+          <div class="settings-layout-bar" id="settings-layout-bar" role="toolbar" aria-label="Размер окна">
+            <span class="settings-layout-bar__label">Окно</span>
+            <div class="segmented settings-seg settings-seg--layout" role="group" aria-label="Пресет размера">
+              <button type="button" class="seg-btn" data-settings-layout-preset="compact" aria-pressed="false" title="~448×560">Компакт</button>
+              <button type="button" class="seg-btn" data-settings-layout-preset="standard" aria-pressed="false" title="По умолчанию">Стандарт</button>
+              <button type="button" class="seg-btn" data-settings-layout-preset="wide" aria-pressed="false" title="~960×720">Широкое</button>
+              <button type="button" class="seg-btn" data-settings-layout-preset="fullscreen" aria-pressed="false" title="Alt+F">Экран</button>
+            </div>
+            <span class="settings-layout-bar__custom ui-expert-only" id="settings-layout-custom-hint" hidden>Свой размер</span>
+          </div>
+        </div>
         <div class="settings-modal-body">
-          <section class="settings-panel active" id="settings-panel-apply" role="tabpanel" aria-labelledby="settings-tab-apply">
-            <div class="settings-card">
-              <div class="settings-card__head">
-                <h3 class="settings-card__title">Порог и серия откликов</h3>
-                <p class="settings-card__desc">«Рекомендуемые» в сайдбаре — от порога и выше; «Ниже порога» — ручная серия</p>
+          <section class="settings-panel active" id="settings-panel-system" role="tabpanel" aria-labelledby="settings-tab-system">
+            <div class="settings-hub-guide" id="settings-hub-guide">
+              <div class="settings-hub-guide__head">
+                <strong>С чего начать</strong>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-dismiss-hub">Скрыть</button>
               </div>
-              <div class="settings-fields settings-fields--duo">
-                <label class="settings-field">
-                  <div class="settings-field__meta">
-                    <span class="settings-field__label">Порог авто, балл</span>
-                    <span class="settings-field__hint">Отклики ≥ порога — «Авто-отклики»</span>
-                  </div>
-                  <input type="number" id="score-threshold-input" class="field-input" min="0" max="100" step="1" value="50" data-pref="dashboardMinScoreFilter" />
-                </label>
-                <label class="settings-field">
-                  <div class="settings-field__meta">
-                    <span class="settings-field__label">Размер серии</span>
-                    <span class="settings-field__hint">Сколько вакансий за один запуск</span>
-                  </div>
-                  <input type="number" id="batch-limit" class="field-input" min="1" max="1000" step="1" value="10" data-pref="dashboardBatchSize" />
-                </label>
-              </div>
+              <ol class="settings-hub-guide__steps">
+                <li>Проверьте <button type="button" class="settings-hub-guide__link" data-settings-jump="settings-system-health">готовность системы</button></li>
+                <li>Выберите <button type="button" class="settings-hub-guide__link" data-settings-jump="settings-profile-card">профиль поиска</button></li>
+                <li>Настройте <button type="button" class="settings-hub-guide__link" data-settings-jump="settings-remote-card">фильтры вакансий</button></li>
+                <li>Перед серией — <button type="button" class="settings-hub-guide__link" data-settings-path="batch">письма и порог</button></li>
+              </ol>
             </div>
             <div class="settings-card" id="settings-profile-card">
               <div class="settings-card__head">
                 <h3 class="settings-card__title">Профиль поиска</h3>
-                <p class="settings-card__desc">Какой набор ключевых слов и очередь вакансий используются для поиска и откликов</p>
-                <p class="settings-card__desc ui-expert-only">Файлы: <code>config/profiles/</code>, <code>config/devops.env</code></p>
+                <p class="settings-card__desc">Ключевые слова, очередь вакансий и <code>config/profiles/</code> для harvest и откликов</p>
               </div>
               <div class="settings-fields">
                 <label class="settings-field">
@@ -778,6 +887,240 @@
                     <span class="settings-field__hint settings-field__hint--profile" id="settings-profile-queue-hint">—</span>
                   </div>
                   <select id="settings-profile-select" class="field-input"></select>
+                </label>
+              </div>
+              <div class="settings-card__actions settings-card__actions--row settings-quick-actions">
+                <button type="button" class="btn btn-ghost btn-sm" data-settings-jump="settings-targeting-salary">Таргетинг</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-settings-jump="settings-playwright-mode">Режим браузера</button>
+              </div>
+            </div>
+            <div class="settings-card" id="settings-system-health">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Готовность системы</h3>
+                <p class="settings-card__desc">Что уже настроено для harvest, LLM и сессии hh.ru. Ключи в файлах не показываем.</p>
+              </div>
+              <ul class="settings-health-list" id="settings-system-health-list" aria-live="polite">
+                <li class="settings-health-item settings-health-item--muted">Загрузка…</li>
+              </ul>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-refresh-health">Обновить</button>
+            </div>
+            <div class="settings-card" id="settings-playwright-card">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Окно браузера при автоматизации</h3>
+                <p class="settings-card__desc">Как показывать Chromium при поиске вакансий и серии откликов. При капче удобнее режим «Скрытый».</p>
+              </div>
+              <label class="settings-field">
+                <div class="settings-field__meta">
+                  <span class="settings-field__label">Режим отображения</span>
+                  <span class="settings-field__hint">При капче «скрытый» поднимает окно на передний план</span>
+                </div>
+                <select id="settings-playwright-mode" class="field-input" data-pref-select="dashboardPlaywrightDisplayMode">
+                  <option value="hidden-captcha">Скрытый · капча на экране</option>
+                  <option value="visible">Всегда видимый</option>
+                  <option value="headless">Без окна (отладка)</option>
+                </select>
+              </label>
+            </div>
+            <div class="settings-card settings-card--tools" id="settings-prefs-io">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Резервная копия настроек</h3>
+                <p class="settings-card__desc">Скопировать или восстановить порог, таргетинг, письма и панели — без паттернов и секретов.</p>
+              </div>
+              <div class="settings-quick-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-settings-export-prefs">Скопировать в буфер</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-import-prefs">Вставить из буфера</button>
+              </div>
+              <div class="settings-import-panel" id="settings-import-panel" hidden>
+                <label class="settings-field">
+                  <span class="settings-field__label">JSON настроек</span>
+                  <textarea id="settings-import-textarea" class="field-input settings-import-textarea" rows="6" placeholder='{ "patch": { "dashboardMinScoreFilter": 55 } }'></textarea>
+                </label>
+                <div class="settings-quick-actions">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-settings-import-apply">Применить</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-import-cancel">Отмена</button>
+                </div>
+              </div>
+            </div>
+            <div class="settings-card settings-card--tools">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Сервисные действия</h3>
+                <p class="settings-card__desc">Синхронизация откликов, чатов, резюме и утренний цикл — в отдельной панели.</p>
+              </div>
+              <div class="settings-quick-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-settings-open-service">Открыть сервис</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-settings-jump="settings-limits-hh">Лимиты откликов</button>
+              </div>
+              <p class="settings-card__desc settings-card__desc--tight ui-expert-only">Файлы: <code>config/preferences.json</code>, <code>docs/CONFIG-GUIDE.md</code></p>
+            </div>
+          </section>
+
+          <section class="settings-panel" id="settings-panel-targeting" role="tabpanel" aria-labelledby="settings-tab-targeting" hidden>
+            <div class="settings-card" id="settings-targeting-presets">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Пресет таргетинга</h3>
+                <p class="settings-card__desc">Быстро сменить связку формата работы и исключений</p>
+              </div>
+              <div class="settings-preset-row segmented settings-seg" role="group" aria-label="Пресет таргетинга">
+                <button type="button" class="seg-btn active" data-targeting-preset="balanced" aria-pressed="true">Сбалансированный</button>
+                <button type="button" class="seg-btn" data-targeting-preset="conservative" aria-pressed="false">Консервативный</button>
+                <button type="button" class="seg-btn" data-targeting-preset="wide" aria-pressed="false">Широкий</button>
+              </div>
+              <p class="settings-preset-hint" id="settings-targeting-preset-hint">Гибрид и офис Москва разрешены, senior/1С/dev исключаются</p>
+              <p class="settings-field__hint" id="settings-targeting-preview" aria-live="polite">—</p>
+            </div>
+            <div class="settings-card" id="settings-targeting-insights">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Что чаще отсекает</h3>
+                <p class="settings-card__desc">Почему вакансии уходят из очереди. «Настроить» откроет нужный переключатель.</p>
+              </div>
+              <div id="settings-targeting-insights-body" class="settings-insights" aria-live="polite">
+                <p class="settings-snapshot__muted">Загрузка…</p>
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-refresh-insights">Обновить</button>
+            </div>
+            <div class="settings-card" id="settings-remote-card">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Удалёнка</h3>
+                <p class="settings-card__desc">Два уровня: что попадает в очередь и что пропускает серия откликов</p>
+              </div>
+              <div class="settings-remote-grid" role="group" aria-label="Настройки удалёнки">
+                <label class="settings-check">
+                  <input type="checkbox" id="pref-require-remote" data-pref-bool="requireRemote" />
+                  <span class="settings-check__text">
+                    <strong>Только удалёнка — глобально</strong>
+                    <small>Harvest и оценка: без явной remote/hybrid — в «Неподходит»</small>
+                  </span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="batch-require-remote" data-pref-bool="batchRequireRemote" />
+                  <span class="settings-check__text">
+                    <strong>Строгая удалёнка — в батче</strong>
+                    <small>Серия откликов пропускает вакансии без явной удалёнки, даже если в очереди</small>
+                  </span>
+                </label>
+              </div>
+              <div id="settings-remote-warnings" class="settings-warnings" hidden></div>
+            </div>
+            <div class="settings-card" id="settings-targeting-format">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Формат работы</h3>
+                <p class="settings-card__desc">Дополнительные правила формата и языка</p>
+              </div>
+              <div class="settings-check-list">
+                <label class="settings-check">
+                  <input type="checkbox" id="pref-allow-hybrid" data-pref-bool="allowHybrid" checked />
+                  <span class="settings-check__text">
+                    <strong>Разрешить гибрид</strong>
+                    <small>Частично удалённый / hybrid в описании</small>
+                  </span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="pref-allow-office-moscow" data-pref-bool="allowOfficeMoscow" checked />
+                  <span class="settings-check__text">
+                    <strong>Офис в Москве</strong>
+                    <small>Если не включена строгая удалёнка</small>
+                  </span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="pref-hybrid-moscow-only" data-pref-bool="hybridMoscowOnly" checked />
+                  <span class="settings-check__text">
+                    <strong>Гибрид только Москва</strong>
+                    <small>Иначе гибрид в любом городе</small>
+                  </span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="pref-block-english" data-pref-bool="blockSpokenEnglishRequired" checked />
+                  <span class="settings-check__text">
+                    <strong>Блокировать spoken English</strong>
+                    <small>Если в тексте требуется разговорный английский</small>
+                  </span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="pref-block-night" data-pref-bool="blockNightShiftOnly" checked />
+                  <span class="settings-check__text">
+                    <strong>Блокировать только ночные смены</strong>
+                  </span>
+                </label>
+              </div>
+            </div>
+            <div class="settings-card" id="settings-targeting-salary">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Зарплата</h3>
+                <p class="settings-card__desc">Пороги в рублях в месяц для отбора и поиска</p>
+              </div>
+              <div class="settings-fields settings-fields--trio">
+                <label class="settings-field">
+                  <span class="settings-field__label">Минимум</span>
+                  <input type="number" id="pref-min-monthly-rub" class="field-input" min="0" step="1000" data-pref="minMonthlyRub" />
+                </label>
+                <label class="settings-field">
+                  <span class="settings-field__label">Цель</span>
+                  <input type="number" id="pref-target-monthly-rub" class="field-input" min="0" step="1000" data-pref="targetMonthlyRub" />
+                </label>
+                <label class="settings-field">
+                  <span class="settings-field__label">Макс. в поиске</span>
+                  <input type="number" id="pref-max-monthly-search" class="field-input" min="0" step="1000" data-pref="maxMonthlyRubSearch" />
+                </label>
+              </div>
+              <label class="settings-check">
+                <input type="checkbox" id="pref-allow-unknown-salary" data-pref-bool="allowUnknownSalary" checked />
+                <span class="settings-check__text">
+                  <strong>Без зарплаты в объявлении</strong>
+                  <small>Не отсекать вакансии без указанной вилки</small>
+                </span>
+              </label>
+            </div>
+            <div class="settings-card" id="settings-targeting-roles">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Исключения по ролям</h3>
+                <p class="settings-card__desc">Паттерны в <code>preferences.json</code>; здесь — вкл/выкл фильтров</p>
+              </div>
+              <div class="settings-check-list">
+                <label class="settings-check">
+                  <input type="checkbox" id="pref-exclude-senior" data-pref-bool="excludeSeniorRoles" checked />
+                  <span class="settings-check__text"><strong>Senior / lead</strong></span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="pref-exclude-1c" data-pref-bool="exclude1CRoles" checked />
+                  <span class="settings-check__text"><strong>1С</strong></span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="pref-exclude-dev" data-pref-bool="excludeDeveloperRoles" checked />
+                  <span class="settings-check__text"><strong>Разработчики (не DevOps)</strong></span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="pref-exclude-irrelevant" data-pref-bool="excludeIrrelevantTitles" checked />
+                  <span class="settings-check__text"><strong>Нерелевантные заголовки</strong><small>PM, дизайн, mobile и т.п.</small></span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-panel" id="settings-panel-apply" role="tabpanel" aria-labelledby="settings-tab-apply" hidden>
+            <div class="settings-card">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Порог и серия откликов</h3>
+                <p class="settings-card__desc">«Рекомендуемые» в сайдбаре — от порога и выше; «Ниже порога» — ручная серия</p>
+              </div>
+              <div class="settings-card__actions settings-card__actions--row settings-quick-actions">
+                <button type="button" class="btn btn-ghost btn-sm" data-settings-jump="settings-limits-hh">К лимитам hh</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-settings-jump="settings-remote-card">Удалёнка</button>
+              </div>
+              <div class="settings-fields settings-fields--duo">
+                <label class="settings-field">
+                  <div class="settings-field__meta">
+                    <span class="settings-field__label">Порог авто, балл</span>
+                    <span class="settings-field__hint">Отклики ≥ порога — «Авто-отклики»</span>
+                  </div>
+                  <input type="number" id="score-threshold-input" class="field-input" min="0" max="100" step="1" value="50" data-pref="dashboardMinScoreFilter" />
+                  <p class="settings-field__hint settings-apply-preview" id="settings-apply-preview" aria-live="polite">—</p>
+                </label>
+                <label class="settings-field">
+                  <div class="settings-field__meta">
+                    <span class="settings-field__label">Размер серии</span>
+                    <span class="settings-field__hint">Сколько вакансий за один запуск</span>
+                  </div>
+                  <input type="number" id="batch-limit" class="field-input" min="1" max="1000" step="1" value="10" data-pref="dashboardBatchSize" />
                 </label>
               </div>
             </div>
@@ -803,7 +1146,106 @@
             </div>
           </section>
 
+          <section class="settings-panel" id="settings-panel-letters" role="tabpanel" aria-labelledby="settings-tab-letters" hidden>
+            <div class="settings-card" id="settings-letters-presets">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Пресет качества</h3>
+                <p class="settings-card__desc">Рекомендуем «Стандарт» перед ежедневной серией. «Строгий» — меньше слабых откликов.</p>
+              </div>
+              <div class="settings-onboarding" id="settings-letters-onboarding">
+                <p class="settings-onboarding__text">Перед первой серией: выберите <strong>Стандарт</strong>, дождитесь «Сохранено» внизу, затем запускайте батч — откроется проверка писем.</p>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-dismiss-onboarding">Понятно</button>
+              </div>
+              <div class="settings-preset-row segmented settings-seg settings-seg--presets" role="group" aria-label="Пресет писем">
+                <button type="button" class="seg-btn active" data-letter-preset="standard" title="Подготовка, FP 20" aria-pressed="true">Стандарт</button>
+                <button type="button" class="seg-btn" data-letter-preset="strict" title="Метрики + авто-утверждение" aria-pressed="false">Строгий</button>
+                <button type="button" class="seg-btn" data-letter-preset="soft" title="Без FP, обучение" aria-pressed="false">Мягкий</button>
+                <button type="button" class="seg-btn" data-letter-preset="manual" title="Только ручная правка" aria-pressed="false">Вручную</button>
+              </div>
+              <p class="settings-preset-hint" id="settings-preset-hint">Подготовка перед серией, FP ≤ 20 — рекомендуется для ежедневного батча</p>
+              <div id="settings-letters-snapshot" class="settings-snapshot" aria-live="polite"></div>
+              <div id="settings-letters-warnings" class="settings-warnings" hidden></div>
+            </div>
+            <div class="settings-card" id="settings-letters-batch">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Письма в батче</h3>
+                <p class="settings-card__desc">Что делать с письмом перед откликом и при отправке</p>
+              </div>
+              <div class="settings-check-list">
+                <label class="settings-check">
+                  <input type="checkbox" id="batch-auto-prepare-letters" data-pref-bool="batchAutoPrepareLetters" checked />
+                  <span class="settings-check__text">
+                    <strong>Автоподготовка перед серией</strong>
+                    <small>Полировка и фраза под роль без LLM (батч и «Авто»)</small>
+                  </span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="batch-letter-require-metric" data-pref-bool="batchLetterRequireMetric" />
+                  <span class="settings-check__text">
+                    <strong>Цифры в письме обязательны</strong>
+                    <small>Батч пропустит письмо без метрик из опыта</small>
+                  </span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" id="batch-auto-approve-letter" data-pref-bool="batchAutoApproveBestLetter" />
+                  <span class="settings-check__text">
+                    <strong>Авто-утверждение лучшего варианта</strong>
+                    <small>После генерации, если письмо проходит проверку качества</small>
+                  </span>
+                </label>
+              </div>
+              <div class="settings-card__actions settings-card__actions--row settings-quick-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-settings-open-letter-hub">Сводка качества</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-refresh-snapshot">Обновить сводку</button>
+                <button type="button" class="btn btn-ghost btn-sm ui-expert-only" id="btn-settings-copy-letter-prefs" title="JSON для config/preferences.json">Копировать JSON</button>
+                <button type="button" class="btn btn-ghost btn-sm ui-expert-only" id="btn-settings-import-letter-prefs" title="Вставить JSON параметров писем">Вставить JSON</button>
+              </div>
+            </div>
+            <div class="settings-card" id="settings-letters-fp">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Ложные отказы и обучение</h3>
+                <p class="settings-card__desc">Если в «Неподходит» много подходящих вакансий — снизьте порог или включите обучение</p>
+              </div>
+              <label class="settings-field settings-field--inline">
+                <div class="settings-field__head">
+                  <span class="settings-field__label">Порог ложных отказов</span>
+                  <span class="settings-field__hint">0 — выкл. Иначе перед серией предупредит, если в «Неподходит» слишком много вакансий, которые на самом деле подходят</span>
+                </div>
+                <input type="number" id="batch-false-positive-max" class="field-input" min="0" max="500" step="1" value="20" data-pref="batchFalsePositiveMax" />
+              </label>
+              <label class="settings-check">
+                <input type="checkbox" id="learning-auto-apply" data-pref-bool="learningAutoApplyPatterns" />
+                <span class="settings-check__text">
+                  <strong>Авто-правила из false positives</strong>
+                  <small>Безопасно применить частые паттерны при загрузке дашборда</small>
+                </span>
+              </label>
+              <label class="settings-field settings-field--inline" id="settings-learning-min-wrap" hidden>
+                <div class="settings-field__head">
+                  <span class="settings-field__label">Мин. повторов паттерна</span>
+                  <span class="settings-field__hint">От 2 до 20</span>
+                </div>
+                <input type="number" id="learning-auto-apply-min" class="field-input" min="2" max="20" step="1" value="3" data-pref="learningAutoApplyMinCount" />
+              </label>
+            </div>
+          </section>
+
           <section class="settings-panel" id="settings-panel-appearance" role="tabpanel" aria-labelledby="settings-tab-appearance" hidden>
+            <div class="settings-card settings-card--compact" id="settings-modal-window-card">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Окно настроек</h3>
+                <p class="settings-card__desc">Пресеты «Окно» — в шапке модалки. Угол окна — свой размер (только этот браузер).</p>
+              </div>
+              <div class="settings-card__actions settings-card__actions--row">
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-focus-layout-bar">К пресетам окна</button>
+                <label class="settings-check settings-check--inline">
+                  <input type="checkbox" id="settings-modal-open-fullscreen" />
+                  <span class="settings-check__text">
+                    <strong>Открывать на весь экран</strong>
+                  </span>
+                </label>
+              </div>
+            </div>
             <div class="settings-card">
               <div class="settings-card__head">
                 <h3 class="settings-card__title">Фильтры списка</h3>
@@ -841,6 +1283,17 @@
                   </label>
                   <button type="button" class="btn btn-secondary btn-sm" id="filter-reset">Сбросить фильтры</button>
                 </div>
+              </div>
+            </div>
+            <div class="settings-card settings-card--tools" id="settings-appearance-tools">
+              <div class="settings-card__head">
+                <h3 class="settings-card__title">Сброс вида в браузере</h3>
+                <p class="settings-card__desc">Тема, масштаб окна и пресет карточек — только на этом компьютере</p>
+              </div>
+              <div class="settings-quick-actions">
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-reset-visual">Тема и масштаб</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-reset-appearance-full">Всё: фильтры + панели + тема</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-settings-jump="settings-layout-card">К панелям</button>
               </div>
             </div>
             <div class="settings-card" id="settings-layout-card">
@@ -951,10 +1404,17 @@
             </div>
           </section>
         </div>
-        <footer class="settings-footer">
-          <p class="settings-hint" id="settings-save-hint" hidden></p>
-          <p class="settings-footer__note">Лимиты и порог сохраняются автоматически</p>
-          <p class="settings-footer__note ui-expert-only">Файл настроек: <code>config/preferences.json</code></p>
+        <footer class="settings-footer settings-footer--v4">
+          <div class="settings-footer__status">
+            <p class="settings-hint" id="settings-save-hint" hidden></p>
+            <p class="settings-footer__note" id="settings-footer-tab-note">Автосохранение · Esc — закрыть</p>
+            <p class="settings-footer__note settings-footer__note--meta ui-expert-only">Файл: <code>config/preferences.json</code></p>
+          </div>
+          <div class="settings-footer__actions">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-settings-save-now" title="Сохранить без ожидания автосохранения">Сохранить сейчас</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-revert-tab" hidden title="Вернуть поля этой вкладки к последнему сохранённому виду">Отменить на вкладке</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-reset-section" title="Вернуть заводские значения раздела (не то же, что «Отменить»)">Сбросить к умолчанию</button>
+          </div>
         </footer>
       </div>
     </div>
@@ -1000,6 +1460,36 @@
         </div>
         <p class="modal-vacancy"></p>
         <div class="modal-draft-body"></div>
+      </div>
+    </div>
+
+    <div id="chat-inbox-modal" class="modal chat-inbox-modal" hidden>
+      <div class="modal-backdrop" data-close-chat-inbox tabindex="-1"></div>
+      <div class="modal-dialog modal-dialog--wide chat-inbox-dialog" role="dialog" aria-modal="true" aria-labelledby="chat-inbox-title" tabindex="-1">
+        <header class="modal-head">
+          <h2 id="chat-inbox-title" class="modal-title">Чаты hh.ru</h2>
+          <button type="button" class="modal-close" data-close-chat-inbox aria-label="Закрыть">×</button>
+        </header>
+        <div class="chat-inbox-toolbar segmented crm-seg-tight" role="tablist">
+          <button type="button" class="seg-btn active" data-chat-inbox-filter="all">Все</button>
+          <button type="button" class="seg-btn" data-chat-inbox-filter="needs_reply">Ждут ответ</button>
+          <button type="button" class="seg-btn" data-chat-inbox-filter="invite_nudge">Напомнить</button>
+          <button type="button" class="seg-btn" data-chat-inbox-filter="declined">Отказы</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-chat-inbox-refresh">Обновить</button>
+        </div>
+        <div class="chat-inbox-layout">
+          <div class="chat-inbox-list-wrap" id="chat-inbox-list"></div>
+          <div class="chat-inbox-detail-wrap">
+            <div id="chat-inbox-detail"><p class="chat-inbox-empty">Выберите диалог слева</p></div>
+            <label class="field chat-inbox-draft-field">
+              <span class="field-label">Черновик ответа</span>
+              <textarea id="chat-inbox-draft" class="field-input" rows="4" placeholder="Текст ответа…"></textarea>
+            </label>
+            <div class="btn-row">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-chat-inbox-mark-sent">Отметить отправленным</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1071,6 +1561,27 @@
       </div>
     </div>
 
+    <div id="batch-precheck-modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal-dialog modal-dialog--wide modal-dialog--v4-sheet" role="dialog" aria-modal="true" aria-labelledby="batch-precheck-title" tabindex="-1">
+        <div class="modal-head">
+          <h2 id="batch-precheck-title" class="modal-title">Проверка перед серией</h2>
+          <button type="button" class="modal-close" aria-label="Закрыть">×</button>
+        </div>
+        <div id="batch-precheck-summary" class="batch-precheck-summary"></div>
+        <div id="batch-precheck-prefs-diff" class="batch-precheck-prefs-diff" hidden></div>
+        <div id="batch-precheck-blockers" class="batch-precheck-blockers-wrap"></div>
+        <div id="batch-precheck-samples" class="batch-precheck-samples-wrap" hidden></div>
+        <p class="modal-hint">Нецелевые вакансии пропускаются до открытия браузера. При анкете — карточка уйдёт в раздел «Анкета».</p>
+        <div class="modal-draft-actions batch-precheck-actions">
+          <button type="button" class="btn btn-ghost" id="batch-precheck-prepare">Подготовить</button>
+          <button type="button" class="btn btn-ghost" id="batch-precheck-regen">Перегенерировать</button>
+          <button type="button" class="btn btn-ghost" id="batch-precheck-filter">Письма в списке</button>
+          <button type="button" class="btn" id="batch-precheck-start">Запустить серию</button>
+        </div>
+      </div>
+    </div>
+
     <div id="batch-report-modal" class="modal" hidden>
       <div class="modal-backdrop" data-close-modal></div>
       <div class="modal-dialog modal-dialog--wide" role="dialog" aria-modal="true" aria-labelledby="batch-report-title" tabindex="-1">
@@ -1088,6 +1599,23 @@
           <h3 class="batch-report-section__title">Последние вакансии</h3>
           <ul class="batch-report-list" id="batch-report-items-list"></ul>
         </section>
+        <div class="modal-draft-actions batch-report-actions" id="batch-report-actions">
+          <button type="button" class="btn btn-ghost btn-sm" data-batch-report-settings="letters">Письма и пресеты</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-batch-report-settings="fp">Фильтр «Неподходит»</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-batch-report-settings="limits">Лимиты откликов</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="letter-quality-hub-modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal-dialog modal-dialog--wide modal-dialog--v4-sheet" role="dialog" aria-modal="true" aria-labelledby="letter-quality-hub-title" tabindex="-1">
+        <div class="modal-head">
+          <h2 id="letter-quality-hub-title" class="modal-title">Качество писем</h2>
+          <button type="button" class="modal-close" aria-label="Закрыть">×</button>
+        </div>
+        <div id="letter-quality-hub-body" class="letter-quality-hub-body"></div>
+        <p class="modal-hint ui-expert-only">Регрессия: <code>npm run audit:letter-quality-golden</code> · <code>npm run audit:targeting-golden</code></p>
       </div>
     </div>
 
@@ -1100,7 +1628,7 @@
         </div>
         <p class="funnel-panel__meta" id="daily-digest-meta"></p>
         <pre id="daily-digest-text" class="apply-log-pre apply-log-pre--digest"></pre>
-        <p class="modal-hint">Авто: Планировщик Windows → <code>npm run devops:daily-digest</code> · Telegram: TELEGRAM_BOT_TOKEN в .env</p>
+        <p class="modal-hint ui-expert-only">Авто: Планировщик Windows → <code>npm run devops:daily-digest</code> · Telegram: TELEGRAM_BOT_TOKEN в .env</p>
       </div>
     </div>
 
@@ -1183,6 +1711,7 @@
       </div>
     </div>
 
-    <script type="module" src="/app.js?v=20260531med1"></script>
+    <!-- cache-bust: lib/dashboard-asset-version.mjs (app.js + dashboard-v4.css) -->
+    <script type="module" src="/app.js?v=20260603final2"></script>
   </body>
 </html>

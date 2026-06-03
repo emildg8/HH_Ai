@@ -5,6 +5,8 @@
  *   npm run devops:regenerate-letters -- --limit=20
  *   npm run devops:regenerate-letters -- --dry-run
  *   npm run devops:regenerate-letters -- --resume
+ *   npm run devops:regenerate-letters -- --only-fail
+ *   npm run devops:regenerate-letters -- --only-fixable
  *
  * Пауза между вакансиями: COVER_LETTER_REGEN_DELAY_MS (по умолчанию 4500)
  */
@@ -29,6 +31,9 @@ import { auditCoverLetterPrompts } from '../lib/cover-letter-prompt-audit.mjs';
 import { hasScoreProviderCredentials } from '../lib/openrouter-score.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
 import { runTitleOnlyFilters } from '../lib/filters.mjs';
+import { evaluateLetterQuality } from '../lib/cover-letter-quality-scan.mjs';
+import { classifyVacancyResumeRole } from '../lib/resume-routing.mjs';
+import { appendLetterMetric } from '../lib/letter-metrics.mjs';
 
 const STATE_FILE = path.join(DATA_DIR, 'cover-letter-regen-state.json');
 const LOG_FILE = path.join(DATA_DIR, 'cover-letter-regen.log');
@@ -52,11 +57,15 @@ function parseArgs() {
     minScore: 0,
     limit: Infinity,
     onlyEmpty: false,
+    onlyFail: false,
+    onlyFixable: false,
   };
   for (const a of argv) {
     if (a === '--dry-run') opts.dryRun = true;
     else if (a === '--resume') opts.resume = true;
     else if (a === '--only-empty') opts.onlyEmpty = true;
+    else if (a === '--only-fail') opts.onlyFail = true;
+    else if (a === '--only-fixable') opts.onlyFixable = true;
     else if (a.startsWith('--status=')) opts.status = a.slice(9);
     else if (a.startsWith('--min-score=')) opts.minScore = Number(a.slice(12)) || 0;
     else if (a.startsWith('--limit=')) opts.limit = Math.max(1, Number(a.slice(8)) || 1);
@@ -97,6 +106,30 @@ function passesRoleForLetter(rec, prefs) {
   return runTitleOnlyFilters(title, prefs);
 }
 
+function letterTextForRec(rec) {
+  const approved = String(rec.coverLetter?.approvedText || '').trim();
+  if (approved) return approved;
+  const variants = (rec.coverLetter?.variants || []).map((s) => String(s).trim()).filter(Boolean);
+  return variants[0] || '';
+}
+
+function matchesRegenFilter(rec, prefs, opts) {
+  if (opts.onlyFail || opts.onlyFixable) {
+    const letter = letterTextForRec(rec);
+    if (!letter) return false;
+    const role = classifyVacancyResumeRole(rec);
+    const ev = evaluateLetterQuality(rec, letter, role, prefs);
+    if (opts.onlyFail) return !ev.pass;
+    if (opts.onlyFixable) return ev.fixable;
+    return false;
+  }
+  if (!needsLetter(rec)) return false;
+  if (opts.onlyEmpty) {
+    return !(rec.coverLetter?.variants || []).filter(Boolean).length;
+  }
+  return true;
+}
+
 async function main() {
   const opts = parseArgs();
   const delayMs = Math.max(1000, Number(process.env.COVER_LETTER_REGEN_DELAY_MS) || 4500);
@@ -124,13 +157,18 @@ async function main() {
   }
 
   const queue = loadQueue();
+  const statusOk = (x) =>
+    opts.onlyFail || opts.onlyFixable
+      ? x.status === 'pending' || x.status === 'approved'
+      : x.status === opts.status;
   let candidates = queue
-    .filter((x) => x.status === opts.status)
-    .filter(needsLetter)
-    .filter((x) => scoreOf(x) >= opts.minScore);
+    .filter(statusOk)
+    .filter((x) => scoreOf(x) >= opts.minScore)
+    .filter((x) => matchesRegenFilter(x, prefs, opts));
 
-  if (opts.onlyEmpty) {
-    candidates = candidates.filter((x) => !(x.coverLetter?.variants || []).filter(Boolean).length);
+  if (opts.onlyFail && opts.onlyFixable) {
+    console.error('Укажите только один из: --only-fail, --only-fixable');
+    process.exit(1);
   }
 
   candidates.sort((a, b) => scoreOf(b) - scoreOf(a));
@@ -153,8 +191,15 @@ async function main() {
     planned++;
   }
 
+  const mode = opts.onlyFail
+    ? 'only-fail'
+    : opts.onlyFixable
+      ? 'only-fixable'
+      : opts.onlyEmpty
+        ? 'only-empty'
+        : 'no-letter';
   logLine(
-    `Старт: к перегенерации ${planned} (в очереди без письма: ${candidates.length}, resume=${opts.resume}, dry=${opts.dryRun})`
+    `Старт [${mode}]: к перегенерации ${planned} (кандидатов: ${candidates.length}, resume=${opts.resume}, dry=${opts.dryRun})`
   );
 
   let n = 0;
@@ -199,14 +244,33 @@ async function main() {
     try {
       const result = await generateOnce();
       const now = new Date().toISOString();
+      const role = classifyVacancyResumeRole(rec);
+      const variantQuality = (result.variants || []).map((v, index) => {
+        const ev = evaluateLetterQuality(rec, v, role, prefs);
+        return {
+          index,
+          pass: ev.pass,
+          rawPass: ev.rawPass,
+          fixable: ev.fixable,
+          reason: ev.reason,
+          rawReason: ev.rawReason,
+          score: ev.score,
+        };
+      });
       updateVacancyRecord(rec.id, {
         coverLetter: {
           status: 'pending',
           variants: result.variants,
           approvedText: '',
           openRouterModel: result.providerModel || null,
+          variantQuality: variantQuality.length ? variantQuality : undefined,
           updatedAt: now,
         },
+      });
+      appendLetterMetric('regenerate', {
+        vacancyId: rec.id,
+        mode,
+        variantCount: result.variants.length,
       });
       state.ok++;
       logLine(`OK: ${result.variants.length} вариант(ов), модель ${result.providerModel || '—'}`);

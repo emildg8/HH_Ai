@@ -47,6 +47,8 @@ Ensure-Copy "dashboard/public/local-dashboard-defaults.example.mjs" "dashboard/p
 
 New-Item -ItemType Directory -Force -Path "data", "CV" | Out-Null
 
+node --input-type=module -e "import { copyDemoToQueueIfMissing } from './lib/demo-queue.mjs'; const r = copyDemoToQueueIfMissing(); if (r.ok) { console.log('  + demo queue: ' + r.count + ' vacancies'); }"
+
 $bat = Join-Path $Root "start-dashboard.bat"
 @"
 @echo off

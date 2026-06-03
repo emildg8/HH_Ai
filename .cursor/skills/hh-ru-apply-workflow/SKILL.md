@@ -64,6 +64,13 @@ description: >-
 - Не отключать и не обходить human-delay / rate-limiting **ради скорости**, если пользователь явно не попросил.
 - `hh-fill-letter` по задумке **не** отправляет отклик — это не баг.
 
+## Дашборд и модалка «Настройки»
+
+- UI: `dashboard/public/`, сервер `scripts/dashboard-server.mjs`, порт `DASHBOARD_PORT` (3849).
+- Логика настроек: `settings-modal.mjs`, `settings-modal-layout.mjs`, `settings-targeting-nav.mjs`; открытие — `openDashboardSettings()` в `app.js`.
+- Перед коммитом UI: `npm run check:dashboard` (синтаксис + JSDoc + DOM-контракт). E2E: `npm run test:dashboard-settings` (дашборд должен быть запущен).
+- Типичный сбой «Настройки не открываются» — синтаксис в `dashboard/public/*.mjs` (оборванный `/**` без `*/`); см. [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
 ## Письма и стиль
 
 Кратко: шаблон [config/cover-letter.example.txt](config/cover-letter.example.txt); личный файл (например `config/cover-letter.txt`) — в `.gitignore` по желанию. В дашборде после **Утвердить** письма попадают в очередь эталонов стиля для следующих генераций; опционально `config/cover-letter-style-examples.txt` (разделитель `---` на отдельной строке). Подробности и переменные окружения для LLM — [reference.md](reference.md).

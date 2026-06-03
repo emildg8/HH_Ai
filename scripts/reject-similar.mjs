@@ -17,9 +17,13 @@ import { rejectSimilarPendingFromReason } from '../lib/reject-similar-apply.mjs'
 import {
   DEFAULT_REJECT_RULES,
   findSimilarToReject,
+  inferRejectReasonFromRecord,
+  matchRejectRule,
   ruleIdsLearnedFromRejected,
-  summarizeRejected,
 } from '../lib/reject-role-patterns.mjs';
+import { updateVacancyRecord } from '../lib/store.mjs';
+import { rejectSourcePatchForManual } from '../lib/reject-source.mjs';
+import { analyzeRejectedQueue } from '../lib/reject-analyze.mjs';
 
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
@@ -36,7 +40,7 @@ const ruleIds = onlyArg
 
 function printRejectedSummary() {
   const q = loadQueue();
-  const { rejected, byReason } = summarizeRejected(q);
+  const { rejected, byCategory } = analyzeRejectedQueue(q);
   const pending = q.filter((x) => x.status === 'pending').length;
   const approved = q.filter((x) => x.status === 'approved').length;
 
@@ -48,23 +52,31 @@ function printRejectedSummary() {
     return;
   }
 
-  const sorted = [...byReason.entries()].sort((a, b) => b[1].length - a[1].length);
-  for (const [reason, items] of sorted) {
-    console.log(`── ${reason} (${items.length}) ──`);
-    for (const it of items) {
-      console.log(`  • ${it.title}`);
-      if (it.company) console.log(`    ${it.company}`);
+  const sorted = [...byCategory.values()].sort((a, b) => b.items.length - a.items.length);
+  for (const { category, items, reasons } of sorted) {
+    console.log(`══ ${category.label} (${items.length}) ══`);
+    console.log(`   ${category.hint}\n`);
+    const reasonSorted = [...reasons.entries()].sort((a, b) => b[1].length - a[1].length);
+    for (const [reason, items] of reasonSorted) {
+      console.log(`── ${reason} (${items.length}) ──`);
+      for (const it of items) {
+        const score = it.scoreOverall ?? it.geminiScore;
+        console.log(`  • ${it.title}${score != null ? ` [${score}]` : ''}`);
+        if (it.company) console.log(`    ${it.company}`);
+      }
+      console.log('');
     }
-    console.log('');
   }
 
   const learned = ruleIdsLearnedFromRejected(rejected);
   if (learned.size) {
     console.log(
-      'По причинам отклонения подходят правила:',
+      'По отклонённым подходят правила:',
       [...learned].join(', '),
       '— запустите с --learn для только этих категорий.'
     );
+  } else if (rejected.length) {
+    console.log('Причины не распознаны по тексту — правила выводятся из заголовков (--learn).');
   }
 }
 
@@ -110,6 +122,27 @@ function applyRejections(matches) {
   console.log(`Готово: отклонено ${n} записей. Обновите дашборд (вкладка «Отклонённые»).`);
 }
 
+function backfillRejectedReasons(rejected) {
+  let n = 0;
+  for (const rec of rejected) {
+    const cur = String(rec.feedbackReason || '').trim();
+    const generic =
+      !cur ||
+      /^(техподдержка|техническая поддержка|l1 helpdesk)$/i.test(cur) ||
+      /не devops.*l2 поддержка/i.test(cur);
+    if (!generic) continue;
+    const hit = matchRejectRule(rec, DEFAULT_REJECT_RULES);
+    const reason = inferRejectReasonFromRecord({ ...rec, feedbackReason: '' });
+    if (!reason) continue;
+    updateVacancyRecord(rec.id, {
+      feedbackReason: reason,
+      ...rejectSourcePatchForManual(hit?.rule?.id || null),
+    });
+    n++;
+  }
+  if (n) console.log(`Уточнены причины у ${n} отклонённых.\n`);
+}
+
 function main() {
   if (listOnly) {
     printRejectedSummary();
@@ -117,11 +150,16 @@ function main() {
   }
 
   const q = loadQueue();
-  const learnedIds = learn ? [...ruleIdsLearnedFromRejected(q.filter((x) => x.status === 'rejected'))] : null;
+  const rejected = q.filter((x) => x.status === 'rejected');
+  backfillRejectedReasons(rejected);
+
+  const learnedIds = learn
+    ? [...ruleIdsLearnedFromRejected(q.filter((x) => x.status === 'rejected'))]
+    : null;
 
   if (learn && learnedIds.length === 0) {
-    console.log('Нет отклонённых с распознаваемой причиной (Тестировщик, PM, Аналитик и т.д.).');
-    console.log('Сначала отклоните несколько вручную в дашборде или укажите --only=qa,pm,...');
+    console.log('Нет отклонённых, подходящих под правила (ни по причине, ни по заголовку).');
+    console.log('Отклоните несколько в дашборде или укажите --only=qa,pm,supportDesk,...');
     process.exit(1);
   }
 

@@ -1,0 +1,29 @@
+# Регрессия качества без секретов и без личной очереди.
+name: Quality audit
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Golden regression (targeting + letters)
+        run: npm run audit:quality-golden
+
+      - name: Letter and quality unit tests
+        run: npm run test:ci-quality
+
+      - name: Dashboard static + import graph
+        run: npm run check:dashboard

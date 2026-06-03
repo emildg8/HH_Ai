@@ -88,6 +88,20 @@ function applyInstallCopies(root, variant) {
   }
   fs.mkdirSync(path.join(root, 'data'), { recursive: true });
   fs.mkdirSync(path.join(root, 'CV'), { recursive: true });
+  const demoCopy = runNode(
+    [
+      '--input-type=module',
+      '-e',
+      "import { copyDemoToQueueIfMissing, getQueueMeta } from './lib/demo-queue.mjs'; const r = copyDemoToQueueIfMissing(); const m = getQueueMeta(); if (!m.demoAvailable) process.exit(2); if (r.ok) process.exit(0); if (r.skipped && m.total > 0) process.exit(0); process.exit(1);",
+    ],
+    root
+  );
+  step(
+    variant,
+    'demo-queue',
+    demoCopy.status === 0,
+    demoCopy.status === 2 ? 'demo file missing' : demoCopy.status !== 0 ? 'queue empty after install' : ''
+  );
   step(variant, 'portable-config', fs.existsSync(path.join(root, 'config/secrets.local.env')));
 }
 

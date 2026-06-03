@@ -56,6 +56,31 @@ node scripts/hh-apply-batch.mjs --min-score=50 --limit=20 --batch-scope=noQuesti
 
 После завершения пишется отчёт **`data/batch-last-report.json`** и строка `[batch-report]` в журнал. В дашборде: статус «Последний батч…», API `GET /api/batch-report`.
 
+Перед запуском из дашборда выполняется precheck (`GET /api/batch-precheck`): показывает, сколько карточек реально готовы к отклику и топ причин блокировки (формат, нецелевая роль, качество письма и т.д.).
+
+## Качество писем перед батчем
+
+См. подробно [COVER-LETTER-PLAN.md](COVER-LETTER-PLAN.md).
+
+| Этап | Что происходит |
+|------|----------------|
+| Precheck | Модалка: готово / fixable / fail / missing, guardrail false positives |
+| Автоподготовка | Если `batchAutoPrepareLetters` — `bulk-improve` для fixable (prepare без LLM) |
+| Guardrail | При FP% выше `batchFalsePositiveMax` — предупреждение, батч не стартует без подтверждения |
+| После батча | `data/letter-quality-report.json`, пропуски с причиной `letter-quality` |
+
+**Настройки** в дашборде → Настройки → Батч: автоподготовка, лимит FP, авто-правила обучения.
+
+**Команды:**
+
+```bash
+npm run devops:regenerate-letters -- --only-fail --limit=30
+npm run nightly:quality-audit          # golden + baseline + снимок FP
+npm run audit:targeting-golden         # только регрессия config/targeting-golden-set.json
+```
+
+Сайдбар **«Письма»** в очереди: готово/fixable, baseline (FP%, golden, invite%), список карточек для правки.
+
 ## Журнал пропусков (2.0)
 
 В `data/hh-apply-chat.log` и консоли батча — короткие причины, например:
@@ -94,6 +119,9 @@ HH_PROFILE_RESUME_HASH=...   # из npm run devops:list-resumes
 | Сообщение | Действие |
 |-----------|----------|
 | `нецелевая вакансия` / `нет IT-профиля` | Нормально при `HH_BATCH_SKIP_OFF_TARGET=1` — вакансия не в вашем профиле |
+| `рабочая специальность` / `продажи/presale` / `сетевые/телеком` | Нормально: предфильтр отсёк роль до открытия браузера |
+| `служебная/рекламная карточка hh.ru` | Нормально: это не вакансия (PRO/подписка/промо) |
+| `письмо слишком короткое` / `плейсхолдер` / `не отражает профиль роли` | Улучшить `coverLetter.approvedText` перед батчем (карточка → письмо) |
 | `не выбрано резюме «…»` | `devops:list-resumes`, обновить hash/title |
 | `анкета: N вопр.` | Раздел «Анкета», не ждать отправки в батче |
 | `вакансия недоступна` | Архив / снята с публикации — пропуск нормален |

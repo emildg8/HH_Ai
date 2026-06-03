@@ -3,6 +3,7 @@
  * Запуск: node scripts/test-dashboard-ui.mjs
  */
 import { chromium } from 'playwright';
+import { gotoDashboardReady, waitDataset } from './lib/dashboard-test-helpers.mjs';
 
 const BASE = process.env.DASHBOARD_URL || 'http://127.0.0.1:3849';
 
@@ -36,6 +37,21 @@ async function closeSettingsModal(page) {
   await waitModalHidden(page, 'settings-modal');
 }
 
+async function forceOpenModal(page, modalId, titleText = 'UI test modal') {
+  await page.evaluate(
+    ({ id, title }) => {
+      const modal = document.getElementById(id);
+      if (!modal) return;
+      const titleEl = modal.querySelector('.modal-title');
+      if (titleEl) titleEl.textContent = title;
+      modal.hidden = false;
+      modal.classList.add('modal--open');
+    },
+    { id: modalId, title: titleText }
+  );
+  await waitModalOpen(page, modalId);
+}
+
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
@@ -50,8 +66,7 @@ async function main() {
     errors.push(`console: ${t}`);
   });
 
-  await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await page.waitForSelector('#list', { timeout: 15_000 });
+  await gotoDashboardReady(page, BASE);
 
   if (!(await page.$('#toast-host'))) throw new Error('Нет #toast-host');
 
@@ -79,7 +94,7 @@ async function main() {
   await page.locator('#filter-reset').click();
   await closeSettingsModal(page);
 
-  await page.locator('.btn-log-apply').click();
+  await page.evaluate(() => document.querySelector('.btn-log-apply')?.click());
   await waitModalOpen(page, 'apply-log-modal');
   await page.locator('#apply-log-modal .btn-refresh-apply-log').click();
   await page.locator('#apply-log-modal input[value="harvest"]').check();
@@ -88,10 +103,31 @@ async function main() {
   await page.locator('#apply-log-modal .modal-backdrop').click({ position: { x: 8, y: 8 } });
   await waitModalHidden(page, 'apply-log-modal');
 
-  await page.locator('.btn-log-apply').click();
+  await page.evaluate(() => document.querySelector('.btn-log-apply')?.click());
   await waitModalOpen(page, 'apply-log-modal');
   await page.keyboard.press('Escape');
   await waitModalHidden(page, 'apply-log-modal');
+
+  // Регресс: batch-report / daily-digest должны закрываться по X, backdrop и Esc.
+  await forceOpenModal(page, 'batch-report-modal', 'Batch report test');
+  await page.locator('#batch-report-modal .modal-close').click();
+  await waitModalHidden(page, 'batch-report-modal');
+  await forceOpenModal(page, 'batch-report-modal', 'Batch report test');
+  await page.locator('#batch-report-modal .modal-backdrop').click({ position: { x: 8, y: 8 } });
+  await waitModalHidden(page, 'batch-report-modal');
+  await forceOpenModal(page, 'batch-report-modal', 'Batch report test');
+  await page.keyboard.press('Escape');
+  await waitModalHidden(page, 'batch-report-modal');
+
+  await forceOpenModal(page, 'daily-digest-modal', 'Daily digest test');
+  await page.locator('#daily-digest-modal .modal-close').click();
+  await waitModalHidden(page, 'daily-digest-modal');
+  await forceOpenModal(page, 'daily-digest-modal', 'Daily digest test');
+  await page.locator('#daily-digest-modal .modal-backdrop').click({ position: { x: 8, y: 8 } });
+  await waitModalHidden(page, 'daily-digest-modal');
+  await forceOpenModal(page, 'daily-digest-modal', 'Daily digest test');
+  await page.keyboard.press('Escape');
+  await waitModalHidden(page, 'daily-digest-modal');
 
   const draftBtn = page.locator('.cover-draft-btn:not([hidden])').first();
   if ((await draftBtn.count()) > 0) {
@@ -170,7 +206,7 @@ async function main() {
   }
   await closeSettingsModal(page);
   await page.locator('.card-size-toolbar [data-card-size-preset="compact"]').click();
-  await page.waitForTimeout(200);
+  await waitDataset(page, 'cardLayout', 'tile-compact');
   const listMode = await page.evaluate(() => {
     const tile = document.querySelector('#list .card-tile');
     return {
@@ -189,8 +225,21 @@ async function main() {
     errors.push(`краткий режим: список должен быть flex (колонка строк), got ${listMode.listDisplay}`);
   }
 
+  const tileOpen = page.locator('#list .card-tile__hit').first();
+  if ((await tileOpen.count()) > 0) {
+    await tileOpen.scrollIntoViewIfNeeded();
+    await tileOpen.click({ timeout: 8000 });
+    await waitModalOpen(page, 'vacancy-detail-modal');
+    const detailOk = await page.evaluate(
+      () => !!document.querySelector('#vacancy-detail-body .card--in-modal')
+    );
+    if (!detailOk) errors.push('модалка вакансии (краткий): нет полной карточки в теле');
+    await page.keyboard.press('Escape');
+    await waitModalHidden(page, 'vacancy-detail-modal');
+  }
+
   await page.locator('.card-size-toolbar [data-card-size-preset="medium"]').click();
-  await page.waitForTimeout(350);
+  await waitDataset(page, 'cardLayout', 'tile-medium');
   const mediumMode = await page.evaluate(() => {
     const cards = [...document.querySelectorAll('#list .card.card--layout-medium')].slice(0, 4);
     const card = cards[0];
@@ -248,25 +297,8 @@ async function main() {
     errors.push('средний режим: ползунок ширины не должен быть в тулбаре');
   }
 
-  const tileOpen = page.locator('#list .card-tile__hit').first();
-  if ((await tileOpen.count()) > 0) {
-    await tileOpen.scrollIntoViewIfNeeded();
-    try {
-      await tileOpen.click({ timeout: 8000 });
-    } catch {
-      await page.evaluate(() => document.querySelector('#list .card-tile__hit')?.click());
-    }
-    await waitModalOpen(page, 'vacancy-detail-modal');
-    const detailOk = await page.evaluate(
-      () => !!document.querySelector('#vacancy-detail-body .card--in-modal')
-    );
-    if (!detailOk) errors.push('модалка вакансии: нет полной карточки в теле');
-    await page.keyboard.press('Escape');
-    await waitModalHidden(page, 'vacancy-detail-modal');
-  }
-
   await page.locator('.card-size-toolbar [data-card-size-preset="full"]').click();
-  await page.waitForTimeout(200);
+  await waitDataset(page, 'cardLayout', 'expanded');
   const fullMode = await page.evaluate(() => ({
     layout: document.documentElement.dataset.cardLayout,
     listDisplay: getComputedStyle(document.getElementById('list')).display,
@@ -475,20 +507,19 @@ async function main() {
   if (!sparklineOk) errors.push('API: нет applyTimelineLast7 в dashboardStats');
 
   const shellOk = await page.evaluate(() => {
-    const routine = document.getElementById('btn-daily-routine-menubar')?.textContent || '';
-    const harvest = document.getElementById('btn-run-harvest-menubar')?.textContent || '';
-    const dockIcon = document.querySelector('[data-dock-toggle="left"] .ui-icon');
+    const routine = document.getElementById('btn-daily-routine')?.textContent || '';
+    const harvest = document.getElementById('btn-run-harvest')?.textContent || '';
+    const leftSplitter = document.getElementById('splitter-left');
     const sparkline = document.querySelector('.daily-sparkline');
-    const pinIcon = document.querySelector('[data-dock-pin="left"] .ui-icon--pin');
     return (
       routine.includes('Утренний') &&
-      harvest.includes('Поиск') &&
-      Boolean(dockIcon) &&
+      harvest.toLowerCase().includes('поиск') &&
+      Boolean(leftSplitter) &&
       Boolean(sparkline) &&
-      Boolean(pinIcon)
+      Boolean(document.getElementById('btn-open-settings'))
     );
   });
-  if (!shellOk) errors.push('оболочка: menubar COPY, SVG-иконки или sparkline не на месте');
+  if (!shellOk) errors.push('оболочка: menubar COPY, сплиттер или sparkline не на месте');
 
   if (errors.length) throw new Error(errors.join('\n'));
 

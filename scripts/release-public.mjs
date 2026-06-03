@@ -56,7 +56,12 @@ function writeManifest(version) {
       'API keys',
     ],
     recipientGuide: 'docs/PUBLIC-RELEASE.md',
-    quickStart: ['npm install', 'npx playwright install chromium', 'cp .env.example .env', 'npm run login', 'npm run dashboard'],
+    quickStart: [
+      'powershell -File scripts/install-portable.ps1',
+      'npm run setup:first-run -- --demo',
+      'npm run login',
+      'npm run dashboard',
+    ],
   };
   const manifestPath = path.join(releasesDir, `RELEASE-public-v${version}.json`);
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');

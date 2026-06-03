@@ -3,18 +3,19 @@
  * См. docs/CARD-DESIGN-SYSTEM.md
  */
 
-/* ——— Токены ——— */
+/* ——— Токены (алиасы единой палитры --cq-*) ——— */
 html[data-card-layout='tile-compact'],
-html[data-card-layout='tile-medium'] {
+html[data-card-layout='tile-medium'],
+html[data-card-layout='expanded'] {
   --qc-gap: 0.5rem;
   --qc-pad: 0.6rem 0.7rem;
   --qc-radius: 0.65rem;
   --qc-score-h: 1.65rem;
   --qc-action: 1.5rem;
-  --qc-list-bg: var(--panel-bg-elevated, #18181e);
-  --qc-list-border: var(--panel-border, rgba(255, 255, 255, 0.08));
-  --qc-surface: var(--panel-bg-elevated, #18181e);
-  --qc-surface-border: var(--panel-border, rgba(255, 255, 255, 0.08));
+  --qc-list-bg: var(--cq-list-bg);
+  --qc-list-border: var(--cq-list-border);
+  --qc-surface: var(--cq-surface);
+  --qc-surface-border: var(--cq-surface-border);
 }
 
 /* ——— Прокрутка ——— */
@@ -69,7 +70,7 @@ html[data-card-layout='tile-medium'] #list.vacancy-grid--tiles {
   gap: var(--qc-gap);
   padding: var(--qc-pad);
   text-align: left;
-  cursor: pointer;
+  cursor: default;
   container-type: inline-size;
   container-name: qc-tile;
   transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
@@ -82,17 +83,20 @@ html[data-card-layout='tile-medium'] #list.vacancy-grid--tiles {
 }
 
 .card-tile:focus-visible {
-  outline: 2px solid var(--accent, #0a84ff);
-  outline-offset: 1px;
+  outline: none;
+}
+
+.card-tile__hit {
+  cursor: pointer;
 }
 
 .card-tile--active {
-  background: color-mix(in srgb, var(--accent, #0a84ff) 12%, transparent) !important;
+  background: var(--cq-surface-hover) !important;
 }
 
 .card-tile--active.card-tile--medium {
-  background: color-mix(in srgb, var(--accent, #0a84ff) 12%, transparent) !important;
-  box-shadow: inset 0.2rem 0 0 var(--accent, #0a84ff);
+  background: var(--cq-surface-hover) !important;
+  box-shadow: inset 0.2rem 0 0 var(--cq-accent-bar);
 }
 
 .card-tile--off-target {
@@ -118,29 +122,50 @@ html[data-card-layout='tile-medium'] #list.vacancy-grid--tiles {
   font-size: 0.8rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--text-primary, #f2f2f7);
+  background: var(--cq-score-neutral-bg);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--cq-score-neutral-border);
 }
 
 .card-tile--score-high .card-tile__score-ring {
-  background: color-mix(in srgb, var(--good, #30d158) 18%, transparent);
-  color: var(--good, #30d158);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good, #30d158) 35%, transparent);
+  background: var(--cq-score-high-bg);
+  color: var(--cq-score-high-color);
+  box-shadow: inset 0 0 0 1px var(--cq-score-high-border);
 }
 
 .card-tile--score-low .card-tile__score-ring {
-  background: color-mix(in srgb, var(--warn, #ffd60a) 14%, transparent);
-  color: var(--warn, #ffd60a);
+  background: var(--cq-score-low-bg);
+  color: var(--cq-score-low-color);
+  box-shadow: inset 0 0 0 1px var(--cq-score-low-border);
 }
 
 .card-tile--invited .card-tile__score-ring {
-  background: color-mix(in srgb, var(--good, #30d158) 22%, transparent);
-  color: var(--good, #30d158);
+  background: var(--cq-score-high-bg);
+  color: var(--cq-score-high-color);
 }
 
 .card-tile--questionnaire .card-tile__score-ring {
-  background: color-mix(in srgb, var(--accent, #0a84ff) 18%, transparent);
-  color: var(--accent, #0a84ff);
+  background: var(--ds-accent-muted);
+  color: var(--ds-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ds-accent) 35%, transparent);
+}
+
+.card-tile--letter-weak .card-tile__score-ring {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--hh-warn, var(--ds-warn)) 55%, transparent);
+}
+
+.card-tile--letter-strong .card-tile__score-ring {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hh-success, var(--ds-good)) 45%, transparent);
+}
+
+.card-tile__score[data-letter]::after {
+  content: attr(data-letter) '/10';
+  display: block;
+  font-size: 0.52rem;
+  font-weight: 600;
+  line-height: 1.1;
+  opacity: 0.88;
+  margin-top: 0.05rem;
 }
 
 /* Тело */
@@ -180,13 +205,14 @@ html[data-card-layout='tile-medium'] #list.vacancy-grid--tiles {
 .card-tile__title {
   font-weight: 600;
   line-height: 1.35;
-  color: var(--text-primary, #f2f2f7);
+  color: var(--text);
+  font-size: calc(0.95rem * var(--cfs, 1));
 }
 
 .card-tile__meta {
-  font-size: 0.78rem;
+  font-size: calc(0.78rem * var(--cfs, 1));
   line-height: 1.35;
-  color: var(--text-muted, rgba(235, 235, 245, 0.55));
+  color: var(--text-secondary);
 }
 
 .card-tile__hint {
@@ -434,20 +460,20 @@ html[data-card-layout='tile-compact'] #list.vacancy-grid--tiles > .card-tile--co
 
 .card-tile--compact:hover,
 .card-tile--compact:focus-within {
-  background: color-mix(in srgb, var(--accent, #0a84ff) 7%, transparent);
+  background: var(--cq-surface-hover);
 }
 
 .card-tile--compact.card-tile--score-high {
-  box-shadow: inset 0.2rem 0 0 color-mix(in srgb, var(--good, #30d158) 55%, transparent);
+  box-shadow: inset 0.2rem 0 0 var(--cq-good-bar);
 }
 
 .card-tile--compact.card-tile--invited,
 .card-tile--compact.card-tile--questionnaire {
-  box-shadow: inset 0.2rem 0 0 var(--accent, #0a84ff);
+  box-shadow: inset 0.2rem 0 0 var(--cq-accent-bar);
 }
 
 .card-tile--compact.card-tile--off-target {
-  box-shadow: inset 0.2rem 0 0 color-mix(in srgb, var(--warn, #ffd60a) 45%, transparent);
+  box-shadow: inset 0.2rem 0 0 var(--cq-warn-bar);
 }
 
 .card-tile--compact .card-tile__body {
@@ -493,14 +519,13 @@ html[data-card-layout='tile-compact'] #list.vacancy-grid--tiles > .card-tile--co
 }
 
 .card-tile--compact .card-tile__hh {
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0.55;
+  pointer-events: auto;
 }
 
 .card-tile--compact:hover .card-tile__hh:not([hidden]),
 .card-tile--compact:focus-within .card-tile__hh:not([hidden]) {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .card-tile--compact:hover .card-tile__chev,
@@ -1099,4 +1124,25 @@ html[data-card-layout='tile-medium'] #list.vacancy-grid--tiles > .card-tile--med
     width: auto;
     max-width: none;
   }
+}
+
+@media (max-width: 1024px) {
+  .card-tile__open,
+  .card-dismiss {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .card-tile__score-ring {
+    min-width: 2.75rem;
+    height: 2.75rem;
+  }
+}
+
+.card-tile__score--letter-weak {
+  box-shadow: inset 0 -2px 0 var(--hh-warn, var(--warn));
+}
+
+.card-tile__score--letter-strong {
+  box-shadow: inset 0 -2px 0 var(--ds-good, var(--good));
 }

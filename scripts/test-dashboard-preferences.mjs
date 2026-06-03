@@ -25,6 +25,12 @@ try {
     hhApplyChatMaxPerDay: 800,
     dashboardBatchSize: 25,
     hhApplyChatMaxPerMonth: 4000,
+    batchRequireRemote: false,
+    batchAutoPrepareLetters: true,
+    batchLetterRequireMetric: true,
+    requireRemote: true,
+    minMonthlyRub: 160000,
+    dashboardPlaywrightDisplayMode: 'visible',
   });
   assert.equal(getDashboardBatchSizeCap(), 25);
   const snap = applyRateLimitsSnapshot();
@@ -34,11 +40,18 @@ try {
   assert.equal(normalizeUiMode('expert'), 'expert');
   assert.equal(normalizeUiMode('simple'), 'simple');
   assert.ok(ui.panels.actionsPrimary);
+  const persisted = JSON.parse(fs.readFileSync(prefsPath, 'utf8'));
+  assert.equal(persisted.batchRequireRemote, false);
+  assert.equal(persisted.batchAutoPrepareLetters, true);
+  assert.equal(persisted.batchLetterRequireMetric, true);
+  assert.equal(persisted.requireRemote, true);
+  assert.equal(persisted.minMonthlyRub, 160000);
+  assert.equal(persisted.dashboardPlaywrightDisplayMode, 'visible');
 
   applyLayoutPreset('simple');
   const uiSimple = getDashboardUiConfig();
   assert.equal(uiSimple.uiMode, 'simple');
-  assert.equal(uiSimple.panels.kpi, false);
+  assert.equal(uiSimple.panels.kpi, true);
 
   console.log('test-dashboard-preferences: OK');
 } finally {

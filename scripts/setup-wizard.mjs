@@ -108,7 +108,8 @@ async function run() {
     console.log('  2. (опционально) CV/ — resume.pdf для LLM');
   }
   console.log('  3. npm run login');
-  console.log('  4. npm run setup:check && npm run dashboard\n');
+  console.log('  4. npm run setup:check && npm run dashboard');
+  console.log('  Быстрый путь без вопросов: npm run setup:first-run -- --demo\n');
   console.log('  docs/FIRST-RUN.md · docs/QUICKSTART.md\n');
 }
 

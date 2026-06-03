@@ -15,8 +15,7 @@ import { sessionProfilePath } from '../lib/paths.mjs';
 import { assertHhLoggedIn } from '../lib/hh-session-check.mjs';
 import { launchPersistentContextSafe, closeContextSafe } from '../lib/chromium-session.mjs';
 import { scrapeChatsFromNegotiations } from '../lib/hh-chat-sync.mjs';
-import { summarizeChatThread } from '../lib/chat-message-classify.mjs';
-import { loadQueue, updateVacancyRecord } from '../lib/store.mjs';
+import { mergeChatThreadsIntoQueue } from '../lib/chat-thread.mjs';
 import { saveNegotiationsCache, loadNegotiationsCache } from '../lib/hh-negotiations-sync.mjs';
 import { setSideJobPid, assertBrowserFreeForSideJob } from '../lib/browser-guard.mjs';
 
@@ -49,23 +48,11 @@ async function main() {
     cache.chatThreads = threads;
     saveNegotiationsCache(cache);
 
-    const q = loadQueue();
-    let updated = 0;
-    for (const rec of q) {
-      const thread = threads.find((t) => t.chatUrl && rec.hhApply?.chatUrl === t.chatUrl);
-      if (!thread) continue;
-      const summary = summarizeChatThread(thread.messages);
-      updateVacancyRecord(rec.id, {
-        hhApply: {
-          ...(rec.hhApply || {}),
-          chatMessages: thread.messages.slice(-20),
-          chatSummary: summary,
-          chatSyncedAt: thread.syncedAt,
-        },
-      });
-      updated++;
-    }
-    console.log(`[sync-chats] Потоков: ${threads.length}, обновлено карточек: ${updated}`);
+    const result = mergeChatThreadsIntoQueue(threads, cache);
+    saveNegotiationsCache(cache);
+    console.log(
+      `[sync-chats] Потоков: ${result.threads}, обновлено карточек: ${result.updated}, matched: ${result.matchedIds.length}`
+    );
   } finally {
     await closeContextSafe(ctx, 'sync-chats');
   }
