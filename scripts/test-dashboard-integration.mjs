@@ -38,16 +38,23 @@ const GET_APIS = [
   '/api/targeting/golden-regression',
   '/api/cover-letter/stats?batchScope=noQuestionnaire&queueStatus=pending&minScore=0',
   '/api/batch-precheck?batchScope=noQuestionnaire&queueStatus=pending&minScore=0&maxScore=0',
+  '/api/market-skills',
 ];
 
 const REQUIRED_IDS = [
   'btn-daily-routine',
   'btn-run-harvest',
+  'btn-ingest-url',
+  'btn-review-tier-a',
+  'ingest-url-modal',
+  'intelligence-digest-modal',
+  'market-skills-panel-root',
+  'btn-market-skills-refresh',
+  'sources-top-tier-list',
   'btn-batch-auto',
   'btn-batch-manual',
   'btn-open-settings',
   'btn-open-service',
-  'btn-open-shortcuts',
   'filter-search',
   'filter-reset',
   'score-threshold-input',
@@ -61,7 +68,7 @@ const REQUIRED_IDS = [
   'btn-job-stop',
   'btn-job-resume',
   'letter-stats-body',
-  'letter-center-panel',
+  'letter-issues-modal',
   'btn-letter-center-prepare',
   'batch-precheck-modal',
   'chat-inbox-modal',
@@ -191,6 +198,7 @@ async function main() {
     'open-chat-inbox',
     'questionnaire-reprobe',
     'questionnaire-prep',
+    'open-interview-hub',
   ]);
   for (const a of serviceActions) {
     if (!knownActions.has(a)) errors.push(`неизвестный data-service-action: ${a}`);
@@ -270,7 +278,7 @@ async function main() {
   await page.locator('#btn-open-settings').click();
   await waitModalOpen(page, 'settings-modal');
 
-  for (const tab of ['apply', 'letters', 'appearance']) {
+  for (const tab of ['apply', 'appearance']) {
     await page.locator(`[data-settings-tab="${tab}"]`).click();
     await page.waitForTimeout(80);
     const panelVisible = await page.evaluate((t) => {
@@ -319,15 +327,26 @@ async function main() {
   });
   if (!builderLayoutOk) errors.push('sidebar builder: нет двух колонок или слипшиеся подписи');
 
-  const firstCb = page.locator('#sidebar-panel-builder input[type="checkbox"]').first();
-  if ((await firstCb.count()) > 0) {
-    const wasChecked = await firstCb.isChecked();
-    await firstCb.click();
+  const sourcesCb = page.locator('[data-sidebar-panel-toggle="sources"]');
+  if ((await sourcesCb.count()) > 0) {
+    const wasChecked = await sourcesCb.isChecked();
+    await sourcesCb.click();
     await page.waitForTimeout(100);
-    if ((await firstCb.isChecked()) === wasChecked) {
-      errors.push('sidebar builder: чекбокс не переключился');
+    if ((await sourcesCb.isChecked()) === wasChecked) {
+      errors.push('sidebar builder: чекбокс sources не переключился');
     }
-    await firstCb.click();
+    await sourcesCb.click();
+  } else {
+    const firstCb = page.locator('#sidebar-panel-builder input[type="checkbox"]').first();
+    if ((await firstCb.count()) > 0) {
+      const wasChecked = await firstCb.isChecked();
+      await firstCb.click();
+      await page.waitForTimeout(100);
+      if ((await firstCb.isChecked()) === wasChecked) {
+        errors.push('sidebar builder: чекбокс не переключился');
+      }
+      await firstCb.click();
+    }
   }
 
   await page.locator('#settings-modal .modal-close').click();
@@ -338,7 +357,10 @@ async function main() {
   await page.locator('#splitter-left').hover();
   await page.waitForTimeout(150);
 
-  await page.locator('#btn-open-shortcuts').click();
+  await page.keyboard.press('Control+k');
+  await page.waitForSelector('#command-palette:not([hidden])', { timeout: 3000 });
+  await page.locator('#command-palette-input').fill('клавиш');
+  await page.locator('.command-palette__item').filter({ hasText: 'Горячие клавиши' }).click();
   await waitModalOpen(page, 'shortcuts-modal');
   await page.keyboard.press('Escape');
   await waitModalHidden(page, 'shortcuts-modal');
@@ -464,12 +486,12 @@ async function main() {
   await page.goto(`${BASE}/?settings=letters&focus=fp`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.waitForSelector('#settings-modal:not([hidden])', { timeout: 12_000 });
   const deepLinkOk = await page.evaluate(() => {
-    const panel = document.getElementById('settings-panel-letters');
+    const panel = document.getElementById('settings-panel-apply');
     const fp = document.getElementById('batch-false-positive-max');
     const url = new URL(location.href);
     return Boolean(panel && !panel.hidden && fp && !url.searchParams.has('settings'));
   });
-  if (!deepLinkOk) errors.push('settings deep link: letters+fp или очистка URL');
+  if (!deepLinkOk) errors.push('settings deep link: apply+fp или очистка URL');
   await page.locator('#settings-modal .modal-close--settings').click();
   await waitModalHidden(page, 'settings-modal');
 

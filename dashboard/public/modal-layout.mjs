@@ -5,10 +5,13 @@
 /** Корневые id модалок (порядок Escape — сверху вниз по приоритету закрытия). */
 export const MODAL_ROOT_IDS = [
   'batch-precheck-modal',
+  'letter-issues-modal',
   'letter-quality-hub-modal',
   'chat-inbox-modal',
   'settings-modal',
   'shortcuts-modal',
+  'ingest-url-modal',
+  'intelligence-digest-modal',
   'batch-report-modal',
   'daily-digest-modal',
   'approved-letter-modal',

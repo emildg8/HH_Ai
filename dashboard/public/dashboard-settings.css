@@ -1,0 +1,1185 @@
+/**
+ * Модалка «Настройки» v5 — боковая навигация, компактные группы.
+ */
+
+.settings-dialog--v5 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(960px, calc(100vw - 1.5rem));
+  height: min(92vh, 52.5rem);
+  min-width: min(720px, calc(100vw - 1.5rem));
+  min-height: min(36rem, calc(100vh - 2rem));
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100vh - 1rem);
+  padding: 0;
+  overflow: hidden;
+  resize: both;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--leading-normal);
+  color: var(--hh-text, var(--text-primary));
+}
+
+.modal-dialog.settings-dialog--v5 {
+  max-height: calc(100vh - 1rem);
+  overflow: hidden;
+  padding: 0;
+}
+
+.settings-dialog--v5.settings-dialog--user-sized {
+  resize: both;
+}
+
+.settings-dialog--v5:not(.settings-dialog--resizable) {
+  resize: none;
+}
+
+#settings-modal.modal--fullscreen .settings-dialog--v5 {
+  width: calc(100vw - 1rem) !important;
+  height: calc(100vh - 1rem) !important;
+  min-width: 0;
+  min-height: 0;
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100vh - 1rem);
+  resize: none;
+}
+
+#settings-modal.modal--fullscreen .settings-dialog--v5::after {
+  display: none;
+}
+
+.settings-dialog--v5.settings-dialog--resizable::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+  opacity: 0.35;
+  background: linear-gradient(135deg, transparent 50%, var(--hh-muted, var(--text-secondary)) 50%);
+}
+
+.settings-dialog--v5 .settings-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem 0.55rem;
+  border-bottom: 1px solid var(--hh-border, var(--border-subtle));
+  flex-shrink: 0;
+}
+
+.settings-dialog--v5 .settings-head .modal-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.settings-dialog--v5 .settings-head-btn,
+.settings-dialog--v5 .modal-close--settings {
+  width: 2rem;
+  height: 2rem;
+  min-width: 2rem;
+  min-height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--hh-radius-sm, var(--radius-sm));
+  border: 1px solid transparent;
+  font-size: 0;
+  line-height: 0;
+  box-sizing: border-box;
+  background: transparent;
+  color: var(--hh-muted, var(--text-secondary));
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.settings-dialog--v5 .settings-head-btn:hover,
+.settings-dialog--v5 .modal-close--settings:hover {
+  background: color-mix(in srgb, var(--hh-tile-hover, var(--surface-elevated)) 80%, transparent);
+  border-color: var(--hh-border, var(--border-subtle));
+  color: var(--hh-text, var(--text-primary));
+}
+
+.settings-dialog--v5 .settings-head-btn.btn-sm {
+  min-height: 2rem;
+  padding: 0;
+}
+
+.settings-dialog--v5 .settings-head-btn .ui-icon,
+.settings-dialog--v5 .modal-close--settings .ui-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex-shrink: 0;
+}
+
+.settings-dialog--v5 .settings-head .modal-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+}
+
+.settings-dialog--v5 .settings-head__lead {
+  margin: 0.15rem 0 0;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.settings-dialog--v5 .settings-shell {
+  display: grid;
+  grid-template-columns: 10.5rem minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-dialog--v5 .settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.45rem;
+  border-right: 1px solid var(--hh-border, var(--border-subtle));
+  background: color-mix(in srgb, var(--hh-elevated, var(--surface-elevated)) 60%, transparent);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.settings-dialog--v5 .settings-nav__btn {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: var(--hh-radius-sm, 0.35rem);
+  background: transparent;
+  text-align: left;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--hh-text, var(--text-primary));
+  cursor: pointer;
+}
+
+.settings-dialog--v5 .settings-nav__btn:hover {
+  background: color-mix(in srgb, var(--hh-accent) 8%, transparent);
+}
+
+.settings-dialog--v5 .settings-nav__btn.active {
+  border-left-color: var(--hh-accent, var(--accent));
+  background: color-mix(in srgb, var(--hh-accent) 12%, transparent);
+  color: var(--hh-accent, var(--accent));
+}
+
+.settings-dialog--v5 .settings-nav__btn--dirty::after {
+  content: '●';
+  margin-left: 0.35rem;
+  font-size: 0.55rem;
+  color: var(--hh-warn, #e8a317);
+  vertical-align: super;
+}
+
+.settings-dialog--v5 .settings-content {
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.65rem 0.85rem 0.75rem;
+}
+
+.settings-dialog--v5 .settings-section {
+  display: none;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.settings-dialog--v5 .settings-section.active {
+  display: flex;
+}
+
+.settings-dialog--v5 .settings-section__title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+}
+
+.settings-dialog--v5 .settings-section__lead {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+  line-height: 1.4;
+}
+
+.settings-dialog--v5 .settings-tip {
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+  background: color-mix(in srgb, var(--hh-accent) 6%, var(--hh-tile, var(--surface-elevated)));
+  border-radius: var(--hh-radius-sm, 0.35rem);
+  border: 1px solid var(--hh-border, var(--border-subtle));
+}
+
+.settings-dialog--v5 .settings-tip[hidden] {
+  display: none !important;
+}
+
+.settings-dialog--v5 .settings-group > :not(.settings-group__title) {
+  padding-left: 0.55rem;
+  padding-right: 0.55rem;
+  padding-bottom: 0.5rem;
+}
+
+.settings-dialog--v5 .settings-group > .settings-group__title {
+  padding-bottom: 0.15rem;
+}
+
+.settings-dialog--v5 .settings-preset-row,
+.settings-dialog--v5 .settings-preset-hint {
+  padding-left: 0.55rem;
+  padding-right: 0.55rem;
+}
+
+.settings-dialog--v5 .settings-group {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--hh-border, var(--border-subtle));
+  border-radius: var(--hh-radius-sm, 0.35rem);
+  background: var(--hh-tile, var(--surface-elevated));
+}
+
+.settings-dialog--v5 .settings-grid-pair {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.settings-dialog--v5 .settings-grid-pair > .settings-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-dialog--v5 .settings-group--balanced {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-dialog--v5 #settings-limits-hh .settings-fields--trio {
+  margin-top: auto;
+}
+
+.settings-dialog--v5 #settings-letters-batch .settings-actions {
+  margin-top: auto;
+}
+
+.settings-dialog--v5 .settings-field--threshold-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.settings-dialog--v5 .settings-field--threshold-block .settings-apply-preview {
+  margin: 0.15rem 0 0;
+}
+
+.settings-dialog--v5 .settings-inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0 0.55rem 0.5rem;
+}
+
+.settings-dialog--v5 .settings-field--compact {
+  flex: 0 0 auto;
+  min-width: 6.5rem;
+}
+
+.settings-dialog--v5 .settings-check--inline {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  align-items: center;
+}
+
+.settings-dialog--v5 .settings-check--inline input[type='checkbox'] {
+  margin-top: 0;
+}
+
+.settings-dialog--v5 .settings-check--inline .settings-check__text {
+  display: inline;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-dialog--v5 .settings-check--inline .settings-check__text strong {
+  display: inline;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.settings-dialog--v5 .settings-field--row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.35rem 0.65rem;
+  align-items: center;
+  padding-left: 0.55rem;
+  padding-right: 0.55rem;
+}
+
+.settings-dialog--v5 .settings-field--row .settings-field__label {
+  margin: 0;
+}
+
+.settings-dialog--v5 .settings-field__hint--inline {
+  display: inline;
+  font-weight: var(--font-weight-normal);
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.settings-dialog--v5 .settings-check-list--compact {
+  gap: 0.15rem;
+}
+
+.settings-dialog--v5 .settings-check-list--compact .settings-check {
+  padding: 0.2rem 0.35rem;
+  margin: 0 -0.35rem;
+}
+
+.settings-dialog--v5 .field-input--narrow {
+  width: 4.5rem;
+  min-width: 4.5rem;
+  max-width: 100%;
+}
+
+.settings-dialog--v5 .settings-group--span-full {
+  width: 100%;
+}
+
+.settings-dialog--v5 .settings-group.settings-focus-pulse,
+.settings-dialog--v5 .settings-check.settings-focus-pulse {
+  animation: settings-focus-pulse 1.8s ease-out;
+  outline: 2px solid color-mix(in srgb, var(--hh-accent, var(--accent)) 55%, transparent);
+  outline-offset: 2px;
+}
+
+@keyframes settings-focus-pulse {
+  0% {
+    outline-color: color-mix(in srgb, var(--hh-accent, var(--accent)) 75%, transparent);
+    background: color-mix(in srgb, var(--hh-accent, var(--accent)) 12%, var(--hh-tile, var(--surface-elevated)));
+  }
+  100% {
+    outline-color: transparent;
+    background: var(--hh-tile, var(--surface-elevated));
+  }
+}
+
+.settings-dialog--v5 .settings-insights__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.settings-dialog--v5 .settings-insights__row {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--hh-border, var(--border-subtle));
+  border-radius: var(--hh-radius-sm, 0.35rem);
+  background: var(--hh-elevated, var(--surface-elevated));
+}
+
+.settings-dialog--v5 .settings-insights__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  flex-wrap: wrap;
+}
+
+.settings-dialog--v5 .settings-insights__label {
+  flex: 1 1 auto;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  min-width: 0;
+}
+
+.settings-dialog--v5 .settings-insights__count {
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-dialog--v5 .settings-insights__action {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--hh-accent, var(--accent));
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.settings-dialog--v5 .settings-insights__action:hover {
+  color: color-mix(in srgb, var(--hh-accent, var(--accent)) 80%, white);
+}
+
+.settings-dialog--v5 .settings-insights__samples {
+  margin: 0.2rem 0 0;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+  line-height: 1.35;
+}
+
+.settings-dialog--v5 .settings-insights__fp {
+  margin: 0 0 0.5rem;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+  line-height: 1.4;
+}
+
+.settings-dialog--v5 .settings-insights__meta {
+  margin: 0 0 0.5rem;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.settings-dialog--v5 .settings-import-textarea {
+  width: 100%;
+  min-height: 6rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs);
+}
+
+.settings-dialog--v5 .settings-group__title {
+  padding: 0.45rem 0.55rem 0.3rem;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--hh-text, var(--text-primary));
+}
+
+.settings-dialog--v5 .settings-group__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.25rem 0.55rem 0.5rem;
+}
+
+.settings-dialog--v5 .settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(5.5rem, 8.5rem);
+  gap: 0.35rem 0.65rem;
+  align-items: start;
+}
+
+.settings-dialog--v5 .settings-row--stack {
+  grid-template-columns: 1fr;
+}
+
+.settings-dialog--v5 .settings-row__label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--hh-text, var(--text-primary));
+}
+
+.settings-dialog--v5 .settings-row__hint {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--hh-muted, var(--text-secondary));
+  line-height: 1.35;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.settings-dialog--v5 .settings-group__desc {
+  margin: 0 0 0.35rem;
+  padding: 0 0.55rem;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+  line-height: 1.4;
+}
+
+.settings-dialog--v5 .settings-group--highlight {
+  border-color: color-mix(in srgb, var(--hh-accent) 35%, var(--hh-border, var(--border-subtle)));
+  background: color-mix(in srgb, var(--hh-accent) 5%, var(--hh-tile, var(--surface-elevated)));
+}
+
+.settings-dialog--v5 .settings-fold {
+  border: 1px solid var(--hh-border, var(--border-subtle));
+  border-radius: var(--hh-radius-sm, 0.35rem);
+  padding: 0.35rem 0.55rem 0.5rem;
+  background: var(--hh-tile, var(--surface-elevated));
+}
+
+.settings-dialog--v5 .settings-fold__summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--hh-text, var(--text-primary));
+  list-style: none;
+}
+
+.settings-dialog--v5 .settings-fold__summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-dialog--v5 .settings-fold__body {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.settings-dialog--v5 .settings-threshold-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.settings-dialog--v5 .settings-range {
+  width: 100%;
+  accent-color: var(--hh-accent, var(--accent));
+}
+
+.settings-dialog--v5 .field-input--narrow {
+  width: 4rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-dialog--v5 .settings-apply-preview,
+.settings-dialog--v5 .settings-targeting-preview {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+  line-height: 1.35;
+}
+
+.settings-dialog--v5 .settings-kpi-mini {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.settings-dialog--v5 .settings-kpi-mini__item {
+  padding: 0.35rem 0.45rem;
+  border-radius: var(--hh-radius-sm, 0.35rem);
+  background: color-mix(in srgb, var(--hh-accent) 6%, var(--hh-elevated, var(--surface-elevated)));
+  border: 1px solid var(--hh-border, var(--border-subtle));
+}
+
+.settings-dialog--v5 .settings-kpi-mini__label {
+  display: block;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.settings-dialog--v5 .settings-kpi-mini__value {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-dialog--v5 .settings-seg--mode {
+  max-width: 20rem;
+  padding: 0 0.55rem 0.5rem;
+}
+
+.settings-dialog--v5 .settings-row .field-input {
+  width: 100%;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-dialog--v5 .settings-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.settings-dialog--v5 .settings-check {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.settings-dialog--v5 .settings-check__text strong {
+  display: block;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.settings-dialog--v5 .settings-check__text small {
+  display: block;
+  margin-top: 0.08rem;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+  line-height: 1.35;
+}
+
+.settings-dialog--v5 .settings-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.settings-dialog--v5 .settings-preset-hint {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+  line-height: 1.35;
+}
+
+.settings-dialog--v5 .settings-health-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.settings-dialog--v5 .settings-health-pill {
+  padding: 0.2rem 0.45rem;
+  font-size: var(--text-xs);
+  border-radius: var(--radius-full, 999px);
+  border: 1px solid var(--hh-border, var(--border-subtle));
+  background: var(--hh-elevated, var(--surface-elevated));
+  max-width: 100%;
+  line-height: 1.35;
+}
+
+.settings-dialog--v5 .settings-health-pill--good {
+  border-color: color-mix(in srgb, var(--hh-success, #3dd68c) 45%, transparent);
+  color: var(--hh-success, #3dd68c);
+}
+
+.settings-dialog--v5 .settings-health-pill--warn {
+  border-color: color-mix(in srgb, var(--hh-warn, #e8a317) 45%, transparent);
+  color: var(--hh-warn, #e8a317);
+  cursor: pointer;
+}
+
+.settings-dialog--v5 .settings-health-pill--muted {
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.settings-dialog--v5 .settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.settings-dialog--v5 .settings-expert-fold {
+  margin-top: 0.25rem;
+  font-size: var(--text-xs);
+}
+
+.settings-dialog--v5 .settings-expert-fold summary {
+  cursor: pointer;
+  color: var(--hh-muted, var(--text-secondary));
+  font-weight: 600;
+  list-style: none;
+}
+
+.settings-dialog--v5 .settings-expert-fold summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-dialog--v5 .settings-expert-fold__body {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.settings-dialog--v5 .settings-fields--trio {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.settings-dialog--v5 .settings-fields--duo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.settings-dialog--v5 .settings-subblock {
+  margin-top: 0.35rem;
+}
+
+.settings-dialog--v5 .settings-subblock__label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.settings-dialog--v5 .settings-footer--v5 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  border-top: 1px solid var(--hh-border, var(--border-subtle));
+  flex-shrink: 0;
+}
+
+.settings-dialog--v5 .settings-footer__note {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.settings-dialog--v5 .settings-footer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* Наследие: карточки и инсайты внутри v5 */
+.settings-dialog--v5 .settings-card {
+  border: 1px solid var(--hh-border, var(--border-subtle));
+  border-radius: var(--hh-radius-sm, 0.35rem);
+  padding: 0.5rem 0.55rem;
+  background: var(--hh-tile, var(--surface-elevated));
+}
+
+.settings-dialog--v5 .settings-card__title {
+  margin: 0 0 0.2rem;
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.settings-dialog--v5 .settings-card__desc {
+  margin: 0 0 0.35rem;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+  line-height: 1.35;
+}
+
+.settings-dialog--v5 .settings-card__desc--tight {
+  margin-bottom: 0.25rem;
+}
+
+.settings-dialog--v5 .settings-footer__autosave {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.settings-dialog--v5 .settings-footer-expert {
+  margin-top: 0.2rem;
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.settings-dialog--v5 .settings-footer-expert summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+
+.settings-dialog--v5 .settings-footer-expert summary::-webkit-details-marker {
+  display: none;
+}
+
+@media (min-width: 480px) {
+  .settings-dialog--v5 .settings-inline-row {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+}
+
+@media (min-width: 720px) {
+  .settings-dialog--v5 .settings-grid-pair {
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+  }
+
+  .settings-dialog--v5 .settings-grid-pair > .settings-group {
+    height: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .settings-dialog--v5 {
+    width: calc(100vw - 1rem);
+    height: calc(100vh - 1rem);
+    min-width: 0;
+    min-height: 0;
+    resize: none;
+  }
+
+  .settings-dialog--v5 .settings-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .settings-dialog--v5 .settings-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--hh-border, var(--border-subtle));
+  }
+
+  .settings-dialog--v5 .settings-nav__btn {
+    flex: 0 0 auto;
+    border-left: none;
+    border-bottom: 2px solid transparent;
+  }
+
+  .settings-dialog--v5 .settings-nav__btn.active {
+    border-left: none;
+    border-bottom-color: var(--hh-accent, var(--accent));
+  }
+}
+
+/* ── v5: единая типографика, поля и контролы (перекрывает legacy style.css) ── */
+.workspace-shell--v4 .settings-dialog--v5 .settings-field,
+.settings-dialog--v5 .settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-field__meta,
+.settings-dialog--v5 .settings-field__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-height: 0;
+  justify-content: flex-start;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-field__label,
+.workspace-shell--v4 .settings-dialog--v5 .settings-subblock__label,
+.workspace-shell--v4 .settings-dialog--v5 .settings-tuning__label,
+.settings-dialog--v5 .settings-field__label,
+.settings-dialog--v5 .settings-subblock__label,
+.settings-dialog--v5 .settings-tuning__label {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
+  color: var(--hh-text, var(--text-primary));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-field__hint,
+.workspace-shell--v4 .settings-dialog--v5 .settings-check__text small,
+.workspace-shell--v4 .settings-dialog--v5 .layout-preset-hint,
+.settings-dialog--v5 .settings-field__hint,
+.settings-dialog--v5 .settings-check__text small,
+.settings-dialog--v5 .layout-preset-hint {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--leading-normal);
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-check__text strong,
+.settings-dialog--v5 .settings-check__text strong {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
+  color: var(--hh-text, var(--text-primary));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .field-input,
+.settings-dialog--v5 .field-input {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--leading-normal);
+  color: var(--hh-text, var(--text-primary));
+  background: var(--hh-elevated, var(--surface-elevated));
+  border: 1px solid var(--hh-border, var(--border-subtle));
+  border-radius: var(--hh-radius-sm, var(--radius-sm));
+  padding: 0.38rem 0.5rem;
+  box-sizing: border-box;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .field-input:focus,
+.settings-dialog--v5 .field-input:focus {
+  border-color: color-mix(in srgb, var(--hh-accent, var(--accent)) 55%, var(--hh-border, var(--border-subtle)));
+  box-shadow: var(--ds-focus-ring);
+  outline: none;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-seg.segmented,
+.settings-dialog--v5 .settings-seg.segmented {
+  background: var(--hh-elevated, var(--surface-elevated));
+  border: 1px solid var(--hh-border, var(--border-subtle));
+  border-radius: var(--hh-radius-sm, var(--radius-sm));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-seg .seg-btn,
+.settings-dialog--v5 .settings-seg .seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-normal);
+  line-height: 1;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-seg .seg-btn.active,
+.workspace-shell--v4 .settings-dialog--v5 .settings-seg .seg-btn[aria-pressed='true'],
+.settings-dialog--v5 .settings-seg .seg-btn.active,
+.settings-dialog--v5 .settings-seg .seg-btn[aria-pressed='true'] {
+  font-weight: var(--font-weight-semibold);
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-seg--presets .seg-btn,
+.settings-dialog--v5 .settings-seg--presets .seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.35rem 0.4rem;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-check,
+.settings-dialog--v5 .settings-check {
+  align-items: flex-start;
+  padding: 0.3rem 0.35rem;
+  margin: 0 -0.35rem;
+  border-radius: var(--hh-radius-sm, var(--radius-sm));
+  transition: background 0.12s ease;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-check:hover,
+.settings-dialog--v5 .settings-check:hover {
+  background: color-mix(in srgb, var(--hh-tile-hover, var(--surface-elevated)) 65%, transparent);
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-check input[type='checkbox'],
+.settings-dialog--v5 .settings-check input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.1rem;
+  accent-color: var(--hh-accent, var(--accent));
+  flex-shrink: 0;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-fields,
+.workspace-shell--v4 .settings-dialog--v5 .settings-fields--duo,
+.workspace-shell--v4 .settings-dialog--v5 .settings-fields--trio,
+.settings-dialog--v5 .settings-fields,
+.settings-dialog--v5 .settings-fields--duo,
+.settings-dialog--v5 .settings-fields--trio {
+  align-items: end;
+  gap: var(--space-3, 0.75rem);
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-onboarding,
+.settings-dialog--v5 .settings-onboarding {
+  margin: 0 0.55rem 0.35rem;
+  padding: var(--space-3, 0.75rem);
+  border-radius: var(--hh-radius-sm, var(--radius-sm));
+  background: var(--hh-accent-muted, var(--ds-accent-muted));
+  border: 1px solid color-mix(in srgb, var(--hh-accent, var(--accent)) 28%, var(--hh-border, var(--border-subtle)));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-onboarding__text,
+.settings-dialog--v5 .settings-onboarding__text {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--hh-text, var(--text-primary));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-snapshot,
+.settings-dialog--v5 .settings-snapshot {
+  margin: 0.35rem 0.55rem 0;
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  background: var(--hh-elevated, var(--surface-elevated));
+  border: 1px dashed color-mix(in srgb, var(--hh-border, var(--border-subtle)) 85%, var(--hh-accent, var(--accent)));
+  border-radius: var(--hh-radius-sm, var(--radius-sm));
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-snapshot__bad,
+.settings-dialog--v5 .settings-snapshot__bad {
+  color: var(--ds-bad, var(--hh-bad));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-snapshot__muted,
+.settings-dialog--v5 .settings-snapshot__muted {
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-warnings,
+.settings-dialog--v5 .settings-warnings {
+  margin: 0.35rem 0.55rem 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-warn--warn,
+.settings-dialog--v5 .settings-warn--warn {
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--hh-radius-sm, var(--radius-sm));
+  background: var(--hh-warn-muted, var(--ds-warn-muted));
+  border: 1px solid color-mix(in srgb, var(--hh-warn, var(--ds-warn)) 35%, var(--hh-border, var(--border-subtle)));
+  color: var(--hh-text, var(--text-primary));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-kpi-mini__label,
+.settings-dialog--v5 .settings-kpi-mini__label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-group__desc code,
+.settings-dialog--v5 .settings-group__desc code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+  background: var(--hh-elevated, var(--surface-elevated));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-footer__autosave,
+.workspace-shell--v4 .settings-dialog--v5 .settings-hint,
+.settings-dialog--v5 .settings-footer__autosave,
+.settings-dialog--v5 .settings-hint {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-hint--saved,
+.settings-dialog--v5 .settings-hint--saved {
+  color: var(--hh-success, var(--ds-good));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-hint--pending,
+.settings-dialog--v5 .settings-hint--pending {
+  color: var(--hh-warn, var(--ds-warn));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-import-panel,
+.settings-dialog--v5 .settings-import-panel {
+  margin-top: 0.35rem;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .btn,
+.settings-dialog--v5 .btn {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-list-layout__footer,
+.settings-dialog--v5 .settings-list-layout__footer {
+  margin-top: var(--space-3, 0.75rem);
+  padding-top: var(--space-3, 0.75rem);
+  border-top: 1px solid var(--hh-border, var(--border-subtle));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-insights__row,
+.settings-dialog--v5 .settings-insights__row {
+  border: 1px solid var(--hh-panel-border, var(--hh-border, var(--border-subtle)));
+  border-radius: var(--hh-panel-radius-sm, var(--hh-radius-sm, var(--radius-sm)));
+  background: var(--hh-surface-tile, var(--hh-tile, var(--surface-elevated)));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-insights__label,
+.settings-dialog--v5 .settings-insights__label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-insights__action,
+.settings-dialog--v5 .settings-insights__action {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Переполнение текста (светлая тема и длинные preview) */
+.workspace-shell--v4 .settings-dialog--v5 .settings-field-tip,
+.workspace-shell--v4 .settings-dialog--v5 .settings-apply-preview,
+.workspace-shell--v4 .settings-dialog--v5 .settings-field__hint,
+.workspace-shell--v4 .settings-dialog--v5 .settings-group__desc,
+.workspace-shell--v4 .settings-dialog--v5 .settings-check__text small,
+.settings-dialog--v5 .settings-field-tip,
+.settings-dialog--v5 .settings-apply-preview,
+.settings-dialog--v5 .settings-field__hint,
+.settings-dialog--v5 .settings-group__desc,
+.settings-dialog--v5 .settings-check__text small {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-group,
+.settings-dialog--v5 .settings-group {
+  min-width: 0;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 .settings-field-tip,
+.settings-dialog--v5 .settings-field-tip {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.workspace-shell--v4 .settings-dialog--v5 #settings-apply-queue .settings-field__meta,
+.settings-dialog--v5 #settings-apply-queue .settings-field__meta {
+  min-height: 0;
+  justify-content: flex-start;
+}
+
+.workspace-shell--v4 .settings-dialog--v5 #settings-apply-queue .settings-field,
+.settings-dialog--v5 #settings-apply-queue .settings-field {
+  align-items: stretch;
+  justify-content: flex-start;
+}

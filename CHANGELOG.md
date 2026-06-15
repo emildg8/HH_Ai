@@ -6,7 +6,10 @@
 
 ### Добавлено
 
-- **Release prep:** `npm run quickstart:gate`, `smoke-activation-check.mjs`, activation smoke в `smoke:release`; `releases/RELEASE-v3.2.0-notes.md`; docs 3.2.0 (DISTRIBUTION, QUICKSTART North Star).
+- **Рынок навыков (2R):** advisory-слой `lib/market-skills.mjs`, `config/market-skills.example.json`, панель в service drawer, `GET /api/market-skills`, `npm run devops:aggregate-market-skills`, флаг `marketSkillsEnabled`.
+- **Настройки дашборда:** дефолт модалки 960×840, иконки шапки (close/expand), полировка вкладок «Отклики» и «Интерфейс», seg-btn и чекбокс удалёнки.
+- **3.3 prep:** onboarding 4 шага (login → demo → approve → batch), `POST /api/chat-save-draft`, Alt+Shift+L «Письмо &lt;6», `npm run friction:capture`, [ROADMAP-MAP-2026-Q3.md](docs/ROADMAP-MAP-2026-Q3.md).
+- **UX:** KPI «Чаты» и «Письмо &lt;6» кликабельны; digest чатов в service drawer (CH-05); сброс wizard из Ctrl+K; `test:chat-save-draft`.
 
 ## [3.2.0] — 2026-06-03
 

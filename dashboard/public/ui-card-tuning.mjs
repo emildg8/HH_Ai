@@ -5,13 +5,6 @@ import { applyCardDensity, normalizeCardDensity } from './ui-card-density.mjs';
 const STORAGE_KEY = 'hh-dashboard-card-tuning';
 const LEGACY_DENSITY_KEY = 'hh-dashboard-card-density';
 
-const DEFAULTS = {
-  colW: 40,
-  minH: 0,
-  textAmount: 50,
-  fontScale: 100,
-};
-
 /** Пресеты размера карточки: ширина сетки + объём текста. */
 export const CARD_LAYOUTS = ['tile-compact', 'tile-medium', 'expanded'];
 
@@ -45,6 +38,13 @@ export const CARD_SIZE_PRESETS = {
   },
 };
 
+const DEFAULTS = {
+  colW: CARD_SIZE_PRESETS.medium.colW,
+  minH: CARD_SIZE_PRESETS.medium.minH,
+  textAmount: CARD_SIZE_PRESETS.medium.textAmount,
+  fontScale: CARD_SIZE_PRESETS.medium.fontScale,
+};
+
 /** @param {string} layout */
 export function normalizeCardLayout(layout) {
   const ly = String(layout || '').trim();
@@ -55,7 +55,8 @@ export function normalizeCardLayout(layout) {
 }
 
 export function isTileBrowseLayout(layout) {
-  return normalizeCardLayout(layout) === 'tile-compact';
+  const v = normalizeCardLayout(layout);
+  return v === 'tile-compact' || v === 'tile-medium';
 }
 
 /** @param {string} layout */
@@ -65,9 +66,9 @@ export function applyCardLayout(layout) {
   const list = document.getElementById('list');
   if (!list) return;
   list.dataset.cardLayout = v;
-  list.classList.toggle('vacancy-grid--tiles', v === 'tile-compact');
+  list.classList.toggle('vacancy-grid--tiles', v === 'tile-compact' || v === 'tile-medium');
   list.classList.toggle('vacancy-grid--expanded', v === 'expanded');
-  list.classList.toggle('vacancy-grid--medium', v === 'tile-medium');
+  list.classList.toggle('vacancy-grid--medium', false);
 }
 
 export function layoutForDensity(density) {
@@ -185,7 +186,11 @@ export function readCardTuning() {
   } catch {
     /* ignore */
   }
-  return { ...activeDefaults };
+  return normalizeCardTuning({
+    ...activeDefaults,
+    sizePreset: 'medium',
+    layout: 'tile-medium',
+  });
 }
 
 let lastDensity = null;

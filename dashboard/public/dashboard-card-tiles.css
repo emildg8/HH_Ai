@@ -373,7 +373,8 @@ html[data-card-layout='tile-medium'] #list.vacancy-grid--tiles {
 
 .card-tile__hh,
 .card-tile__chev,
-.card-tile .card-dismiss {
+.card-tile .card-dismiss,
+.card-tile__decision {
   width: var(--qc-action);
   height: var(--qc-action);
   margin: 0;
@@ -383,6 +384,41 @@ html[data-card-layout='tile-medium'] #list.vacancy-grid--tiles {
   justify-content: center;
   flex-shrink: 0;
   box-sizing: border-box;
+}
+
+.card-tile__decision {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 0.35rem;
+  background: transparent;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-secondary, rgba(235, 235, 245, 0.75));
+}
+
+.card-tile__decision[hidden] {
+  display: none !important;
+}
+
+.btn-tile-approve:hover,
+.btn-tile-approve:focus-visible {
+  border-color: color-mix(in srgb, var(--good, #30d158) 55%, transparent);
+  background: color-mix(in srgb, var(--good, #30d158) 14%, transparent);
+  color: var(--good, #30d158);
+}
+
+.btn-tile-reject:hover,
+.btn-tile-reject:focus-visible {
+  border-color: color-mix(in srgb, var(--bad, #ff453a) 55%, transparent);
+  background: color-mix(in srgb, var(--bad, #ff453a) 12%, transparent);
+  color: var(--bad, #ff453a);
+}
+
+.card-tile--compact .card-tile__decision {
+  display: none !important;
 }
 
 .card-tile__hh {
@@ -810,6 +846,12 @@ html[data-card-layout='tile-medium'] #list.vacancy-grid--tiles > .card-tile--med
   max-width: none;
 }
 
+.card-tile--medium .card-tile__actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.15rem;
+}
+
 .card-tile--medium .card-tile__badge {
   max-width: 5.75rem;
   overflow: hidden;
@@ -1082,17 +1124,9 @@ html[data-card-layout='tile-medium'] #list.vacancy-grid--tiles > .card-tile--med
 }
 
 @container vacancy-detail (min-width: 44.01rem) {
-  .vacancy-detail-body > .card--in-modal .card-foot {
-    display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-    gap: 0.65rem 1rem;
-    align-items: start;
-  }
-
-  .vacancy-detail-body > .card--in-modal .card-foot .card-section + .card-section {
-    border-top: none;
-    padding-top: 0;
-    margin-top: 0;
+  .vacancy-detail-body > .card--in-modal .card-foot__primary {
+    flex-wrap: nowrap;
+    align-items: center;
   }
 
   .vacancy-detail-body > .card--in-modal .apply-chat-row {

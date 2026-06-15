@@ -29,7 +29,7 @@ const CHECKS = [
   'funnel-modal-title',
   'apply-view-tabs',
   'dock-toggle-pressed',
-  'letter-center-panel',
+  'letter-issues-modal',
   'job-control-named',
 ];
 
@@ -114,7 +114,7 @@ async function main() {
       ok('funnel-modal-title', Boolean(document.getElementById('funnel-modal-title')));
       ok('apply-view-tabs', document.querySelectorAll('[data-apply-view]').length >= 5);
       ok('dock-toggle-pressed', [...document.querySelectorAll('[data-dock-toggle]')].every((b) => b.hasAttribute('aria-pressed')));
-      ok('letter-center-panel', Boolean(document.getElementById('letter-center-panel')));
+      ok('letter-issues-modal', Boolean(document.getElementById('letter-issues-modal')));
       ok('job-control-named', Boolean(document.getElementById('job-control-actions')));
 
       return fails;

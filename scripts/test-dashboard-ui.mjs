@@ -52,6 +52,12 @@ async function forceOpenModal(page, modalId, titleText = 'UI test modal') {
   await waitModalOpen(page, modalId);
 }
 
+async function clickCardSizePreset(page, preset) {
+  await openSettingsTab(page, 'appearance');
+  await page.locator(`#panel-appearance [data-card-size-preset="${preset}"]`).click();
+  await page.waitForTimeout(120);
+}
+
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
@@ -205,7 +211,8 @@ async function main() {
     if (!applied) errors.push(`плотность карточек: не применился режим ${dens} (полоска ${amount})`);
   }
   await closeSettingsModal(page);
-  await page.locator('.card-size-toolbar [data-card-size-preset="compact"]').click();
+  await clickCardSizePreset(page, 'compact');
+  await closeSettingsModal(page);
   await waitDataset(page, 'cardLayout', 'tile-compact');
   const listMode = await page.evaluate(() => {
     const tile = document.querySelector('#list .card-tile');
@@ -238,66 +245,64 @@ async function main() {
     await waitModalHidden(page, 'vacancy-detail-modal');
   }
 
-  await page.locator('.card-size-toolbar [data-card-size-preset="medium"]').click();
+  await clickCardSizePreset(page, 'medium');
+  await closeSettingsModal(page);
   await waitDataset(page, 'cardLayout', 'tile-medium');
   const mediumMode = await page.evaluate(() => {
-    const cards = [...document.querySelectorAll('#list .card.card--layout-medium')].slice(0, 4);
-    const card = cards[0];
-    const cs = (el) => (el ? getComputedStyle(el) : null);
-    const cardCs = cs(card);
-    const bodyCs = cs(card?.querySelector('.card-body'));
-    const footCs = cs(card?.querySelector('.card-foot--v4'));
-    const footRows = new Map();
-    for (const c of cards) {
-      const rowKey = Math.round(c.getBoundingClientRect().top / 12);
-      if (!footRows.has(rowKey)) footRows.set(rowKey, []);
-      footRows.get(rowKey).push(c);
-    }
-    let footAlignedInRow = true;
-    for (const rowCards of footRows.values()) {
-      if (rowCards.length < 2) continue;
-      const tops = rowCards.map(
-        (c) => c.querySelector('.card-foot--v4')?.getBoundingClientRect().top ?? 0
-      );
-      if (Math.max(...tops) - Math.min(...tops) > 6) footAlignedInRow = false;
-    }
+    const tiles = [...document.querySelectorAll('#list .card-tile--medium')].slice(0, 4);
+    const tile = tiles[0];
     return {
       layout: document.documentElement.dataset.cardLayout,
       listDisplay: getComputedStyle(document.getElementById('list')).display,
-      hasCard: !!card,
-      title: card?.querySelector('.title-link')?.textContent?.trim().length > 0,
-      hasApply: !!card?.querySelector('.btn-apply-auto'),
-      hasDecision: !!card?.querySelector('.btn-approve'),
-      bodyFlex: bodyCs?.flexGrow === '1' || bodyCs?.flex === '1 1 auto',
-      footPanel: !!card?.querySelector('.card-foot--v4'),
+      hasTile: !!tile,
+      title: tile?.querySelector('.card-tile__title')?.textContent?.trim().length > 0,
+      hasTilesClass: document.getElementById('list')?.classList.contains('vacancy-grid--tiles'),
       widthSliderInSettings: !!document.querySelector('#card-col-w-range'),
       widthSliderNotInToolbar: !document.querySelector('#card-col-w-toolbar'),
-      footAlignedInRow,
+      noToolbarPresets: !document.querySelector('.card-size-toolbar'),
+      hasQuickDecision: !!document.querySelector('#list .card-tile--medium .btn-tile-approve'),
+      presetsInSettings: !!document.querySelector('#panel-appearance [data-card-size-preset="medium"]'),
     };
   });
   if (mediumMode.layout !== 'tile-medium') {
     errors.push(`средний режим: ожидали layout=tile-medium, got ${mediumMode.layout}`);
   }
-  if (mediumMode.listDisplay !== 'grid') {
-    errors.push(`средний режим: список должен быть grid, got ${mediumMode.listDisplay}`);
+  if (mediumMode.listDisplay !== 'flex') {
+    errors.push(`средний режим: список должен быть flex (плитки-строки), got ${mediumMode.listDisplay}`);
   }
-  if (!mediumMode.hasCard) errors.push('средний режим: нет .card.card--layout-medium');
-  if (!mediumMode.title) errors.push('средний режим: нет заголовка на карточке');
-  if (!mediumMode.hasApply) errors.push('средний режим: нет кнопки авто-отклика');
-  if (!mediumMode.hasDecision) errors.push('средний режим: нет блока решения');
-  if (!mediumMode.footPanel) errors.push('средний режим: нет .card-foot--v4');
-  if (!mediumMode.bodyFlex) errors.push('средний режим: card-body не flex-grow (футер не прижат)');
-  if (!mediumMode.footAlignedInRow) {
-    errors.push('средний режим: футеры в ряду не выровнены по вертикали');
-  }
+  if (!mediumMode.hasTile) errors.push('средний режим: нет .card-tile--medium');
+  if (!mediumMode.hasTilesClass) errors.push('средний режим: список без vacancy-grid--tiles');
+  if (!mediumMode.title) errors.push('средний режим: нет заголовка на плитке');
   if (!mediumMode.widthSliderInSettings) {
     errors.push('средний режим: ползунок ширины не в настройках');
   }
   if (!mediumMode.widthSliderNotInToolbar) {
     errors.push('средний режим: ползунок ширины не должен быть в тулбаре');
   }
+  if (!mediumMode.noToolbarPresets) {
+    errors.push('средний режим: пресеты вида не должны быть в тулбаре');
+  }
+  if (!mediumMode.presetsInSettings) {
+    errors.push('средний режим: пресеты вида должны быть в настройках');
+  }
+  if (!mediumMode.hasQuickDecision) {
+    errors.push('средний режим: нет быстрых кнопок Подходит/Не подходит на плитке');
+  }
 
-  await page.locator('.card-size-toolbar [data-card-size-preset="full"]').click();
+  const mediumTileOpen = page.locator('#list .card-tile--medium .card-tile__hit').first();
+  if ((await mediumTileOpen.count()) > 0) {
+    await mediumTileOpen.click({ timeout: 8000 });
+    await waitModalOpen(page, 'vacancy-detail-modal');
+    const detailOk = await page.evaluate(
+      () => !!document.querySelector('#vacancy-detail-body .card--in-modal')
+    );
+    if (!detailOk) errors.push('модалка вакансии (средний): нет полной карточки в теле');
+    await page.keyboard.press('Escape');
+    await waitModalHidden(page, 'vacancy-detail-modal');
+  }
+
+  await clickCardSizePreset(page, 'full');
+  await closeSettingsModal(page);
   await waitDataset(page, 'cardLayout', 'expanded');
   const fullMode = await page.evaluate(() => ({
     layout: document.documentElement.dataset.cardLayout,
@@ -495,7 +500,10 @@ async function main() {
     { timeout: 3000 }
   );
 
-  await page.locator('#btn-open-shortcuts').click();
+  await page.keyboard.press('Control+k');
+  await page.waitForSelector('#command-palette:not([hidden])', { timeout: 3000 });
+  await page.locator('#command-palette-input').fill('клавиш');
+  await page.locator('.command-palette__item').filter({ hasText: 'Горячие клавиши' }).click();
   await waitModalOpen(page, 'shortcuts-modal');
   await page.keyboard.press('Escape');
   await waitModalHidden(page, 'shortcuts-modal');
@@ -520,6 +528,42 @@ async function main() {
     );
   });
   if (!shellOk) errors.push('оболочка: menubar COPY, сплиттер или sparkline не на месте');
+
+  const scrollportCount = await page.evaluate(() => {
+    const shell = document.getElementById('app-shell');
+    if (!shell) return 0;
+    /** @param {Element} el */
+    const isScrollport = (el) => {
+      if (!(el instanceof HTMLElement)) return false;
+      if (el.hidden) return false;
+      if (el.closest('[hidden]')) return false;
+      const cs = getComputedStyle(el);
+      const oy = cs.overflowY;
+      if (oy !== 'auto' && oy !== 'scroll') return false;
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return false;
+      return true;
+    };
+    let count = 0;
+    for (const el of shell.querySelectorAll('*')) {
+      if (!isScrollport(el)) continue;
+      let nested = false;
+      let parent = el.parentElement;
+      while (parent && shell.contains(parent)) {
+        if (isScrollport(parent)) {
+          nested = true;
+          break;
+        }
+        parent = parent.parentElement;
+      }
+      if (!nested) count += 1;
+    }
+    return count;
+  });
+  if (scrollportCount > 3) {
+    errors.push(`scrollport: ожидалось ≤3 в #app-shell, найдено ${scrollportCount}`);
+  }
 
   if (errors.length) throw new Error(errors.join('\n'));
 

@@ -6,7 +6,11 @@ import { writeTheme } from './ui-theme.mjs';
 import { writeUiScale } from './ui-scale.mjs';
 import { applyCardSizePreset } from './ui-card-tuning.mjs';
 import {
-  SETTINGS_LAYOUT_FOOTER_SUFFIX,
+  SETTINGS_SECTION_LEADS,
+  PLAYWRIGHT_MODE_LABELS,
+  localizeHealthLabel,
+} from './dashboard-settings-copy-ru.mjs';
+import {
   SETTINGS_LAYOUT_PRESETS,
   applySettingsLayoutPreset,
   applySettingsOpenLayout,
@@ -18,6 +22,10 @@ import {
   focusSettingsLayoutBar,
   toggleSettingsModalFullscreen,
 } from './settings-modal-layout.mjs';
+import {
+  dispatchOpenSettingsForCategory,
+  settingsNavForRejectCategory,
+} from './settings-targeting-nav.mjs';
 
 export {
   SETTINGS_LAYOUT_PRESETS,
@@ -30,7 +38,7 @@ export {
   toggleSettingsModalFullscreen,
 };
 
-/** @typedef {'system' | 'targeting' | 'apply' | 'letters' | 'appearance'} SettingsTabId */
+/** @typedef {'system' | 'targeting' | 'apply' | 'appearance'} SettingsTabId */
 
 /**
  * Зависимости initSettingsModal (передаются из app.js).
@@ -55,7 +63,7 @@ export {
  */
 
 /** @type {SettingsTabId[]} */
-export const SETTINGS_TAB_ORDER = ['system', 'targeting', 'apply', 'letters', 'appearance'];
+export const SETTINGS_TAB_ORDER = ['system', 'targeting', 'apply', 'appearance'];
 
 /** @type {Record<string, SettingsTabId>} */
 const TAB_ALIASES = {
@@ -72,10 +80,10 @@ const TAB_ALIASES = {
   batch: 'apply',
   limits: 'apply',
   threshold: 'apply',
-  letters: 'letters',
-  letter: 'letters',
-  quality: 'letters',
-  fp: 'letters',
+  letters: 'apply',
+  letter: 'apply',
+  quality: 'apply',
+  fp: 'apply',
   appearance: 'appearance',
   list: 'appearance',
   ui: 'appearance',
@@ -96,7 +104,7 @@ export const SETTINGS_FOCUS_ALIASES = {
   batch: 'batch-limit',
   remote: 'settings-remote-card',
   'batch-remote': 'batch-require-remote',
-  presets: 'settings-letters-presets',
+  presets: 'settings-letters-group',
   playwright: 'settings-playwright-mode',
   targeting: 'settings-targeting-salary',
   'require-remote': 'pref-require-remote',
@@ -105,15 +113,15 @@ export const SETTINGS_FOCUS_ALIASES = {
   'exclude-dev': 'pref-exclude-dev',
   'exclude-irrelevant': 'pref-exclude-irrelevant',
   insights: 'settings-targeting-insights',
-  window: 'settings-modal-window-card',
-  layout: 'settings-layout-bar',
+  window: 'settings-layout-presets-group',
+  layout: 'settings-layout-presets-group',
 };
 
 /** Пресеты качества писем / батча (патч preferences). */
 export const LETTER_QUALITY_PRESETS = {
   standard: {
     label: 'Стандарт',
-    hint: 'Подготовка перед серией, FP ≤ 20 — рекомендуется для ежедневного батча',
+    hint: 'Подготовка писем перед серией, контроль ложных отказов до 20',
     patch: {
       batchAutoPrepareLetters: true,
       batchLetterRequireMetric: false,
@@ -124,8 +132,8 @@ export const LETTER_QUALITY_PRESETS = {
     },
   },
   strict: {
-    label: 'Строгий батч',
-    hint: 'Метрики + авто-утверждение + FP 15 — меньше слабых откликов',
+    label: 'Строгий',
+    hint: 'Цифры в письме обязательны, авто-утверждение — меньше слабых откликов',
     patch: {
       batchAutoPrepareLetters: true,
       batchLetterRequireMetric: true,
@@ -137,7 +145,7 @@ export const LETTER_QUALITY_PRESETS = {
   },
   soft: {
     label: 'Мягкий',
-    hint: 'Подготовка без блокировок FP, обучение из reject',
+    hint: 'Подготовка без жёстких ограничений, обучение из «Неподходит»',
     patch: {
       batchAutoPrepareLetters: true,
       batchLetterRequireMetric: false,
@@ -149,7 +157,7 @@ export const LETTER_QUALITY_PRESETS = {
   },
   manual: {
     label: 'Вручную',
-    hint: 'Без автоподготовки — правка в letter-center и черновике',
+    hint: 'Без автоподготовки — правка писем вручную',
     patch: {
       batchAutoPrepareLetters: false,
       batchLetterRequireMetric: false,
@@ -189,8 +197,6 @@ export const SETTINGS_SECTION_DEFAULTS = {
     hhApplyChatMaxPerHour: 50,
     hhApplyChatMaxPerDay: 1000,
     hhApplyChatMaxPerMonth: 5000,
-  },
-  letters: {
     batchAutoPrepareLetters: true,
     batchLetterRequireMetric: false,
     batchAutoApproveBestLetter: false,
@@ -200,33 +206,21 @@ export const SETTINGS_SECTION_DEFAULTS = {
   },
 };
 
-const TAB_FOOTER_NOTES = {
-  system: 'Профиль, готовность и окно браузера',
-  targeting: 'Какие вакансии попадают в очередь и серию откликов',
-  apply: 'Порог «Авто», размер серии и лимиты hh.ru',
-  letters: 'Письма и проверка перед батчем',
-  appearance: 'Вид списка, панелей и размер окна настроек',
-};
-
-/** Быстрые сценарии из шапки модалки. */
+/** Быстрые сценарии (deep link / палитра). */
 export const SETTINGS_QUICK_PATHS = {
-  batch: { tab: 'letters', focus: 'settings-letters-presets', layout: 'wide' },
+  batch: { tab: 'apply', focus: 'settings-letters-group', layout: 'wide' },
   'off-target': { tab: 'targeting', focus: 'settings-targeting-insights', layout: 'wide' },
   limits: { tab: 'apply', focus: 'settings-limits-hh', layout: 'compact' },
   profile: { tab: 'system', focus: 'settings-profile-card' },
 };
 
-const PLAYWRIGHT_MODE_LABELS = {
-  'hidden-captcha': 'скрытый',
-  visible: 'видимый',
-  headless: 'headless',
-};
+const PLAYWRIGHT_MODE_LABELS_UI = PLAYWRIGHT_MODE_LABELS;
 
 /** Пресеты таргетинга (patch preferences). */
 export const TARGETING_PRESETS = {
   balanced: {
     label: 'Сбалансированный',
-    hint: 'Гибрид и офис Москва разрешены, senior/1С/dev исключаются',
+    hint: 'Гибрид и офис Москва разрешены, руководители/1С/разработчики исключаются',
     patch: {
       ...SETTINGS_SECTION_DEFAULTS.targeting,
       batchRequireRemote: false,
@@ -234,7 +228,7 @@ export const TARGETING_PRESETS = {
   },
   conservative: {
     label: 'Консервативный',
-    hint: 'Только remote, без гибрида и офиса, строгий батч',
+    hint: 'Только удалёнка, без гибрида и офиса, строгая серия',
     patch: {
       requireRemote: true,
       allowHybrid: false,
@@ -252,7 +246,7 @@ export const TARGETING_PRESETS = {
   },
   wide: {
     label: 'Широкий',
-    hint: 'Без глобальной remote, мягче исключения ролей',
+    hint: 'Без глобальной удалёнки, мягче исключения ролей',
     patch: {
       requireRemote: false,
       allowHybrid: true,
@@ -272,19 +266,15 @@ export const TARGETING_PRESETS = {
 
 /** Мета вкладок: горячие клавиши Alt+1…5. */
 export const SETTINGS_TAB_META = {
-  system: { label: 'Система', hotkey: '1' },
-  targeting: { label: 'Таргетинг', hotkey: '2' },
+  system: { label: 'Профиль', hotkey: '1' },
+  targeting: { label: 'Отбор вакансий', hotkey: '2' },
   apply: { label: 'Отклики', hotkey: '3' },
-  letters: { label: 'Письма', hotkey: '4' },
-  appearance: { label: 'Интерфейс', hotkey: '5' },
+  appearance: { label: 'Интерфейс', hotkey: '4' },
 };
 
 /** Подсказки под полями. */
 export const SETTINGS_FIELD_TIPS = {
-  'batch-false-positive-max':
-    'Если в «Неподходит» много подходящих вакансий — перед серией покажет предупреждение.',
-  'score-threshold-input': 'Вкладки «Рекомендуемые» и «Ниже порога» в очереди зависят от этого числа.',
-  'batch-limit': 'Лимит на один запуск серии; счётчики hh.ru — в блоке ниже.',
+  'batch-limit': 'Сколько вакансий за один запуск серии',
 };
 
 /** @type {{ dirty: boolean, saving: number, dirtyTabs: Set<string> }} */
@@ -312,12 +302,15 @@ function resolveDirtyTab(tabOrTarget) {
       return normalizeSettingsTab(panel.id.slice('settings-panel-'.length));
     }
   }
-  const active = document.querySelector('.settings-tabs__btn.active');
+  const active = document.querySelector('.settings-nav__btn.active');
   return normalizeSettingsTab(active?.dataset?.settingsTab || 'system');
 }
 
 /** @type {((text: string, variant?: string) => void) | null} */
 let setHintFn = null;
+
+/** @type {((msg: string, kind?: string) => void) | null} */
+let showToastFn = null;
 
 /** @param {string} tabId */
 export function normalizeSettingsTab(tabId) {
@@ -393,7 +386,7 @@ export function markSettingsSaved() {
 
 /** Откат полей активной вкладки к последнему сохранённому снимку. */
 export function revertActiveSettingsTab() {
-  const active = document.querySelector('.settings-tabs__btn.active');
+  const active = document.querySelector('.settings-nav__btn.active');
   const tab = normalizeSettingsTab(active?.dataset?.settingsTab || 'system');
   if (tab === 'appearance') return false;
   const baseline = tabBaselines.get(tab);
@@ -457,16 +450,19 @@ function getApplyPrefsFromUI() {
 /** @param {SettingsTabId} tabId */
 function captureTabBaseline(tabId) {
   if (tabId === 'appearance') return;
+  if (tabId === 'apply') {
+    tabBaselines.set(
+      'apply',
+      structuredClone({ ...getApplyPrefsFromUI(), ...getLetterPrefsFromUI() })
+    );
+    return;
+  }
   const getter =
     tabId === 'system'
       ? getSystemPrefsFromUI
       : tabId === 'targeting'
         ? getTargetingPrefsFromUI
-        : tabId === 'apply'
-          ? getApplyPrefsFromUI
-          : tabId === 'letters'
-            ? getLetterPrefsFromUI
-            : null;
+        : null;
   if (!getter) return;
   tabBaselines.set(tabId, structuredClone(getter()));
 }
@@ -483,11 +479,11 @@ function onSettingsTabActivated(tabId) {
 function syncSettingsTabDirtyIndicator() {
   const modal = document.getElementById('settings-modal');
   if (!modal) return;
-  modal.querySelectorAll('.settings-tabs__btn').forEach((btn) => {
+  modal.querySelectorAll('.settings-nav__btn').forEach((btn) => {
     const tab = normalizeSettingsTab(btn.dataset.settingsTab || '');
-    btn.classList.toggle('settings-tabs__btn--dirty', saveState.dirtyTabs.has(tab));
+    btn.classList.toggle('settings-nav__btn--dirty', saveState.dirtyTabs.has(tab));
   });
-  const active = modal.querySelector('.settings-tabs__btn.active');
+  const active = modal.querySelector('.settings-nav__btn.active');
   const activeTab = normalizeSettingsTab(active?.dataset?.settingsTab || 'system');
   const revertBtn = document.getElementById('btn-settings-revert-tab');
   if (revertBtn instanceof HTMLButtonElement) {
@@ -505,6 +501,7 @@ function syncSettingsSaveUi() {
   const saveNow = document.getElementById('btn-settings-save-now');
   if (saveNow instanceof HTMLButtonElement) {
     saveNow.disabled = saveState.saving > 0;
+    saveNow.hidden = !saveState.dirty;
   }
   if (!setHintFn) return;
   if (saveState.saving > 0) {
@@ -517,7 +514,7 @@ function syncSettingsSaveUi() {
   }
   const hintEl = document.getElementById('settings-save-hint');
   if (hintEl?.classList.contains('settings-hint--saved')) return;
-  if (hintEl?.textContent && !hintEl.hidden) return;
+  setHintFn('Изменения сохраняются автоматически');
 }
 
 /**
@@ -627,7 +624,7 @@ function buildSummaryChipParts(prefs, opts = {}) {
   else if (fp === 0) parts.push({ label: 'фильтр «Неподходит» выкл', tone: 'muted' });
   const profile = String(opts.profileLabel || '').trim();
   if (profile) parts.push({ label: profile.replace(/^профиль:\s*/i, ''), tone: 'profile' });
-  const pw = PLAYWRIGHT_MODE_LABELS[String(p.dashboardPlaywrightDisplayMode || '')];
+  const pw = PLAYWRIGHT_MODE_LABELS_UI[String(p.dashboardPlaywrightDisplayMode || '')];
   if (pw) parts.push({ label: `браузер: ${pw}`, tone: 'muted' });
   if (p.requireRemote === true) parts.push({ label: 'remote глоб.', tone: 'accent' });
   if (p.batchRequireRemote === true) parts.push({ label: 'remote батч', tone: 'accent' });
@@ -673,37 +670,21 @@ function renderSummaryChips(parts) {
  * @param {Record<string, unknown>} prefs
  * @param {{ profileLabel?: string }} [opts]
  */
-export function updateSettingsSummaryFromPrefs(prefs, opts = {}) {
-  renderSummaryChips(buildSummaryChipParts(prefs, opts));
+export function updateSettingsSectionLead(tabId) {
+  const id = normalizeSettingsTab(tabId);
+  const lead = SETTINGS_SECTION_LEADS[id] || SETTINGS_SECTION_LEADS.system;
+  const el = document.getElementById(`settings-section-lead-${id}`);
+  if (el) el.textContent = lead;
+}
+
+export function updateSettingsSummaryFromPrefs() {
+  /* chips убраны в v5 */
 }
 
 export function updateSettingsSummaryFromUI() {
-  /** @type {Record<string, unknown>} */
-  const prefs = {};
-  for (const el of document.querySelectorAll('#settings-modal [data-pref]')) {
-    const key = el.dataset.pref;
-    if (!key) continue;
-    const n = Number(el.value);
-    if (Number.isFinite(n)) prefs[key] = n;
-  }
-  for (const el of document.querySelectorAll('#settings-modal [data-pref-bool]')) {
-    const key = el.dataset.prefBool;
-    if (!key) continue;
-    prefs[key] = Boolean(el.checked);
-  }
-  for (const el of document.querySelectorAll('#settings-modal [data-pref-select]')) {
-    const key = el.dataset.prefSelect;
-    if (!key) continue;
-    prefs[key] = el.value;
-  }
-  const profileSel = document.getElementById('settings-profile-select');
-  const profileLabel =
-    profileSel instanceof HTMLSelectElement && profileSel.selectedOptions[0]
-      ? profileSel.selectedOptions[0].textContent?.trim()
-      : '';
-  updateSettingsSummaryFromPrefs(prefs, {
-    profileLabel: profileLabel ? `профиль: ${profileLabel}` : '',
-  });
+  const active = document.querySelector('.settings-nav__btn.active');
+  const tab = normalizeSettingsTab(active?.dataset?.settingsTab || 'system');
+  updateSettingsSectionLead(tab);
 }
 
 /**
@@ -721,18 +702,22 @@ export function renderSystemHealthList(status) {
   const list = document.getElementById('settings-system-health-list');
   if (!list) return;
   const items = status?.items || [];
+  const simple = document.querySelector('.workspace-shell')?.dataset.uiMode !== 'expert';
   if (!items.length) {
-    list.innerHTML = '<li class="settings-health-item settings-health-item--muted">Нет данных</li>';
+    list.innerHTML = '<li class="settings-health-pill settings-health-pill--muted">Нет данных</li>';
     return;
   }
   list.replaceChildren(
     ...items.map((item) => {
       const li = document.createElement('li');
-      li.className = `settings-health-item settings-health-item--${item.tone || 'muted'}`;
-      li.textContent = item.label;
-      if (item.tone === 'warn' && item.id && HEALTH_JUMP[item.id]) {
-        li.classList.add('settings-health-item--action');
-        li.title = 'Нажмите — подсказка в разделе «Система»';
+      const tone = item.tone || 'muted';
+      li.className = `settings-health-pill settings-health-pill--${tone}`;
+      const label = localizeHealthLabel(item.label, { simple });
+      li.textContent = label;
+      li.title = item.label !== label ? item.label : '';
+      if (tone === 'warn' && item.id && HEALTH_JUMP[item.id]) {
+        li.classList.add('settings-health-pill--warn');
+        li.title = li.title || 'Нажмите — подсказка в разделе «Профиль»';
         li.dataset.healthJump = item.id;
       }
       return li;
@@ -749,13 +734,13 @@ export function updateSettingsRemoteWarnings() {
   if (batchRemote && !globalRemote) {
     warnings.push({
       level: 'info',
-      text: 'Батч строже очереди: вакансия может быть в списке, но серия её пропустит без явной удалёнки.',
+      text: 'Серия строже очереди: вакансия может быть в списке, но серия её пропустит без явной удалёнки.',
     });
   }
   if (globalRemote && !batchRemote) {
     warnings.push({
       level: 'info',
-      text: 'Глобальный remote уже отсекает офис/гибрид при harvest; батч может брать всё из очереди.',
+      text: 'Глобальная удалёнка уже отсекает офис и гибрид при сборе; серия может брать всё из очереди.',
     });
   }
   if (!globalRemote && !batchRemote) {
@@ -785,7 +770,6 @@ function getTargetingPrefsFromUI() {
   const patch = {};
   const keys = [
     'requireRemote',
-    'batchRequireRemote',
     'allowHybrid',
     'allowOfficeMoscow',
     'hybridMoscowOnly',
@@ -851,7 +835,7 @@ export function updateSettingsLetterWarnings() {
   if (autoApprove && requireMetric && autoPrepare) {
     warnings.push({
       level: 'info',
-      text: 'Строгий режим: батч пропустит слабые письма и может утвердить лучший вариант после генерации.',
+      text: 'Строгий режим: серия пропустит слабые письма и может утвердить лучший вариант после генерации.',
     });
   }
   if (learning && (!Number.isFinite(fpMax) || fpMax <= 0)) {
@@ -900,11 +884,11 @@ function syncOnboardingBanner() {
   box.hidden = false;
 }
 
-function syncHubGuideBanner() {
-  const box = document.getElementById('settings-hub-guide');
+function syncProfileTipBanner() {
+  const box = document.getElementById('settings-profile-tip');
   if (!box) return;
   try {
-    if (localStorage.getItem('hh-settings-hub-dismissed') === '1') {
+    if (localStorage.getItem('hh-settings-profile-tip-dismissed') === '1') {
       box.hidden = true;
       return;
     }
@@ -954,18 +938,60 @@ function bindInsightsDelegation() {
     const catBtn = e.target.closest('[data-open-settings-category]');
     if (catBtn) {
       e.preventDefault();
-      const cat = catBtn.getAttribute('data-open-settings-category');
-      import('./settings-targeting-nav.mjs').then((m) => m.dispatchOpenSettingsForCategory(cat || ''));
+      const cat = catBtn.getAttribute('data-open-settings-category') || '';
+      const nav = settingsNavForRejectCategory(cat);
+      if (nav.noFocus) {
+        showToastFn?.(nav.hint || 'Для этой категории нет отдельного переключателя', 'neutral');
+        return;
+      }
+      dispatchOpenSettingsForCategory(cat);
       return;
     }
     if (e.target.closest('[data-insights-open-fp]')) {
       e.preventDefault();
       window.dispatchEvent(
-        new CustomEvent('hh-open-settings', { detail: { tab: 'letters', focus: 'fp' } })
+        new CustomEvent('hh-open-settings', {
+          detail: {
+            tab: 'apply',
+            focus: 'fp',
+            focusToast: 'Открыто: порог ложных отказов',
+          },
+        })
       );
     }
   });
   insightsDelegationBound = true;
+}
+
+/** @type {Record<string, string>} */
+const INSIGHT_CATEGORY_LABELS = {
+  'off-target-l1': 'Поддержка L1',
+  'off-target-sales': 'Продажи и presale',
+  'off-target-network': 'Сетевой инженер',
+  'off-target-industrial': 'Промышленная автоматика',
+  'off-target-blue-collar': 'Рабочие специальности',
+  'off-target-analyst': 'Аналитик вне профиля',
+  'off-target-qa': 'Тестирование вне профиля',
+  'off-target-dev': 'Разработчик вне профиля',
+  'no-it-profile': 'Нет IT-профиля',
+  senior: 'Senior / lead',
+  irrelevant: 'Нецелевая роль',
+};
+
+function insightCategoryLabel(row) {
+  const cat = String(row?.category || '').trim();
+  const raw = String(row?.label || '').trim();
+  if (INSIGHT_CATEGORY_LABELS[cat]) return INSIGHT_CATEGORY_LABELS[cat];
+  if (/^off-target/i.test(raw) || /^off-target/i.test(cat)) {
+    return raw.replace(/^off-target[-\s]*/i, '').replace(/-/g, ' ') || 'Вне профиля';
+  }
+  return raw || cat || 'Другое';
+}
+
+function truncateInsightTitle(title, max = 72) {
+  const t = String(title || '').replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
 }
 
 /**
@@ -976,29 +1002,36 @@ export function renderTargetingInsights(stats) {
   if (!box) return;
   bindInsightsDelegation();
   const summary = stats?.totalIneligible
-    ? `<p class="settings-insights__meta">Вне профиля в очереди: <strong>${stats.totalIneligible}</strong> · reject: ${stats.totalRejected ?? 0}</p>`
+    ? `<p class="settings-insights__meta">Вне профиля в очереди: <strong>${stats.totalIneligible}</strong> · отклонено: ${stats.totalRejected ?? 0}</p>`
     : '';
   if (!stats?.topCategories?.length) {
-    box.innerHTML = `${summary}<p class="settings-snapshot__muted">Мало отсечений — статистика появится после harvest</p>`;
+    box.innerHTML = `${summary}<p class="settings-snapshot__muted">Мало отсечений — статистика появится после сбора вакансий</p>`;
     return;
   }
   const fp = stats.falsePositives;
   const fpLine =
     fp?.total > 0
-      ? `<p class="settings-insights__fp">В «Неподходит» есть ${fp.total} подходящих (${fp.rate}% от всех отклонённых) — <button type="button" class="btn btn-ghost btn-sm" data-insights-open-fp">настроить порог</button></p>`
+      ? `<p class="settings-insights__fp">В «Неподходит» есть ${fp.total} подходящих (${fp.rate}% от всех отклонённых) — <button type="button" class="settings-insights__action" data-insights-open-fp">Перейти к порогу ложных отказов</button></p>`
       : '';
   const rows = stats.topCategories
     .map((row) => {
-      const samples = (row.samples || [])
-        .map((s) => `<span class="settings-insights__sample">${escapeHtml(s.title)}</span>`)
-        .join('');
+      const samplesText = (row.samples || [])
+        .slice(0, 2)
+        .map((s) => truncateInsightTitle(s.title))
+        .join(' · ');
+      const label = insightCategoryLabel(row);
+      const nav = settingsNavForRejectCategory(row.category);
+      const actionLabel = nav.actionLabel || nav.hint || '→ Исключения';
+      const actionBtn = nav.noFocus
+        ? ''
+        : `<button type="button" class="settings-insights__action" data-open-settings-category="${escapeHtml(row.category)}">${escapeHtml(actionLabel)}</button>`;
       return `<li class="settings-insights__row">
         <div class="settings-insights__head">
-          <span class="settings-insights__label">${escapeHtml(row.label)}</span>
+          <span class="settings-insights__label">${escapeHtml(label)}</span>
           <span class="settings-insights__count">${row.count}</span>
-          <button type="button" class="btn btn-ghost btn-sm" data-open-settings-category="${escapeHtml(row.category)}">Настроить</button>
+          ${actionBtn}
         </div>
-        ${samples ? `<div class="settings-insights__samples">${samples}</div>` : ''}
+        ${samplesText ? `<p class="settings-insights__samples">${escapeHtml(samplesText)}</p>` : ''}
       </li>`;
     })
     .join('');
@@ -1074,16 +1107,8 @@ export function getLetterPrefsFromUI() {
   return patch;
 }
 
-function setSettingsFooterNote(tabId) {
-  const note = document.getElementById('settings-footer-tab-note');
-  if (!note) return;
-  const id = normalizeSettingsTab(tabId);
-  const hotkey = SETTINGS_TAB_META[id]?.hotkey;
-  const base = TAB_FOOTER_NOTES[id] || TAB_FOOTER_NOTES.apply;
-  const layoutPart = window.matchMedia('(max-width: 640px)').matches
-    ? ' · Esc — закрыть'
-    : SETTINGS_LAYOUT_FOOTER_SUFFIX;
-  note.textContent = `${base}${layoutPart}`;
+function onSettingsSectionActivated(tabId) {
+  updateSettingsSectionLead(tabId);
 }
 
 /** Сброс темы, масштаба и пресета карточек в браузере. */
@@ -1132,7 +1157,7 @@ async function refreshTargetingPreview(api) {
       return;
     }
     if (data.total === 0) {
-      el.textContent = 'Очередь пуста — превью появится после harvest или загрузки демо';
+      el.textContent = 'Очередь пуста — превью появится после сбора или загрузки демо';
       return;
     }
     el.textContent = `Видно ${data.visible} из ${data.total} в очереди; ${data.hiddenByRole} скрыто правилами роли`;
@@ -1203,7 +1228,7 @@ async function refreshSystemHealth(api) {
  * @param {SettingsTabId} tabId
  */
 async function refreshLettersSnapshot(api, tabId) {
-  if (tabId !== 'letters') return;
+  if (normalizeSettingsTab(tabId) !== 'apply') return;
   const box = document.getElementById('settings-letters-snapshot');
   if (!box) return;
   const now = Date.now();
@@ -1220,23 +1245,35 @@ async function refreshLettersSnapshot(api, tabId) {
     const gt = data?.golden?.targeting;
     const parts = [];
     if (gen?.qualityPassRate != null && gen.total > 0) {
-      parts.push(`LLM ok ${gen.qualityPassRate}%`);
+      parts.push({ label: 'ИИ', value: `${gen.qualityPassRate}% ок` });
     }
     if (bl?.letterBatchReadyRate != null) {
-      parts.push(`готовность батча ${bl.letterBatchReadyRate}%`);
+      parts.push({ label: 'Готовность', value: `${bl.letterBatchReadyRate}%` });
     }
     if (bl?.falsePositiveRate != null && (bl.falsePositives || 0) > 0) {
-      parts.push(`FP ${bl.falsePositiveRate}%`);
+      parts.push({ label: 'Ложные отказы', value: `${bl.falsePositiveRate}%` });
     }
     if (gl?.total) {
-      parts.push(`golden L ${gl.passed}/${gl.total}${gl.ok === false ? ' ⚠' : ''}`);
+      parts.push({
+        label: 'Эталон писем',
+        value: `${gl.passed}/${gl.total}${gl.ok === false ? ' ⚠' : ''}`,
+      });
     }
     if (gt?.total) {
-      parts.push(`T ${gt.passed}/${gt.total}${gt.ok === false ? ' ⚠' : ''}`);
+      parts.push({
+        label: 'Эталон отбора',
+        value: `${gt.passed}/${gt.total}${gt.ok === false ? ' ⚠' : ''}`,
+      });
     }
-    lettersSnapshotHtml = `<p class="settings-snapshot__line">${
-      parts.length ? parts.join(' · ') : 'Сводка по метрикам и golden — данных пока мало'
-    }</p>`;
+    lettersSnapshotHtml =
+      parts.length > 0
+        ? `<div class="settings-kpi-mini">${parts
+            .map(
+              (p) =>
+                `<div class="settings-kpi-mini__item"><span class="settings-kpi-mini__label">${escapeHtml(p.label)}</span><span class="settings-kpi-mini__value">${escapeHtml(p.value)}</span></div>`
+            )
+            .join('')}</div>`
+        : '<p class="settings-snapshot__muted">Данных пока мало — запустите серию с письмами</p>';
     lettersSnapshotAt = now;
     box.innerHTML = lettersSnapshotHtml;
   } catch {
@@ -1253,6 +1290,7 @@ export function initSettingsModal(deps) {
   initSettingsDialogLayout({ showToast: deps.showToast });
 
   setHintFn = deps.setSettingsHint || null;
+  showToastFn = deps.showToast || null;
   hasCompletedBatchFn = deps.hasCompletedBatch || null;
 
   const onSettingsKeydown = (e) => {
@@ -1355,7 +1393,7 @@ export function initSettingsModal(deps) {
   });
 
   document.getElementById('btn-settings-reset-section')?.addEventListener('click', () => {
-    const activeBtn = modal.querySelector('.settings-tabs__btn.active');
+    const activeBtn = modal.querySelector('.settings-nav__btn.active');
     const tab = normalizeSettingsTab(activeBtn?.dataset.settingsTab || 'apply');
     if (tab === 'appearance') {
       deps.resetAppearanceSection?.();
@@ -1379,7 +1417,7 @@ export function initSettingsModal(deps) {
 
   document.getElementById('btn-settings-refresh-snapshot')?.addEventListener('click', () => {
     invalidateLettersSnapshot();
-    void refreshLettersSnapshot(deps.api, 'letters');
+    void refreshLettersSnapshot(deps.api, 'apply');
   });
 
   document.getElementById('btn-settings-copy-letter-prefs')?.addEventListener('click', async () => {
@@ -1392,14 +1430,30 @@ export function initSettingsModal(deps) {
     }
   });
 
-  document.getElementById('btn-settings-import-letter-prefs')?.addEventListener('click', async () => {
-    let raw = '';
-    try {
-      raw = window.prompt('Вставьте JSON параметров писем (ключи batch*/learning*)', '') || '';
-    } catch {
+  document.getElementById('btn-settings-import-letter-prefs')?.addEventListener('click', () => {
+    const panel = document.getElementById('settings-letters-import-panel');
+    const textarea = document.getElementById('settings-letters-import-textarea');
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden && textarea instanceof HTMLTextAreaElement) {
+      textarea.focus();
+    }
+  });
+
+  document.getElementById('btn-settings-letters-import-cancel')?.addEventListener('click', () => {
+    const panel = document.getElementById('settings-letters-import-panel');
+    const textarea = document.getElementById('settings-letters-import-textarea');
+    if (panel) panel.hidden = true;
+    if (textarea instanceof HTMLTextAreaElement) textarea.value = '';
+  });
+
+  document.getElementById('btn-settings-letters-import-apply')?.addEventListener('click', () => {
+    const textarea = document.getElementById('settings-letters-import-textarea');
+    const raw = textarea instanceof HTMLTextAreaElement ? textarea.value : '';
+    if (!raw.trim()) {
+      deps.showToast?.('Вставьте JSON в поле', 'neutral');
       return;
     }
-    if (!raw.trim()) return;
     let parsed;
     try {
       parsed = JSON.parse(raw);
@@ -1413,10 +1467,12 @@ export function initSettingsModal(deps) {
       return;
     }
     applyPreferencePatchToUI(patch, { silent: true });
-    markSettingsDirty('letters');
+    markSettingsDirty('apply');
     deps.scheduleSaveSettings();
     invalidateLettersSnapshot();
-    deps.showToast?.('Параметры писем применены — сохраните настройки', 'good');
+    document.getElementById('settings-letters-import-panel')?.setAttribute('hidden', '');
+    if (textarea instanceof HTMLTextAreaElement) textarea.value = '';
+    deps.showToast?.('Параметры писем применены', 'good');
   });
 
   document.getElementById('btn-settings-reset-appearance-full')?.addEventListener('click', () => {
@@ -1441,7 +1497,7 @@ export function initSettingsModal(deps) {
       if (!target) return;
       const tab =
         target.includes('letters') || target.includes('batch-false') || target.includes('prepare')
-          ? 'letters'
+          ? 'apply'
           : target.includes('layout') || target.includes('filter')
             ? 'appearance'
             : target.includes('playwright') || target.includes('profile')
@@ -1477,13 +1533,13 @@ export function initSettingsModal(deps) {
     btn.addEventListener('click', () => runSettingsQuickPath(btn.getAttribute('data-settings-path')));
   });
 
-  document.getElementById('btn-settings-dismiss-hub')?.addEventListener('click', () => {
+  document.getElementById('btn-settings-dismiss-profile-tip')?.addEventListener('click', () => {
     try {
-      localStorage.setItem('hh-settings-hub-dismissed', '1');
+      localStorage.setItem('hh-settings-profile-tip-dismissed', '1');
     } catch {
       /* ignore */
     }
-    const box = document.getElementById('settings-hub-guide');
+    const box = document.getElementById('settings-profile-tip');
     if (box) box.hidden = true;
   });
 
@@ -1495,7 +1551,7 @@ export function initSettingsModal(deps) {
     deps.setSettingsTab(jump.tab);
     focusSettingsField(jump.focus);
     if (li.dataset.healthJump === 'llm') {
-      deps.showToast?.('Ключ LLM: config/secrets.local.env — см. CONFIG-GUIDE', 'neutral');
+      deps.showToast?.('Ключ нейросети: config/secrets.local.env', 'neutral');
     }
     if (li.dataset.healthJump === 'session') {
       deps.showToast?.('В терминале: npm run login', 'neutral');
@@ -1537,7 +1593,7 @@ export function initSettingsModal(deps) {
     });
   }
 
-  const tablist = modal.querySelector('.settings-tabs');
+  const tablist = modal.querySelector('.settings-nav');
   tablist?.addEventListener('keydown', (e) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     const tabs = [...modal.querySelectorAll('[data-settings-tab]')];
@@ -1556,6 +1612,7 @@ export function initSettingsModal(deps) {
     const field = document.getElementById(fieldId);
     const host = field?.closest('.settings-field');
     if (!host || host.querySelector('.settings-field-tip')) continue;
+    if (host.querySelector('.settings-apply-preview')) continue;
     const p = document.createElement('p');
     p.className = 'settings-field-tip';
     p.textContent = tip;
@@ -1564,16 +1621,35 @@ export function initSettingsModal(deps) {
 
   syncLearningMinVisibility();
   syncOnboardingBanner();
-  syncHubGuideBanner();
+  syncProfileTipBanner();
   highlightActiveLetterPreset();
   highlightActiveTargetingPreset();
   updateSettingsRemoteWarnings();
+
+  const thresholdInput = document.getElementById('score-threshold-input');
+  const thresholdRange = document.getElementById('score-threshold-range');
+  const syncThresholdRangeFromInput = () => {
+    if (!thresholdInput || !thresholdRange) return;
+    const n = Number(thresholdInput.value);
+    if (Number.isFinite(n)) thresholdRange.value = String(Math.min(100, Math.max(0, n)));
+  };
+  thresholdRange?.addEventListener('input', () => {
+    if (!thresholdInput || !thresholdRange) return;
+    thresholdInput.value = thresholdRange.value;
+    thresholdInput.dispatchEvent(new Event('input', { bubbles: true }));
+    thresholdInput.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  thresholdInput?.addEventListener('input', syncThresholdRangeFromInput);
+  thresholdInput?.addEventListener('change', syncThresholdRangeFromInput);
+  syncThresholdRangeFromInput();
+  thresholdInput?.addEventListener('input', () => scheduleApplyPreviewRefresh(deps.api));
+  thresholdInput?.addEventListener('change', () => scheduleApplyPreviewRefresh(deps.api));
 
   return {
     onTabChange(tabId) {
       const id = normalizeSettingsTab(tabId);
       onSettingsTabActivated(id);
-      setSettingsFooterNote(id);
+      onSettingsSectionActivated(id);
       syncSettingsTabDirtyIndicator();
       if (id === 'system') void refreshSystemHealth(deps.api);
       if (id === 'targeting') void refreshTargetingInsights(deps.api);
@@ -1584,19 +1660,20 @@ export function initSettingsModal(deps) {
       const id = normalizeSettingsTab(tabId);
       syncSettingsDialogLayoutOnOpen();
       syncSettingsLayoutPresetUi();
-      setSettingsFooterNote(id);
+      onSettingsSectionActivated(id);
       updateSettingsSummaryFromUI();
       updateSettingsLetterWarnings();
       updateSettingsRemoteWarnings();
       highlightActiveLetterPreset();
       highlightActiveTargetingPreset();
       syncOnboardingBanner();
-      syncHubGuideBanner();
+      syncProfileTipBanner();
+      syncSettingsSaveUi();
       if (id === 'system') void refreshSystemHealth(deps.api);
       if (id === 'targeting') void refreshTargetingInsights(deps.api);
       if (id === 'apply') void refreshApplyPreview(deps.api);
       void refreshLettersSnapshot(deps.api, id);
-      deps.onOpen?.(id);
+      deps.onOpenTab?.(id);
     },
     renderSystemHealth(status) {
       renderSystemHealthList(status);
@@ -1611,16 +1688,13 @@ export function initSettingsModal(deps) {
       syncSettingsDerivedState();
     },
   };
-
-  const thresholdInput = document.getElementById('score-threshold-input');
-  thresholdInput?.addEventListener('input', () => scheduleApplyPreviewRefresh(deps.api));
-  thresholdInput?.addEventListener('change', () => scheduleApplyPreviewRefresh(deps.api));
 }
 
 /**
  * @param {string} focusId
+ * @param {{ toast?: string }} [opts]
  */
-export function focusSettingsField(focusId) {
+export function focusSettingsField(focusId, opts = {}) {
   const raw = String(focusId || '').trim();
   if (raw === 'settings-layout-bar') {
     focusSettingsLayoutBar();
@@ -1630,10 +1704,37 @@ export function focusSettingsField(focusId) {
   if (!id) return;
   requestAnimationFrame(() => {
     const el = document.getElementById(id);
-    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (!el) return;
+    revealSettingsFocusAncestors(el);
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    pulseSettingsFocusEl(el);
     const input = el?.querySelector?.('input, select, textarea, button');
     if (input instanceof HTMLElement && typeof input.focus === 'function') {
       input.focus({ preventScroll: true });
     }
+    if (opts.toast && showToastFn) showToastFn(opts.toast, 'neutral');
   });
+}
+
+/** @param {Element | null} el */
+function revealSettingsFocusAncestors(el) {
+  let node = el;
+  while (node && node !== document.body) {
+    if (node instanceof HTMLDetailsElement) node.open = true;
+    if (node instanceof HTMLElement && node.hidden) node.hidden = false;
+    node = node.parentElement;
+  }
+}
+
+/** @param {Element | null} el */
+function pulseSettingsFocusEl(el) {
+  if (!el) return;
+  const fieldset = el.closest('fieldset.settings-group');
+  const check = el.closest('label.settings-check');
+  const target = fieldset || check || el;
+  if (!(target instanceof HTMLElement)) return;
+  target.classList.remove('settings-focus-pulse');
+  void target.offsetWidth;
+  target.classList.add('settings-focus-pulse');
+  window.setTimeout(() => target.classList.remove('settings-focus-pulse'), 2000);
 }

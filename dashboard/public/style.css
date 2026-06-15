@@ -63,7 +63,7 @@
   --card-slot-risks-body-h: 3.5rem;
   --card-prose-fg: #e4e4ea;
   --card-prose-muted: #a1a1ab;
-  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  /* --font: см. design-tokens.css (--font-ui) */
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
   --blur: saturate(180%) blur(16px);
 }
@@ -126,7 +126,6 @@ html[data-theme='light'] {
 html {
   scroll-behavior: smooth;
   height: 100%;
-  font-size: 13px;
 }
 
 body {
@@ -134,12 +133,8 @@ body {
   height: 100dvh;
   max-height: 100dvh;
   overflow: hidden;
-  font-family: var(--font);
-  font-size: 1rem;
   background: var(--bg);
   color: var(--text);
-  line-height: 1.4;
-  -webkit-font-smoothing: antialiased;
 }
 
 /* Масштаб только оболочки дашборда; модалки снаружи — без искажений */
@@ -697,22 +692,45 @@ body.workspace-resizing * {
 }
 
 .stats-panel--crm .stats-grid {
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.2rem 0.25rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(2.65rem, auto);
+  gap: 0.45rem 0.55rem;
+  align-items: stretch;
+}
+
+.stats-panel--crm .stat-item {
+  padding: 0.35rem 0.45rem;
+  background: var(--hh-tile, var(--surface-elevated, rgba(255, 255, 255, 0.04)));
+  border: 1px solid var(--hh-border, var(--border-subtle, rgba(255, 255, 255, 0.08)));
+  border-radius: var(--hh-radius-sm, 0.35rem);
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .stats-panel--crm .stat-value {
-  font-size: 0.85rem;
-  line-height: 1.1;
+  font-size: 0.92rem;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .stats-panel--crm .stat-label {
-  font-size: 0.58rem;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  margin-top: 0.12rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stats-extra {
-  margin: 0.25rem 0 0;
-  font-size: 0.58rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.68rem;
   line-height: 1.35;
   color: var(--text-muted, rgba(255, 255, 255, 0.55));
   word-break: break-word;
@@ -985,6 +1003,15 @@ html[data-card-size='full'] #list .card {
 .service-block__actions--raise .service-raise-role {
   grid-column: 1 / -1;
   margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.service-block__actions--raise .service-raise-role .field-input {
+  width: 100%;
+  min-width: 0;
 }
 
 .service-block__actions--raise [data-service-action='raise-resumes-role'] {
@@ -1345,16 +1372,18 @@ html[data-card-size='full'] #list .card {
 }
 
 .funnel-mini__rates {
-  font-size: 0.58rem;
+  font-size: 0.62rem;
+  line-height: 1.3;
   color: var(--text-secondary);
-  margin-bottom: 0.15rem;
+  margin-top: 0.15rem;
+  text-align: center;
 }
 
 .funnel-mini__bars {
   display: flex;
-  gap: 0.2rem;
+  gap: 0.25rem;
   align-items: flex-end;
-  height: 1.1rem;
+  height: 2.35rem;
 }
 
 .funnel-mini__step {
@@ -1362,21 +1391,96 @@ html[data-card-size='full'] #list .card {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.1rem;
   min-width: 0;
+  height: 100%;
+}
+
+.funnel-mini__label {
+  font-size: 0.52rem;
+  line-height: 1.1;
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .funnel-mini__bar {
   display: block;
-  width: 100%;
-  height: 0.45rem;
+  width: 70%;
+  max-width: 100%;
+  min-height: 2px;
+  height: var(--fh, 12%);
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-soft, #4a9eff));
-  opacity: 0.85;
+  background: linear-gradient(180deg, var(--accent-soft, #4a9eff), var(--accent));
+  opacity: 0.9;
 }
 
 .funnel-mini__num {
-  font-size: 0.55rem;
+  font-size: 0.58rem;
+  line-height: 1.1;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.funnel-mini--sources {
+  margin-top: 0.35rem;
+  cursor: pointer;
+}
+
+.funnel-mini--sources__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.3rem;
+}
+
+.funnel-mini--sources__chip {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 0.12rem 0.4rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-tile);
+  color: inherit;
+  cursor: pointer;
+}
+
+.funnel-mini--sources__chip:hover {
+  background: var(--ui-tile-hover);
+}
+
+.funnel-mini--sources__tiers {
+  display: flex;
+  gap: 0.2rem;
+  align-items: flex-end;
+  height: 1.2rem;
+}
+
+.funnel-mini--sources__tier-step {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.funnel-mini--sources__tier-bar {
+  display: block;
+  width: 100%;
+  height: 0.35rem;
+  border-radius: 2px;
+  background: var(--ds-accent);
+  opacity: 0.75;
+}
+
+.funnel-mini--sources__tier-num {
+  font-size: 0.52rem;
   color: var(--text-secondary);
 }
 
@@ -3420,9 +3524,9 @@ html[data-card-size='full'] #list .card {
   padding: 0.38rem 0.65rem;
   border-radius: var(--radius-sm);
   border: none;
-  font-family: inherit;
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: filter 0.15s, background 0.15s, transform 0.1s;
 }
@@ -3442,8 +3546,8 @@ html[data-card-size='full'] #list .card {
 
 .btn-sm {
   padding: 0.35rem 0.6rem;
-  font-size: 0.78rem;
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-normal);
 }
 
 .btn-primary {

@@ -1,0 +1,62 @@
+---
+description: Подготовка к интервью Синергия — автоматическое обновление пробелов и сборка docx
+globs:
+  - my/Синергия/**
+  - my/scripts/synergy_prep.py
+  - my/scripts/Build-Synergy.ps1
+alwaysApply: false
+---
+
+# Синергия: интервью DevOps (+ Linux fallback)
+
+## Стратегия найма
+
+- **Приоритет:** DevOps-инженер (CI/CD, GitLab/werf/K8s, Jitsi как продукт).
+- **Plan B:** Linux Sysadmin — если пользователь плавает на werf/K8s, усилить Jitsi/nginx/NAT/мониторинг, не сливать оффер.
+
+## Автоматизация (обязательно использовать)
+
+**Источники правды:**
+- `interview_script.json` — сценарий по минутам
+- `tech_qa.json` — **вопросы и ответы** (general + tech)
+- `gaps.json` — пробелы
+
+**Генерируются:** `Сценарий-интервью`, `Что-могут-спросить-Ответы`, `Техчасть-Вопросы-Ответы`, `ШПАРГАЛКА`, `Пробелы`, `Утро-чеклист`
+
+После диалога, где пользователь **не знает / путается**:
+
+```bash
+python my/scripts/synergy_prep.py gap add -t "Тема" -p "Что не смог" -l "Краткий ответ" --priority высокий --urgent
+python my/scripts/synergy_prep.py build
+```
+
+Или PowerShell: `.\my\scripts\Build-Synergy.ps1 gap add ...` затем `build`.
+
+Если пробел закрыт после практики:
+```bash
+python my/scripts/synergy_prep.py gap close -t "Тема"
+python my/scripts/synergy_prep.py build
+```
+
+## Что обновлять при пробелах
+
+1. `gaps.json` — через CLI `gap add` / `gap close`.
+2. При **новой теме для сценария** — добавить фазу или реплику в `interview_script.json`, затем `build`.
+3. `session_log` заполняется автоматически при `gap add`.
+
+## Команды
+
+| Команда | Действие |
+|---------|----------|
+| `synergy_prep.py build` | сценарий + шпаргалка + gaps + чеклист + все docx |
+| `synergy_prep.py morning` | адаптивный план по оставшемуся времени |
+| `synergy_prep.py status` | сводка до интервью |
+| `Build-Synergy.ps1 open` | build + открыть папку |
+
+## Файлы
+
+- **Сценарий:** `Сценарий-интервью.docx`
+- **HR/общие Q&A:** `Что-могут-спросить-Ответы.docx`
+- **Техчасть Q&A:** `Техчасть-Вопросы-Ответы.docx`
+- Шпаргалка: `Собеседование-Синергия-ШПАРГАЛКА.docx`
+- Редактировать: `interview_script.json`, `tech_qa.json` -> `build`

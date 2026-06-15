@@ -1,0 +1,14 @@
+{
+  "boards": [
+    {
+      "id": "dice",
+      "query": "devops remote",
+      "risky": false
+    },
+    {
+      "id": "welcometothejungle",
+      "query": "devops",
+      "risky": false
+    }
+  ]
+}

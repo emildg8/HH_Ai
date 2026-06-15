@@ -3,6 +3,8 @@
 import { openVacancyDetail } from './vacancy-detail.mjs';
 import { buildCardStatusChips, vacancyQuestionnairePending } from './card-status.mjs';
 import { buildScoreHumanHint } from './score-human-hint.mjs';
+import { buildSourceBadgeFragment } from './source-badges.mjs';
+import { tierShortLabel } from './dashboard-copy-ru.mjs';
 
 const tileTpl = document.getElementById('card-tile-tpl');
 
@@ -28,7 +30,9 @@ export function isTileBrowseMode(mode) {
 
 export function currentBrowseMode() {
   const layout = document.documentElement.dataset.cardLayout || 'expanded';
-  return layout === 'tile-compact' ? 'tile-compact' : null;
+  if (layout === 'tile-compact') return 'tile-compact';
+  if (layout === 'tile-medium') return 'tile-medium';
+  return null;
 }
 
 /** @param {string} text @param {number} maxLen */
@@ -112,19 +116,17 @@ function renderTileMeta(metaEl, item, mode) {
     ? clipText(String(item.resumeRouting.label).replace(/^Резюме:\s*/i, ''), 32)
     : '';
 
-  if (!company && !salary && !resume) {
-    metaEl.hidden = true;
-    metaEl.replaceChildren();
-    return;
-  }
-
   metaEl.hidden = false;
+  metaEl.replaceChildren(buildSourceBadgeFragment(item));
   const parts = [];
   if (company) parts.push({ cls: 'card-tile__meta-company', text: company });
   if (salary) parts.push({ cls: 'card-tile__meta-salary', text: salary });
   if (resume) parts.push({ cls: 'card-tile__meta-resume', text: resume });
+  if (!parts.length) return;
 
-  metaEl.replaceChildren(
+  const detail = document.createElement('span');
+  detail.className = 'card-tile__meta-detail';
+  detail.replaceChildren(
     ...parts.flatMap((part, i) => {
       const nodes = [];
       if (i > 0) {
@@ -141,6 +143,7 @@ function renderTileMeta(metaEl, item, mode) {
       return nodes;
     })
   );
+  metaEl.appendChild(detail);
 }
 
 /**
@@ -148,11 +151,17 @@ function renderTileMeta(metaEl, item, mode) {
  * @param {'tile-compact'|'tile-medium'} mode
  */
 function formatTileMeta(item, mode) {
+  const src = item.source && item.source !== 'hh' ? String(item.source) : '';
+  const tier = item.sourceQualityTier ? tierShortLabel(item.sourceQualityTier) : '';
+  const applyTag =
+    item.applyMode === 'ats_form' ? 'сайт' : item.applyMode === 'manual_link' ? 'ручн.' : '';
+  const srcPrefix = [src, tier, applyTag].filter(Boolean).join(' ');
+  const prefix = srcPrefix ? `[${srcPrefix}] ` : '';
   const company = item.company ? String(item.company).trim() : '';
   const salary = formatSalarySnippet(item);
   if (mode === 'tile-compact') {
-    if (company && salary) return `${company} · ${salary}`;
-    return company || salary || '';
+    if (company && salary) return `${prefix}${company} · ${salary}`;
+    return prefix + (company || salary || '');
   }
   const parts = [company, salary].filter(Boolean);
   return parts.join(' · ');
@@ -321,8 +330,9 @@ function renderTileStatus(badgeEl, chipsHost, footEl, item, mode) {
  * @param {number} scoreThreshold
  * @param {(item: object, opts?: object) => HTMLElement} renderFullCard
  * @param {(node: HTMLElement, item: object) => void} bindDismiss
+ * @param {(node: HTMLElement, item: object) => void} [bindCardDecision]
  */
-export function renderCardTile(item, scoreThreshold, renderFullCard, bindDismiss) {
+export function renderCardTile(item, scoreThreshold, renderFullCard, bindDismiss, bindCardDecision) {
   const mode = currentBrowseMode() || 'tile-compact';
   const node = tileTpl.content.firstElementChild.cloneNode(true);
   node.dataset.recordId = item.id;
@@ -436,6 +446,17 @@ export function renderCardTile(item, scoreThreshold, renderFullCard, bindDismiss
   }
 
   bindDismiss(node, item);
+
+  const approveBtn = node.querySelector('.btn-tile-approve');
+  const rejectBtn = node.querySelector('.btn-tile-reject');
+  if (mode === 'tile-medium' && item.status === 'pending') {
+    if (approveBtn) approveBtn.hidden = false;
+    if (rejectBtn) rejectBtn.hidden = false;
+    bindCardDecision?.(node, item);
+  } else {
+    approveBtn?.remove();
+    rejectBtn?.remove();
+  }
 
   const openDetail = () => openVacancyDetail(item, renderFullCard);
   const titleText = node.querySelector('.card-tile__title')?.textContent?.trim() || 'Вакансия';

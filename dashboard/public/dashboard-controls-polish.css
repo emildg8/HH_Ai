@@ -1,0 +1,516 @@
+/**
+ * Кнопки, пилюли, иконки, модалки — единый polish-слой (после unify/focus).
+ */
+
+:root {
+  --pill-h: 1.32rem;
+  --pill-pad-x: 0.45rem;
+  --pill-font: 0.62rem;
+  --icon-btn-size: 2rem;
+  --icon-btn-sm: 1.65rem;
+  --btn-transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+}
+
+/* ── Кнопки: база ── */
+.workspace-shell--v4 .btn,
+.modal .btn {
+  transition: var(--btn-transition);
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+.workspace-shell--v4 .btn:not(.btn-sm):not(.btn-icon):not(.modal-close) {
+  min-height: var(--ui-control-h);
+  padding-inline: 0.72rem;
+}
+
+.workspace-shell--v4 .btn-sm,
+.modal .btn-sm {
+  min-height: 2rem;
+  padding-inline: 0.55rem;
+}
+
+.workspace-shell--v4 .btn:focus-visible,
+.modal .btn:focus-visible {
+  box-shadow: var(--ds-focus-ring);
+}
+
+.workspace-shell--v4 .btn-primary,
+.workspace-shell--v4 .btn-routine-hero,
+.modal .btn-primary {
+  border: 1px solid color-mix(in srgb, var(--ds-accent) 85%, #000);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #000 22%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
+}
+
+.workspace-shell--v4 .btn-primary:active:not(:disabled),
+.modal .btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.workspace-shell--v4 .btn-secondary:not(:disabled),
+.modal .btn-secondary:not(:disabled) {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
+/* ── Семантические действия ── */
+.workspace-shell--v4 .btn-approve.ok,
+.workspace-shell--v4 .btn-approve,
+.modal .btn-approve.ok,
+.modal .btn-approve {
+  background: var(--ds-good-muted);
+  color: var(--ds-good);
+  border: 1px solid color-mix(in srgb, var(--ds-good) 38%, transparent);
+  font-weight: 650;
+}
+
+.workspace-shell--v4 .btn-approve:hover:not(:disabled),
+.modal .btn-approve:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ds-good) 20%, var(--hh-surface-tile));
+  border-color: color-mix(in srgb, var(--ds-good) 52%, transparent);
+}
+
+.workspace-shell--v4 .btn-reject.bad,
+.workspace-shell--v4 .btn-reject,
+.modal .btn-reject.bad,
+.modal .btn-reject {
+  background: var(--ds-bad-muted);
+  color: var(--ds-bad);
+  border: 1px solid color-mix(in srgb, var(--ds-bad) 35%, transparent);
+  font-weight: 650;
+}
+
+.workspace-shell--v4 .btn-reject:hover:not(:disabled),
+.modal .btn-reject:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ds-bad) 18%, var(--hh-surface-tile));
+  border-color: color-mix(in srgb, var(--ds-bad) 48%, transparent);
+}
+
+.workspace-shell--v4 .btn-apply-auto,
+.modal .btn-apply-auto {
+  background: var(--ds-good-muted);
+  color: var(--ds-good);
+  border: 1px solid color-mix(in srgb, var(--ds-good) 40%, transparent);
+  font-weight: 650;
+}
+
+.workspace-shell--v4 .btn-apply-auto:hover:not(:disabled),
+.modal .btn-apply-auto:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ds-good) 22%, transparent);
+}
+
+.workspace-shell--v4 .btn-apply-chat {
+  background: var(--hh-surface-tile);
+  border: 1px solid var(--hh-panel-border);
+  color: var(--hh-text);
+  font-weight: 600;
+}
+
+.workspace-shell--v4 .btn-apply-chat:hover:not(:disabled) {
+  background: var(--ui-tile-hover);
+  border-color: color-mix(in srgb, var(--ds-accent) 28%, var(--hh-panel-border));
+}
+
+/* ── Иконки-кнопки ── */
+.workspace-shell--v4 .btn-icon,
+.workspace-shell--v4 .modal-close,
+.modal .modal-close,
+.card-dismiss,
+.model-info-btn,
+.workspace-shell--v4 .workspace-menubar__dock-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-btn-size);
+  height: var(--icon-btn-size);
+  min-width: var(--icon-btn-size);
+  min-height: var(--icon-btn-size);
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+}
+
+.workspace-shell--v4 .btn-icon.btn-sm,
+.card-dismiss {
+  width: var(--icon-btn-sm);
+  height: var(--icon-btn-sm);
+  min-width: var(--icon-btn-sm);
+  min-height: var(--icon-btn-sm);
+}
+
+.card-dismiss {
+  border: 1px solid var(--hh-panel-border, var(--border));
+  background: var(--hh-surface-tile, var(--bg-secondary));
+  color: var(--hh-muted, var(--text-secondary));
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.card-dismiss:hover {
+  opacity: 1;
+  background: var(--ui-tile-hover, var(--bg-tertiary));
+  color: var(--hh-text, var(--text));
+}
+
+.model-info-btn {
+  width: 1.2rem;
+  height: 1.2rem;
+  min-width: 1.2rem;
+  min-height: 1.2rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  border: 1px solid var(--hh-panel-border, var(--border));
+  background: var(--hh-surface-tile, var(--bg-secondary));
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+.model-info-btn:hover {
+  color: var(--ds-accent);
+  border-color: color-mix(in srgb, var(--ds-accent) 35%, var(--hh-panel-border));
+}
+
+.dock-mini__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-btn-size);
+  height: var(--icon-btn-size);
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hh-panel-border, var(--border));
+  background: var(--hh-surface-tile, var(--bg-secondary));
+  color: var(--hh-muted, var(--text-secondary));
+  transition: var(--btn-transition);
+}
+
+.dock-mini__btn:hover {
+  color: var(--hh-text, var(--text));
+  background: var(--ui-tile-hover, var(--bg-tertiary));
+}
+
+.dock-mini__btn--active {
+  background: var(--ds-accent-muted);
+  border-color: color-mix(in srgb, var(--ds-accent) 35%, var(--hh-panel-border));
+  color: var(--hh-text, var(--text));
+}
+
+.dock-mini__icon,
+.ui-icon {
+  opacity: 0.88;
+}
+
+.dock-mini__btn:hover .dock-mini__icon,
+.dock__btn:hover .ui-icon {
+  opacity: 1;
+}
+
+/* ── Пилюли / бейджи ── */
+.hh-badge,
+.source-badge,
+.tier-badge,
+.apply-mode,
+.freshness-badge,
+.status-chip,
+.card-tile__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--pill-h);
+  padding: 0 var(--pill-pad-x);
+  font-size: var(--pill-font);
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-full);
+  vertical-align: middle;
+}
+
+.tier-badge {
+  min-width: 1.28rem;
+  padding-inline: 0.32rem;
+  font-weight: 700;
+}
+
+.tier-badge--A {
+  border: 1px solid color-mix(in srgb, var(--ds-good) 42%, transparent);
+}
+
+.tier-badge--B {
+  border: 1px solid color-mix(in srgb, var(--ds-accent) 38%, transparent);
+}
+
+.tier-badge--C {
+  border: 1px solid color-mix(in srgb, var(--ds-warn) 40%, transparent);
+}
+
+.source-badge,
+.hh-badge--chip {
+  border-width: 1px;
+  border-style: solid;
+}
+
+.status-chip {
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.status-chip--warn,
+.status-chip.status-chip--warn {
+  border-color: color-mix(in srgb, var(--ds-warn) 35%, transparent);
+}
+
+.card-tile__badge {
+  padding-inline: 0.4rem;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+}
+
+.card-tile__badge--warn {
+  color: var(--ds-warn);
+  background: var(--ds-warn-muted);
+}
+
+/* ── Segmented / пресеты ── */
+.workspace-shell--v4 .crm-seg .seg-btn.active,
+.workspace-shell--v4 .segmented .seg-btn.active,
+.filter-preset-chips .seg-btn.active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ds-accent) 22%, transparent);
+}
+
+/* ── Workflow (шаги в шапке) ── */
+.workflow-nav__step {
+  min-height: 2.15rem;
+  border: 1px solid var(--hh-panel-border, var(--border));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 3%, transparent);
+}
+
+.workflow-nav__step--active {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--ds-accent) 25%, transparent),
+    0 1px 0 color-mix(in srgb, var(--ds-accent) 12%, transparent);
+}
+
+.workflow-nav__num {
+  width: 1.2rem;
+  height: 1.2rem;
+  font-size: 0.58rem;
+  font-weight: 750;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* ── Модалки ── */
+.modal-backdrop {
+  background: color-mix(in srgb, #000 58%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.modal-dialog {
+  overflow: hidden;
+}
+
+.modal .modal-head,
+.workspace-shell--v4 .modal-head {
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--hh-panel-border, var(--border));
+  background: color-mix(in srgb, var(--hh-chrome, var(--bg)) 92%, var(--hh-elevated, var(--bg-elevated)));
+}
+
+.modal .modal-title {
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.modal .modal-close {
+  font-size: 1.2rem;
+  line-height: 1;
+  font-weight: 400;
+}
+
+.modal .modal-draft-actions,
+.modal .batch-precheck-actions,
+.modal .questionnaire-actions {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--hh-panel-border, var(--border));
+  background: var(--hh-surface-tile, var(--bg-secondary));
+  gap: var(--space-2);
+}
+
+.settings-dialog--v4 .settings-tabs__btn {
+  border-radius: calc(var(--radius-sm) - 1px);
+  font-weight: 600;
+  font-size: var(--text-xs);
+  min-height: 2rem;
+  transition: var(--btn-transition);
+}
+
+.settings-dialog--v4 .settings-tabs__btn.active {
+  background: var(--ds-accent-muted);
+  color: var(--hh-text, var(--text));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ds-accent) 22%, transparent);
+}
+
+.command-palette__panel {
+  border: 1px solid color-mix(in srgb, var(--ds-accent) 18%, var(--panel-border));
+  box-shadow: var(--shadow-overlay), 0 0 0 1px color-mix(in srgb, #fff 4%, transparent);
+}
+
+.command-palette__item.active,
+.command-palette__item:hover {
+  box-shadow: inset 2px 0 0 var(--ds-accent);
+}
+
+/* ── Тосты ── */
+.toast {
+  border-radius: var(--radius-full);
+  padding: 0.48rem 0.95rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-md);
+  border-width: 1px;
+}
+
+.toast--good {
+  border-color: color-mix(in srgb, var(--ds-good) 40%, transparent);
+}
+
+.toast--bad {
+  border-color: color-mix(in srgb, var(--ds-bad) 38%, transparent);
+}
+
+.toast--neutral {
+  border-color: var(--hh-panel-border, var(--border));
+  background: color-mix(in srgb, var(--hh-elevated, var(--bg-elevated)) 88%, transparent);
+}
+
+/* ── Меню писем в toolbar ── */
+.letter-toolbar-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+
+.letter-toolbar-fold {
+  position: relative;
+}
+
+.letter-toolbar-chip.active {
+  background: var(--ds-accent-muted);
+  border-color: color-mix(in srgb, var(--ds-accent) 25%, transparent);
+  color: var(--hh-text);
+}
+
+.letter-toolbar-fold__more,
+.letter-toolbar-fold__summary {
+  list-style: none;
+  min-width: 1.75rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.letter-toolbar-fold__more::-webkit-details-marker,
+.letter-toolbar-fold__summary::-webkit-details-marker {
+  display: none;
+}
+
+.letter-toolbar-fold__body {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  min-width: 11rem;
+  margin: 0;
+  padding: 0.35rem;
+  background: var(--hh-elevated, var(--bg-elevated));
+  border: 1px solid var(--hh-border, var(--border));
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.letter-toolbar-fold:not([open]) .letter-toolbar-fold__body {
+  display: none;
+}
+
+.letter-toolbar-fold[open] .letter-toolbar-fold__more {
+  background: var(--ds-accent-muted);
+  border-color: color-mix(in srgb, var(--ds-accent) 25%, transparent);
+  color: var(--hh-text);
+}
+
+.letter-toolbar-fold__body .btn {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.crm-search-wrap {
+  flex: 1 1 14rem;
+  min-width: 8rem;
+  background: var(--hh-surface-tile, var(--hh-tile));
+  border: 1px solid var(--hh-panel-border, var(--hh-border));
+  border-radius: var(--radius-sm);
+  padding: 0.12rem 0.35rem;
+  min-height: var(--ui-control-h);
+  box-sizing: border-box;
+}
+
+.crm-search-wrap .crm-search {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.crm-search-wrap .crm-search-input {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  min-height: calc(var(--ui-control-h) - 0.24rem);
+}
+
+.sidebar-filters__presets.filter-preset-chips {
+  width: 100%;
+  margin-bottom: 0.45rem;
+}
+
+.sidebar-filters__presets .seg-btn {
+  font-size: var(--text-xs);
+  white-space: normal;
+  line-height: 1.2;
+  padding: 0.28rem 0.35rem;
+}
+
+.letter-toolbar-fold__summary {
+  list-style: none;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+
+.letter-toolbar-fold__summary::-webkit-details-marker {
+  display: none;
+}
+
+.letter-toolbar-fold[open] .letter-toolbar-fold__summary {
+  background: var(--ds-accent-muted);
+  border-color: color-mix(in srgb, var(--ds-accent) 25%, transparent);
+  color: var(--hh-text);
+}
+
+html[data-theme='light'] .workspace-shell--v4 .btn-primary,
+html[data-theme='light'] .modal .btn-primary {
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 8%, transparent);
+}
+
+html[data-theme='light'] .modal-backdrop {
+  background: color-mix(in srgb, #000 28%, transparent);
+}

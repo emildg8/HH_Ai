@@ -74,3 +74,14 @@ description: >-
 ## Письма и стиль
 
 Кратко: шаблон [config/cover-letter.example.txt](config/cover-letter.example.txt); личный файл (например `config/cover-letter.txt`) — в `.gitignore` по желанию. В дашборде после **Утвердить** письма попадают в очередь эталонов стиля для следующих генераций; опционально `config/cover-letter-style-examples.txt` (разделитель `---` на отдельной строке). Подробности и переменные окружения для LLM — [reference.md](reference.md).
+
+## Резюме на hh.ru (CRUD)
+
+| Команда | Назначение |
+|--------|------------|
+| `devops:hh-resume-manage` | CLI: list / create / duplicate / edit / delete / scrape |
+| `devops:list-resumes` | Краткий список hash (legacy) |
+| `devops:sync-resume-variants` | Тексты «О себе» + опыт по `config/resume-variants.json` |
+| `devops:probe-resume-ui` | Скан UI → `data/hh-resume-probe.json` |
+
+Библиотеки: [lib/hh-resume-crud.mjs](lib/hh-resume-crud.mjs), селекторы [lib/hh-resume-selectors.mjs](lib/hh-resume-selectors.mjs). Удаление только с `--yes` (необратимо). Дашборд: `POST /api/launch-hh-resume-manage` (`action`, `hash`, `confirm` для delete), `GET /api/hh-resumes-cache` после `list`.

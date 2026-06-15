@@ -1,0 +1,120 @@
+/**
+ * HH Ai Design Foundation — единая типографика и базовые контролы.
+ * Подключать сразу после design-tokens.css.
+ */
+
+html {
+  font-size: var(--ds-root-size);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--leading-normal);
+  letter-spacing: 0.01em;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Все интерактивные контролы — тот же шрифт, что и оболочка */
+:is(
+  button,
+  input,
+  select,
+  textarea,
+  optgroup,
+  .btn,
+  .seg-btn,
+  .field-input,
+  .crm-search-input
+) {
+  font-family: var(--font-ui);
+  font-size: inherit;
+  font-feature-settings: inherit;
+}
+
+/* Оверлеи вне #app-shell */
+:is(
+  .modal,
+  .modal-dialog,
+  .command-palette,
+  .command-palette__panel,
+  .toast-host,
+  .toast,
+  .float-tip
+) {
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+}
+
+/* Моноширинный — только код, kbd, логи */
+:is(code, pre, kbd, .ds-kbd, .kbd, .job-progress-log, .modal-approved-text) {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Заголовки UI — одна шкала веса */
+:is(
+  .modal-title,
+  .settings-card__title,
+  .dock__title,
+  .brand-title,
+  .batch-report-headline,
+  .service-card__title
+) {
+  font-family: var(--font-ui);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+  line-height: var(--leading-tight);
+}
+
+/* Метки секций */
+:is(
+  .dock-section__label,
+  .card-action-group__title,
+  .card-section-title,
+  .settings-field__label
+) {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* Основной текст карточек и списков */
+:is(
+  .title-link,
+  .card-tile__title,
+  .crm-search-input,
+  .settings-field__hint,
+  .modal-hint,
+  .list-breadcrumbs
+) {
+  font-family: var(--font-ui);
+}
+
+/* Плотность: компактные подписи */
+.text-ui-xs {
+  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+}
+
+.text-ui-sm {
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.text-ui-base {
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+}

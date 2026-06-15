@@ -51,3 +51,7 @@ html[data-theme='light'] kbd.ds-kbd {
   border-color: var(--ui-border);
   color: var(--hh-muted);
 }
+
+html[data-theme='light'] .settings-dialog--v5 .settings-group {
+  border-color: color-mix(in srgb, var(--hh-border, var(--border-subtle)) 88%, var(--hh-text, #111));
+}

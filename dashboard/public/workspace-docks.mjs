@@ -190,6 +190,28 @@ export function applyDockState(state) {
           : 'Скрыть правую панель или изменить ширину'
     );
   }
+  syncMenubarDockToggles(state);
+}
+
+/** @param {DockState} state */
+function syncMenubarDockToggles(state) {
+  document.querySelectorAll('[data-dock-toggle]').forEach((btn) => {
+    const side = btn.dataset.dockToggle;
+    if (side !== 'left' && side !== 'right') return;
+    const visible = !state[side].hidden;
+    btn.setAttribute('aria-pressed', visible ? 'true' : 'false');
+    btn.classList.toggle('active', visible);
+  });
+}
+
+function initMenubarDockToggles(state) {
+  document.querySelectorAll('[data-dock-toggle]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const side = btn.dataset.dockToggle;
+      if (side === 'left' || side === 'right') toggleDockPanel(side);
+    });
+  });
+  syncMenubarDockToggles(state);
 }
 
 /** @type {DockState | null} */
@@ -431,6 +453,7 @@ export function initWorkspaceDocks() {
   applyDockState(state);
 
   initDockMiniNav(state);
+  initMenubarDockToggles(state);
 
   for (const side of /** @type {('left'|'right')[]} */ (['left', 'right'])) {
     initSplitter(state, side);

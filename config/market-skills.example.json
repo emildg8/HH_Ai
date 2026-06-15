@@ -1,0 +1,28 @@
+{
+  "role": "devops",
+  "source": "2r-manual",
+  "updatedAt": "2026-06-15",
+  "notes": "Черновик по DevOps/SRE с 2r.ru/top-skills-and-resumes. Скопируйте в config/market-skills.json и правьте под себя.",
+  "skills": [
+    { "name": "Linux", "rank": 1, "frequency": 0.94 },
+    { "name": "Docker", "rank": 2, "frequency": 0.91 },
+    { "name": "Kubernetes", "rank": 3, "frequency": 0.88 },
+    { "name": "CI/CD", "rank": 4, "frequency": 0.85 },
+    { "name": "Git", "rank": 5, "frequency": 0.83 },
+    { "name": "Ansible", "rank": 6, "frequency": 0.79 },
+    { "name": "Terraform", "rank": 7, "frequency": 0.76 },
+    { "name": "Bash", "rank": 8, "frequency": 0.74 },
+    { "name": "Grafana", "rank": 9, "frequency": 0.71 },
+    { "name": "Prometheus", "rank": 10, "frequency": 0.69 },
+    { "name": "Python", "rank": 11, "frequency": 0.67 },
+    { "name": "PostgreSQL", "rank": 12, "frequency": 0.64 },
+    { "name": "GitLab CI", "rank": 13, "frequency": 0.62 },
+    { "name": "Helm", "rank": 14, "frequency": 0.59 },
+    { "name": "OpenShift", "rank": 15, "frequency": 0.56 },
+    { "name": "Zabbix", "rank": 16, "frequency": 0.54 },
+    { "name": "Kafka", "rank": 17, "frequency": 0.51 },
+    { "name": "Redis", "rank": 18, "frequency": 0.48 },
+    { "name": "Jira", "rank": 19, "frequency": 0.46 },
+    { "name": "мониторинг", "rank": 20, "frequency": 0.44 }
+  ]
+}

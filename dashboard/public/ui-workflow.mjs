@@ -20,11 +20,11 @@ export const WORKFLOW_STEPS = [
 
     label: 'Найти',
 
-    hint: 'Поиск новых вакансий на hh.ru',
+    hint: 'Поиск на hh.ru, внешние источники, вставить ссылку, топ вакансии',
 
-    stripHint: 'Запустите «Поиск вакансий» в блоке «Действия» слева',
+    stripHint: 'Панель «Источники»: поиск hh, Хабр/Telegram/сайты, ссылка, фильтр «Топ»',
 
-    scrollPanel: 'actionsPrimary',
+    scrollPanel: 'sources',
 
   },
 
@@ -34,9 +34,9 @@ export const WORKFLOW_STEPS = [
 
     label: 'Разобрать',
 
-    hint: 'Очередь на проверку и решение',
+    hint: 'Очередь: оценка, письма, анкеты',
 
-    stripHint: 'Отметьте карточки «Подходит» или «Не подходит» — вкладки «На проверке» / «Подходят»',
+    stripHint: 'Средний вид — клик открывает карточку; быстрые «Подходит / Не подходит» на плитке · вид списка в Настройки → Интерфейс',
 
     applyView: 'queue',
 
@@ -48,9 +48,9 @@ export const WORKFLOW_STEPS = [
 
     label: 'Откликнуться',
 
-    hint: 'Серия авто-откликов по вкладке «Подходят»',
+    hint: 'hh авто + ручные отклики на сайтах компаний',
 
-    stripHint: 'Вкладка «Подходят» → «Авто-отклики» или «Серия» в «Действия»',
+    stripHint: '«Авто-отклики» для hh; ручные — сайт компании + «Открыть»',
 
     applyView: 'queue',
 
@@ -66,9 +66,9 @@ export const WORKFLOW_STEPS = [
 
     label: 'Следить',
 
-    hint: 'Отправленные отклики и синхронизация',
+    hint: 'Отклики, сводка по источникам, чаты',
 
-    stripHint: 'Раздел «Отклики» и синхронизация справа («Утренний цикл»)',
+    stripHint: '«Отклики», сводка справа, «Утренний цикл»',
 
     applyView: 'applied',
 
@@ -121,23 +121,8 @@ export function workflowStepHint(stepId) {
 
 
 /** @param {string} stepId */
-
-export function updateWorkflowHintStrip(stepId) {
-
-  const el = document.getElementById(WORKFLOW_HINT_STRIP_ID);
-
-  if (!el) return;
-
-  const step = WORKFLOW_STEPS.find((s) => s.id === stepId);
-
-  const text = step?.stripHint || '';
-
-  el.textContent = text;
-
-  el.hidden = !text;
-
-  el.dataset.workflowStep = stepId || '';
-
+export function updateWorkflowHintStrip(_stepId) {
+  /* полоска подсказок убрана — подсказки на кнопках workflow-nav (data-tip) */
 }
 
 

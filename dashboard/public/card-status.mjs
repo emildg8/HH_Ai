@@ -44,6 +44,12 @@ export function buildCardStatusChips(item) {
 
   if (item.targeting?.eligible === false) {
     chips.push({ kind: 'off-target', label: 'нецелевая', warn: true });
+  } else if (item.applyMode && item.applyMode !== 'hh_auto') {
+    chips.push({
+      kind: 'manual-apply',
+      label: item.applyMode === 'ats_form' ? 'форма на сайте' : 'ручной отклик',
+      warn: false,
+    });
   }
 
   if (item.status === 'rejected' && isAutoRejectRecord(item)) {
@@ -122,7 +128,13 @@ export function renderStatusChips(host, item) {
       continue;
     }
     const span = document.createElement('span');
-    span.className = `status-chip status-chip--${c.kind}${c.warn ? ' status-chip--warn' : ''}`;
+    const extraClass =
+      c.kind === 'manual-apply'
+        ? item.applyMode === 'ats_form'
+          ? ' apply-mode--ats'
+          : ' apply-mode--manual'
+        : '';
+    span.className = `status-chip status-chip--${c.kind}${c.warn ? ' status-chip--warn' : ''}${extraClass}`;
     span.textContent = c.label;
     frag.appendChild(span);
   }

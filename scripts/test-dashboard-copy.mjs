@@ -22,6 +22,13 @@ const JARGON = [
   /Ручн\./,
   /Без анк\./,
   /Отлож\./,
+  /\bTier\b/,
+  /\bATS\b/,
+  /Habr \//,
+  /spoken English/i,
+  /\bingest\b/i,
+  /Класс\s*[АБВГ]/,
+  /класс\s*[а-яё]/i,
 ];
 
 function collectVisibleText() {

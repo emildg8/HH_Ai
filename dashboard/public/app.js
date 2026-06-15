@@ -12,7 +12,7 @@ import {
 } from './letter-quality-ui.mjs';
 import { initUiScaleControls } from './ui-scale.mjs';
 import { initThemeControls } from './ui-theme.mjs';
-import { initCardTuningControls, normalizeCardLayout } from './ui-card-tuning.mjs';
+import { initCardTuningControls, normalizeCardLayout, applyCardSizePreset } from './ui-card-tuning.mjs';
 import { applyLocalDashboardDefaults } from './load-local-defaults.mjs';
 import {
   meaningfulQuestions,
@@ -48,6 +48,7 @@ import {
 } from './dashboard-ux.mjs';
 import { initSidebarBuilder, renderSidebarBuilder } from './ui-sidebar-builder.mjs';
 import { applySidebarLayout } from './sidebar-layout.mjs';
+import { scrollToPanel, withPanelVisible } from './features-access.mjs';
 import { initMobileShell, isMobileViewport } from './ui-mobile.mjs';
 import {
   initWorkspaceDocks,
@@ -67,11 +68,26 @@ import {
 } from './command-palette.mjs';
 import { initKeyboardShortcuts } from './keyboard-shortcuts.mjs';
 import { buildListBreadcrumbItems, mountListBreadcrumbs } from './list-breadcrumbs.mjs';
+import { renderInterviewHubHtml, renderMockOutputHtml } from './interview-hub-ui.mjs';
 import { initListKeyboardNav } from './list-keyboard-nav.mjs';
 import { renderStatusChips } from './card-status.mjs';
 import { applyCopyToDom, syncFullscreenIcon } from './apply-copy-dom.mjs';
 import { initWorkflowNav } from './ui-workflow.mjs';
 import { initChatInboxUi, openChatInboxModal } from './chat-inbox-ui.mjs';
+import { buildSourceBadgeFragment, formatSourceOpenLabel } from './source-badges.mjs';
+import { tierClassLabel } from './dashboard-copy-ru.mjs';
+import { initSourcesPanel, refreshTopTierList } from './sources-panel.mjs';
+import {
+  initIngestUrlModal,
+  openIngestUrlModal,
+  closeIngestUrlModal,
+} from './ingest-url-modal.mjs';
+import {
+  initIntelligencePanel,
+  refreshIntelligencePanel,
+  openIntelligenceDigestModal,
+} from './intelligence-panel.mjs';
+import { initMarketSkillsPanel, refreshMarketSkillsPanel } from './market-skills-panel.mjs';
 import { buildScoreHumanHint } from './score-human-hint.mjs';
 import {
   closeVacancyDetail,
@@ -103,9 +119,18 @@ const applyViewTabsEl = document.querySelector('.apply-view-tabs');
 const filterSearchEl = document.getElementById('filter-search');
 const filterLetterQualityBtnEl = document.getElementById('btn-filter-letter-quality');
 const filterLetterWeakBtnEl = document.getElementById('btn-filter-letter-weak');
+const letterToolbarChipEl = document.getElementById('letter-toolbar-chip');
 const btnBulkImproveLettersEl = document.getElementById('btn-bulk-improve-letters');
 const filterMinScoreEl = document.getElementById('filter-min-score');
 const filterSortEl = document.getElementById('filter-sort');
+const sidebarFilterSourceEl = document.getElementById('sidebar-filter-source');
+const sidebarFilterTierEl = document.getElementById('sidebar-filter-tier');
+const filterSourceEl = sidebarFilterSourceEl;
+const filterTierEl = sidebarFilterTierEl;
+
+const FILTER_PRESET_LS_KEY = 'hh-dashboard-filter-preset-v1';
+/** @type {{ onlyManual?: boolean, onlyFresh?: boolean }} */
+let filterPresetExtras = { onlyManual: false, onlyFresh: false };
 const filterSalaryEl = document.getElementById('filter-salary');
 const scoreThresholdInputEl = document.getElementById('score-threshold-input');
 const batchLimitEl = document.getElementById('batch-limit');
@@ -118,15 +143,14 @@ const learningAutoApplyEl = document.getElementById('learning-auto-apply');
 const learningAutoApplyMinEl = document.getElementById('learning-auto-apply-min');
 const btnLetterCenterRegenEl = document.getElementById('btn-letter-center-regen');
 const letterStatsBodyEl = document.getElementById('letter-stats-body');
-const letterCenterPanelEl = document.getElementById('letter-center-panel');
 const letterCenterListEl = document.getElementById('letter-center-list');
 const btnLetterCenterPrepareEl = document.getElementById('btn-letter-center-prepare');
+const btnStatusLettersIssuesEl = document.getElementById('btn-status-letters-issues');
 const btnLetterCenterFilterEl = document.getElementById('btn-letter-center-filter');
 const btnLetterCenterFixableEl = document.getElementById('btn-letter-center-fixable');
 const btnLetterCenterFailEl = document.getElementById('btn-letter-center-fail');
 const btnLetterCenterMissingEl = document.getElementById('btn-letter-center-missing');
 const btnLetterCenterMoreEl = document.getElementById('btn-letter-center-more');
-const letterHubExtraEl = document.getElementById('letter-hub-extra');
 const letterCenterMetaEl = document.getElementById('letter-center-meta');
 const prefMaxHourEl = document.getElementById('pref-max-hour');
 const prefMaxDayEl = document.getElementById('pref-max-day');
@@ -198,6 +222,35 @@ function writeDashboardLayoutLocal(ui) {
     /* ignore */
   }
 }
+
+function enableSidebarPanel(panelId, { toast = true } = {}) {
+  dashboardUi = withPanelVisible(dashboardUi, panelId, true);
+  writeDashboardLayoutLocal(dashboardUi);
+  applySidebarLayout(dashboardUi);
+  scrollToPanel(dashboardUi, panelId);
+  if (toast) {
+    const label = SIDEBAR_PANELS[panelId]?.label || panelId;
+    showToast(`Панель «${label}» открыта`, 'neutral');
+  }
+}
+
+function switchUiMode(mode) {
+  const next = mode === UI_MODES.expert ? UI_MODES.expert : UI_MODES.simple;
+  dashboardUi.uiMode = next;
+  if (next === UI_MODES.simple) {
+    dashboardUi.panels = { ...dashboardUi.panels, ...defaultPanelsForMode(UI_MODES.simple) };
+  }
+  applyDashboardUiFromPreferences(
+    { dashboardUiMode: next, dashboardSidebarPanels: dashboardUi.panels },
+    dashboardUi
+  );
+  if (layoutSettingsHydrated) scheduleSaveLayoutSettings();
+  showToast(next === UI_MODES.expert ? 'Расширенный интерфейс' : 'Простой интерфейс', 'neutral');
+}
+
+function initAllFeaturesButton() {
+  document.getElementById('btn-all-features')?.addEventListener('click', () => openCommandPalette());
+}
 let lastHarvestTickSeq = 0;
 let applyLogPollTimer = null;
 let applyChatWasRunning = false;
@@ -249,12 +302,74 @@ function readFiltersFromUI() {
   return {
     search: (filterSearchEl?.value || '').trim(),
     company: '',
-    onlyLetterIssues: filterLetterQualityBtnEl?.getAttribute('aria-pressed') === 'true',
+    onlyLetterIssues: (letterToolbarChipEl || filterLetterQualityBtnEl)?.getAttribute('aria-pressed') === 'true',
     onlyLetterWeak: filterLetterWeakBtnEl?.getAttribute('aria-pressed') === 'true',
     minScore: filterMinScoreEl?.value?.trim() ?? '',
     sort: filterSortEl?.value || 'score-desc',
+    source: filterSourceEl?.value || sidebarFilterSourceEl?.value || 'all',
+    tier: filterTierEl?.value || sidebarFilterTierEl?.value || 'all',
     onlySalary: Boolean(filterSalaryEl?.checked),
+    onlyManual: Boolean(filterPresetExtras.onlyManual),
+    onlyFresh: Boolean(filterPresetExtras.onlyFresh),
   };
+}
+
+function syncFilterControlsFrom(src, tier) {
+  const srcVal = typeof src === 'string' ? src : src?.value || 'all';
+  const tierVal = typeof tier === 'string' ? tier : tier?.value || 'all';
+  if (filterSourceEl) filterSourceEl.value = srcVal;
+  if (sidebarFilterSourceEl) sidebarFilterSourceEl.value = srcVal;
+  if (filterTierEl) filterTierEl.value = tierVal;
+  if (sidebarFilterTierEl) sidebarFilterTierEl.value = tierVal;
+}
+
+function setTierFilter(tier) {
+  syncFilterControlsFrom(filterSourceEl?.value || 'all', tier);
+  if (filterSortEl && tier !== 'all') filterSortEl.value = 'tier-first';
+  renderListFromCache(null);
+}
+
+/** @param {'tierAFresh'|'manualApply'|'allSources'} preset */
+function applyFilterPreset(preset) {
+  try {
+    localStorage.setItem(FILTER_PRESET_LS_KEY, preset);
+  } catch {
+    /* ignore */
+  }
+  filterPresetExtras = { onlyManual: false, onlyFresh: false };
+  document.querySelectorAll('[data-preset]').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-preset') === preset);
+  });
+  if (preset === 'tierAFresh') {
+    if (filterTierEl) filterTierEl.value = 'A';
+    if (sidebarFilterTierEl) sidebarFilterTierEl.value = 'A';
+    if (filterSourceEl) filterSourceEl.value = 'all';
+    if (sidebarFilterSourceEl) sidebarFilterSourceEl.value = 'all';
+    if (filterSortEl) filterSortEl.value = 'tier-first';
+    filterPresetExtras.onlyFresh = true;
+  } else if (preset === 'manualApply') {
+    if (filterTierEl) filterTierEl.value = 'all';
+    if (sidebarFilterTierEl) sidebarFilterTierEl.value = 'all';
+    if (filterSourceEl) filterSourceEl.value = 'all';
+    if (sidebarFilterSourceEl) sidebarFilterSourceEl.value = 'all';
+    filterPresetExtras.onlyManual = true;
+  } else {
+    if (filterTierEl) filterTierEl.value = 'all';
+    if (sidebarFilterTierEl) sidebarFilterTierEl.value = 'all';
+    if (filterSourceEl) filterSourceEl.value = 'all';
+    if (sidebarFilterSourceEl) sidebarFilterSourceEl.value = 'all';
+  }
+  renderListFromCache(null);
+}
+
+function restoreFilterPresetFromStorage() {
+  let preset = 'allSources';
+  try {
+    preset = localStorage.getItem(FILTER_PRESET_LS_KEY) || 'allSources';
+  } catch {
+    /* ignore */
+  }
+  if (preset !== 'allSources') applyFilterPreset(/** @type {'tierAFresh'|'manualApply'|'allSources'} */ (preset));
 }
 
 function hasLetterQualityIssue(item) {
@@ -410,6 +525,21 @@ function applyClientFilters(items, filters) {
   if (filters.onlySalary) {
     out = out.filter((it) => it.salaryEstimate?.ok);
   }
+  if (filters.source && filters.source !== 'all') {
+    out = out.filter((it) => String(it.source || 'hh').toLowerCase() === filters.source);
+  }
+  if (filters.tier && filters.tier !== 'all') {
+    out = out.filter((it) => String(it.sourceQualityTier || '').toUpperCase() === filters.tier.toUpperCase());
+  }
+  if (filters.onlyManual) {
+    out = out.filter((it) => it.applyMode && it.applyMode !== 'hh_auto');
+  }
+  if (filters.onlyFresh) {
+    out = out.filter((it) => {
+      const h = Number(it.freshnessHours);
+      return Number.isFinite(h) && h < 72;
+    });
+  }
   if (filters.onlyLetterIssues) {
     out = out.filter((it) => hasLetterQualityIssue(it));
     out.sort((a, b) => letterQualitySortKey(a) - letterQualitySortKey(b));
@@ -432,6 +562,19 @@ function applyClientFilters(items, filters) {
     });
   }
   switch (filters.sort) {
+    case 'tier-first': {
+      const tierOrder = { A: 0, B: 1, C: 2, D: 3 };
+      out.sort((a, b) => {
+        const ta = tierOrder[a.sourceQualityTier] ?? 9;
+        const tb = tierOrder[b.sourceQualityTier] ?? 9;
+        if (ta !== tb) return ta - tb;
+        const fa = a.freshnessHours ?? 9999;
+        const fb = b.freshnessHours ?? 9999;
+        if (fa !== fb) return fa - fb;
+        return scoreOf(b) - scoreOf(a);
+      });
+      break;
+    }
     case 'score-asc':
       out.sort((a, b) => scoreOf(a) - scoreOf(b));
       break;
@@ -449,10 +592,11 @@ function applyClientFilters(items, filters) {
 
 function renderApplyRateMeters(rates) {
   if (!applyRateMetersEl || !rates) return;
+  const simple = dashboardUi.uiMode !== UI_MODES.expert;
   const rows = [
-    { key: 'hour', label: 'ч', used: rates.lastHour, max: rates.maxPerHour },
-    { key: 'day', label: 'сут', used: rates.lastDay, max: rates.maxPerDay },
-    { key: 'month', label: '30д', used: rates.lastMonth, max: rates.maxPerMonth },
+    { key: 'hour', label: simple ? 'час' : 'ч', used: rates.lastHour, max: rates.maxPerHour },
+    { key: 'day', label: simple ? 'сутки' : 'сут', used: rates.lastDay, max: rates.maxPerDay },
+    { key: 'month', label: simple ? '30 дней' : '30д', used: rates.lastMonth, max: rates.maxPerMonth },
   ];
   applyRateMetersEl.innerHTML = rows
     .map(({ label, used, max }) => {
@@ -485,6 +629,11 @@ function applyPreferencesToSettingsUI(preferences, bounds) {
     el.value = String(Number.isFinite(n) ? n : fallback);
   };
   setNum(scoreThresholdInputEl, 'dashboardMinScoreFilter', 50);
+  const thRange = document.getElementById('score-threshold-range');
+  if (thRange && scoreThresholdInputEl) {
+    const n = Number(scoreThresholdInputEl.value);
+    if (Number.isFinite(n)) thRange.value = String(Math.min(100, Math.max(0, n)));
+  }
   setNum(batchLimitEl, 'dashboardBatchSize', 10);
   setNum(prefMaxHourEl, 'hhApplyChatMaxPerHour', 50);
   setNum(prefMaxDayEl, 'hhApplyChatMaxPerDay', 1000);
@@ -551,11 +700,39 @@ function applyPreferencesToSettingsUI(preferences, bounds) {
   settingsModalHooks?.syncDerivedState?.();
 }
 
+function setProfileSelectPlaceholder(text, { disabled = true } = {}) {
+  if (!settingsProfileSelectEl) return;
+  settingsProfileSelectEl.replaceChildren();
+  const opt = document.createElement('option');
+  opt.value = '';
+  opt.textContent = text;
+  opt.disabled = disabled;
+  opt.selected = true;
+  settingsProfileSelectEl.append(opt);
+}
+
 function applyProfileOptionsToSettingsUI(data) {
-  if (!settingsProfileSelectEl || !data?.profiles?.length) return;
-  const active = String(data.activeProfile || '').trim();
+  if (!settingsProfileSelectEl) return;
+  const profiles = Array.isArray(data?.profiles) ? [...data.profiles] : [];
+  const active = String(data?.activeProfile || '').trim();
+
+  if (!profiles.length && !active) {
+    setProfileSelectPlaceholder('Нет профилей — добавьте config/profiles/<id>.env');
+    profileOptionsLoaded = false;
+    if (settingsProfileQueueHintEl) settingsProfileQueueHintEl.textContent = '—';
+    return;
+  }
+
+  if (active && !profiles.some((p) => p.id === active)) {
+    profiles.unshift({
+      id: active,
+      label: `${active} (файл не найден)`,
+      envPath: null,
+    });
+  }
+
   settingsProfileSelectEl.replaceChildren(
-    ...data.profiles.map((p) => {
+    ...profiles.map((p) => {
       const opt = document.createElement('option');
       opt.value = p.id;
       opt.textContent = p.label || p.id;
@@ -563,12 +740,29 @@ function applyProfileOptionsToSettingsUI(data) {
       return opt;
     })
   );
+  if (active && !settingsProfileSelectEl.value) {
+    settingsProfileSelectEl.value = active;
+  }
   if (settingsProfileQueueHintEl) {
     settingsProfileQueueHintEl.textContent = data.queuePath
       ? `Очередь: ${data.queuePath}`
       : 'Очередь по умолчанию';
   }
-  profileOptionsLoaded = true;
+  profileOptionsLoaded = profiles.length > 0;
+}
+
+async function refreshProfileSelect() {
+  if (!settingsProfileSelectEl) return null;
+  const hadOptions = settingsProfileSelectEl.options.length > 0 && settingsProfileSelectEl.value;
+  if (!hadOptions) setProfileSelectPlaceholder('Загрузка…');
+  try {
+    const data = await api('/api/profiles');
+    applyProfileOptionsToSettingsUI(data);
+    return data;
+  } catch {
+    if (!hadOptions) setProfileSelectPlaceholder('Не удалось загрузить профили');
+    return null;
+  }
 }
 
 async function changeActiveProfile(profileId) {
@@ -646,6 +840,9 @@ function applyDashboardUiFromPreferences(preferences, uiFromApi) {
   applySidebarLayout(dashboardUi);
   renderSidebarBuilder();
   syncLayoutPresetButtons();
+  if (dashboardUi.uiMode === UI_MODES.simple) {
+    applyCardSizePreset('compact');
+  }
 }
 
 function syncLayoutPresetButtons() {
@@ -786,7 +983,9 @@ function flashSettingsSaved() {
   setSettingsHint('Сохранено', 'saved');
   settingsHintClearTimer = setTimeout(() => {
     settingsHintClearTimer = null;
-    if (settingsSaveHintEl?.textContent === 'Сохранено') setSettingsHint('');
+    if (settingsSaveHintEl?.textContent === 'Сохранено') {
+      setSettingsHint('Изменения сохраняются автоматически');
+    }
   }, 1800);
 }
 
@@ -888,7 +1087,7 @@ async function loadDashboardSettings() {
     applyDashboardUiFromPreferences(data.preferences, data.ui);
     showUiTrimHintOnce();
     if (data.applyRates) renderApplyRateMeters(data.applyRates);
-    applyProfileOptionsToSettingsUI(data);
+    await refreshProfileSelect();
     if (data.systemStatus) settingsModalHooks?.renderSystemHealth?.(data.systemStatus);
     if (!preferencesSaveAvailable) {
       setSettingsHint('Сохранение недоступно — перезапустите дашборд (npm run devops:dashboard)', 'err');
@@ -1098,9 +1297,11 @@ function batchPrecheckTopSampleText(precheck) {
 }
 
 function setLetterIssuesFilter(enabled) {
-  if (!filterLetterQualityBtnEl) return;
-  filterLetterQualityBtnEl.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-  filterLetterQualityBtnEl.classList.toggle('active', enabled);
+  for (const el of [filterLetterQualityBtnEl, letterToolbarChipEl]) {
+    if (!el) continue;
+    el.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    el.classList.toggle('active', enabled);
+  }
 }
 
 function formatFetchError(err, path) {
@@ -1249,39 +1450,71 @@ function updateLetterCenterKindButtons() {
   }
 }
 
-function renderLetterHubExtra(hub) {
-  if (!letterHubExtraEl) return;
-  letterQualityHubCache = hub;
-  const parts = [];
-  const br = hub?.batchReport;
-  if (br?.letterQualitySkips > 0) {
-    parts.push(`батч: −${br.letterQualitySkips} по письмам`);
-  }
+function renderLetterStatusKpis({ s, hub, warn, baselineGoldenOk }) {
+  if (!letterStatsBodyEl) return;
+  const needWork = (s?.fixable || 0) + (s?.fail || 0) + (s?.missing || 0);
+  const readyPct =
+    s?.letterReadyRate != null && s?.approved > 0 ? ` <span class="status-kpi__sub">(${s.letterReadyRate}%)</span>` : '';
   const gl = hub?.golden?.letters;
   const gt = hub?.golden?.targeting;
-  if (gl?.total) {
-    parts.push(`письма ${gl.passed}/${gl.total}${gl.ok === false ? ' ⚠' : ''}`);
+  let qualityHtml = '';
+  if (gl?.total || gt?.total) {
+    const parts = [];
+    if (gl?.total) {
+      parts.push(`письма ${gl.passed}/${gl.total}${gl.ok === false ? ' ⚠' : ''}`);
+    }
+    if (gt?.total) {
+      parts.push(`отбор ${gt.passed}/${gt.total}${gt.ok === false ? ' ⚠' : ''}`);
+    }
+    qualityHtml = `<div class="status-kpi status-kpi--quality${
+      baselineGoldenOk === false ? ' status-kpi--warn' : ''
+    }" title="Эталонные проверки качества">
+      <span class="status-kpi__label">Качество</span>
+      <span class="status-kpi__value">${parts.join(' · ')}</span>
+    </div>`;
   }
-  if (gt?.total) {
-    parts.push(`таргет ${gt.passed}/${gt.total}${gt.ok === false ? ' ⚠' : ''}`);
-  }
-  if (hub?.userEdits?.recentCount > 0) {
-    parts.push(`правки ${hub.userEdits.recentCount}`);
-  }
-  letterHubExtraEl.textContent = parts.join(' · ');
-  letterHubExtraEl.hidden = parts.length === 0;
-  letterHubExtraEl.title = 'Подробнее о качестве писем';
+  const br = hub?.batchReport;
+  const batchNote =
+    br?.letterQualitySkips > 0
+      ? `<p class="status-kpi-note">Серия пропустила ${br.letterQualitySkips} по письмам</p>`
+      : '';
+  letterStatsBodyEl.innerHTML = `<div class="status-kpi-row">
+    <div class="status-kpi">
+      <span class="status-kpi__label">Готово</span>
+      <span class="status-kpi__value">${s?.pass || 0}/${s?.approved || 0}${readyPct}</span>
+    </div>
+    <div class="status-kpi${needWork > 0 ? ' status-kpi--warn status-kpi--need-work' : ''}" data-action="letters-issues" title="${
+      needWork > 0 ? 'Открыть список проблем писем' : ''
+    }">
+      <span class="status-kpi__label">Нужна работа</span>
+      <span class="status-kpi__value">${needWork}</span>
+    </div>
+    ${qualityHtml}
+  </div>${batchNote}`;
+  letterStatsBodyEl.classList.toggle('letter-stats-mini--warn', Boolean(warn));
+  letterStatsBodyEl.classList.toggle('letter-stats-mini--golden-warn', baselineGoldenOk === false);
 }
 
 function toggleLetterIssuesFilter() {
-  if (!filterLetterQualityBtnEl) return;
-  const next = !(filterLetterQualityBtnEl.getAttribute('aria-pressed') === 'true');
+  const probe = letterToolbarChipEl || filterLetterQualityBtnEl;
+  if (!probe) return;
+  const next = !(probe.getAttribute('aria-pressed') === 'true');
   setLetterIssuesFilter(next);
   renderListFromCache(null);
   showToast(
     next ? 'Фильтр: только карточки с проблемами письма' : 'Фильтр писем снят',
     'neutral'
   );
+}
+
+function openLetterIssuesModal() {
+  const modal = document.getElementById('letter-issues-modal');
+  if (!modal) return;
+  const payload = letterStatsCache?.payload;
+  if (payload) {
+    renderLetterCenterList(payload.s, payload.issues);
+  }
+  openModalEl(modal);
 }
 
 function openLetterQualityHubModal() {
@@ -1380,8 +1613,7 @@ async function refreshLetterStatsSidebar(force = false) {
   const batchScope = batchScopeForCurrentView();
   if (!batchScope || currentApplyView === 'applied') {
     letterStatsBodyEl.hidden = true;
-    if (letterHubExtraEl) letterHubExtraEl.hidden = true;
-    if (letterCenterPanelEl) letterCenterPanelEl.hidden = true;
+    if (btnStatusLettersIssuesEl) btnStatusLettersIssuesEl.hidden = true;
     return;
   }
   const cacheKey = `${batchScope}:${currentStatus}:${filterMinScoreEl?.value || ''}`;
@@ -1410,72 +1642,15 @@ async function refreshLetterStatsSidebar(force = false) {
       api(`/api/cover-letter/issues?${qs.toString()}&kind=issues&limit=24`),
       api('/api/cover-letter/quality-hub').catch(() => null),
     ]);
-    renderLetterHubExtra(hub);
-    const gen = hub?.metrics?.generate;
-    const genHint =
-      gen?.total > 0 && gen.qualityPassRate != null
-        ? ` · LLM ok ${gen.qualityPassRate}%${gen.qualityRetry ? ` · retry ${gen.qualityRetry}` : ''}`
-        : '';
-    const corrHint =
-      hub?.correlation?.invitedPassRate != null && hub?.correlation?.appliedPassRate != null
-        ? ` · invite ${hub.correlation.invitedPassRate}% vs отклик ${hub.correlation.appliedPassRate}%`
-        : '';
-    const insightParts = [];
-    if (hub?.correlation?.insight && (hub.correlation.withLetter || 0) >= 8) {
-      insightParts.push(hub.correlation.insight);
-    }
-    if (hub?.styleInsights?.insight && (hub.styleInsights.invitedCount || 0) >= 3) {
-      insightParts.push(hub.styleInsights.insight);
-    }
-    const insight =
-      insightParts.length > 0
-        ? `<p class="letter-stats-insight" title="${escapeHtml(insightParts.join(' '))}">${escapeHtml(insightParts.join(' ').slice(0, 120))}${insightParts.join(' ').length > 120 ? '…' : ''}</p>`
-        : '';
-    const readyPct =
-      s.letterReadyRate != null && s.approved > 0 ? ` · ${s.letterReadyRate}% ок` : '';
-    const bl = hub?.baseline;
-    const baselineBits = [];
-    if (bl?.falsePositiveRate != null && (bl.falsePositives || 0) > 0) {
-      baselineBits.push(
-        `${glossaryLabel('fpRejected', dashboardUi.uiMode)} ${bl.falsePositiveRate}%`
-      );
-    }
-    if (hub?.golden?.letters?.total) {
-      const glOk = hub.golden.letters.ok !== false;
-      baselineBits.push(
-        `L ${hub.golden.letters.passed}/${hub.golden.letters.total}${glOk ? '' : ' ⚠'}`
-      );
-    }
-    if (hub?.golden?.targeting?.total) {
-      const gOk = hub.golden.targeting.ok !== false;
-      baselineBits.push(
-        `T ${hub.golden.targeting.passed}/${hub.golden.targeting.total}${gOk ? '' : ' ⚠'}`
-      );
-    }
-    if (bl?.inviteRate != null && (bl.responded || 0) >= 5) {
-      baselineBits.push(`invite ${bl.inviteRate}%`);
-    }
-    const baselineHint = baselineBits.length ? ` · ${baselineBits.join(' · ')}` : '';
-    const parts = [
-      `<strong>Письма</strong>`,
-      `готово ${s.pass || 0}/${s.approved || 0}${readyPct}`,
-      s.fixable ? `· подготовить ${s.fixable}` : '',
-      s.fail ? `· правка ${s.fail}` : '',
-      s.missing ? `· нет ${s.missing}` : '',
-      genHint,
-      corrHint,
-      baselineHint,
-    ].filter(Boolean);
-    const baselineGoldenOk = hub?.golden?.targeting?.ok !== false;
+    letterQualityHubCache = hub;
+    const baselineGoldenOk =
+      hub?.golden?.letters?.ok !== false && hub?.golden?.targeting?.ok !== false;
     const payload = {
       s,
       issues,
       hub,
-      parts,
-      insight,
-      warn: (s.fail || 0) + (s.fixable || 0) > 0,
-      baselineGoldenOk:
-        baselineGoldenOk && hub?.golden?.letters?.ok !== false && hub?.golden?.targeting?.ok !== false,
+      warn: (s.fail || 0) + (s.fixable || 0) + (s.missing || 0) > 0,
+      baselineGoldenOk,
     };
     letterStatsCache = { key: cacheKey, payload };
     letterStatsCacheTs = Date.now();
@@ -1484,70 +1659,87 @@ async function refreshLetterStatsSidebar(force = false) {
   } catch {
     if (fetchSeq !== letterStatsFetchSeq) return;
     letterStatsBodyEl.hidden = true;
-    if (letterHubExtraEl) letterHubExtraEl.hidden = true;
-    if (letterCenterPanelEl) letterCenterPanelEl.hidden = true;
+    if (btnStatusLettersIssuesEl) btnStatusLettersIssuesEl.hidden = true;
   } finally {
     letterStatsBodyEl.classList.remove('letter-stats-mini--loading');
   }
 }
 
-function applyLetterStatsPayload({ s, issues, parts, insight, warn, baselineGoldenOk }) {
-  if (!letterStatsBodyEl) return;
-  letterStatsBodyEl.innerHTML = parts.join(' ') + (insight || '');
-  letterStatsBodyEl.classList.toggle('letter-stats-mini--warn', Boolean(warn));
-  letterStatsBodyEl.classList.toggle('letter-stats-mini--golden-warn', baselineGoldenOk === false);
-  letterStatsBodyEl.hidden = false;
-  if (!letterCenterPanelEl || !letterCenterListEl) return;
+function renderLetterCenterList(s, issues) {
+  if (!letterCenterListEl) return;
   updateLetterCenterKindButtons();
   const allItems = issues?.items || [];
   const items = filterLetterCenterItems(allItems);
   const issueTotal = (s?.fixable || 0) + (s?.fail || 0) + (s?.missing || 0);
-  const showPanel = allItems.length > 0 || issueTotal > 0;
-  letterCenterPanelEl.hidden = !showPanel;
+  const showList = allItems.length > 0 || issueTotal > 0;
   if (letterCenterMetaEl) {
-    if (!showPanel) {
+    if (!showList) {
       letterCenterMetaEl.hidden = true;
     } else {
       const shown = items.length;
       const listTotal = allItems.length;
       const filterLabel =
         letterCenterKindFilter === 'all'
-          ? `проблем: ${listTotal}`
-          : `${shown} из ${listTotal}`;
+          ? `Проблем: ${listTotal}`
+          : `Показано ${shown} из ${listTotal}`;
       letterCenterMetaEl.textContent = filterLabel;
       letterCenterMetaEl.hidden = false;
     }
   }
-  if (items.length === 0 && showPanel && letterCenterKindFilter !== 'all') {
+  if (!showList) {
+    letterCenterListEl.replaceChildren();
+    const empty = document.createElement('li');
+    empty.className = 'letter-center-list__empty';
+    empty.textContent = 'Нет карточек с проблемами писем';
+    letterCenterListEl.append(empty);
+  } else if (items.length === 0 && letterCenterKindFilter !== 'all') {
     letterCenterListEl.replaceChildren();
     const empty = document.createElement('li');
     empty.className = 'letter-center-list__empty';
     empty.textContent = 'Нет карточек в этом фильтре';
     letterCenterListEl.append(empty);
-    return;
+  } else {
+    letterCenterListEl.replaceChildren(
+      ...items.slice(0, 24).map((it) => {
+        const li = document.createElement('li');
+        const kind =
+          it.kind === 'fixable' ? '⚙' : it.kind === 'fail' ? '✕' : it.kind === 'missing' ? '?' : '·';
+        const n10 = Number(it.letterScore10);
+        const score =
+          Number.isFinite(n10) && it.kind !== 'missing'
+            ? ` <span class="letter-center-list__score ${letterScore10Class(n10)}">${n10}/10</span>`
+            : '';
+        li.innerHTML = `<span class="letter-center-list__kind">${kind}</span>${escapeHtml(it.title || it.id)}${score}`;
+        const tip = [it.reason, it.hint].filter(Boolean).join(' · ');
+        li.title = tip || '';
+        li.addEventListener('click', () => {
+          closeModalEl(document.getElementById('letter-issues-modal'));
+          focusVacancyCard(it.id);
+        });
+        return li;
+      })
+    );
   }
-  letterCenterListEl.replaceChildren(
-    ...items.slice(0, 12).map((it) => {
-      const li = document.createElement('li');
-      const kind =
-        it.kind === 'fixable' ? '⚙' : it.kind === 'fail' ? '✕' : it.kind === 'missing' ? '?' : '·';
-      const n10 = Number(it.letterScore10);
-      const score =
-        Number.isFinite(n10) && it.kind !== 'missing'
-          ? ` <span class="letter-center-list__score ${letterScore10Class(n10)}">${n10}/10</span>`
-          : '';
-      li.innerHTML = `<span class="letter-center-list__kind">${kind}</span>${escapeHtml(it.title || it.id)}${score}`;
-      const tip = [it.reason, it.hint].filter(Boolean).join(' · ');
-      li.title = tip || '';
-      li.addEventListener('click', () => focusVacancyCard(it.id));
-      return li;
-    })
-  );
   if (btnLetterCenterPrepareEl) {
     btnLetterCenterPrepareEl.hidden = !(s?.fixable > 0);
     btnLetterCenterPrepareEl.textContent =
       s?.fixable > 0 ? `Подготовить (${s.fixable})` : 'Подготовить';
   }
+}
+
+function applyLetterStatsPayload({ s, issues, hub, warn, baselineGoldenOk }) {
+  if (!letterStatsBodyEl) return;
+  renderLetterStatusKpis({ s, hub, warn, baselineGoldenOk });
+  letterStatsBodyEl.hidden = false;
+  const issueTotal = (s?.fixable || 0) + (s?.fail || 0) + (s?.missing || 0);
+  const allItems = issues?.items || [];
+  const showIssuesCta = issueTotal > 0 || allItems.length > 0;
+  if (btnStatusLettersIssuesEl) {
+    btnStatusLettersIssuesEl.hidden = !showIssuesCta;
+    btnStatusLettersIssuesEl.textContent =
+      issueTotal > 0 ? `Разобрать письма (${issueTotal})` : 'Разобрать письма';
+  }
+  renderLetterCenterList(s, issues);
 }
 
 function focusVacancyCard(id) {
@@ -1599,7 +1791,7 @@ function initBatchReportSettingsLinks() {
         ? { tab: 'letters', focus: 'fp', layout: 'wide' }
         : kind === 'limits'
           ? { tab: 'apply', focus: 'settings-limits-hh', layout: 'compact' }
-          : { tab: 'letters', focus: 'settings-letters-presets', layout: 'wide' };
+          : { tab: 'letters', focus: 'settings-letters-group', layout: 'wide' };
     window.dispatchEvent(new CustomEvent('hh-open-settings', { detail }));
   });
 }
@@ -1678,6 +1870,14 @@ function closeModalById(modalId) {
       closeModalEl(m);
       return true;
     }
+  }
+  if (modalId === 'ingest-url-modal') {
+    closeIngestUrlModal();
+    return true;
+  }
+  if (modalId === 'intelligence-digest-modal') {
+    closeModalEl(document.getElementById('intelligence-digest-modal'));
+    return true;
   }
   return closeTopModal();
 }
@@ -1761,6 +1961,11 @@ function fillDescBlock(container, text, maxParas) {
 function buildCardFacts(item) {
   const density = readCardDensityMode();
   const lines = [];
+  if (item.sourceQualityTier) lines.push(tierClassLabel(item.sourceQualityTier));
+  const fh = Number(item.freshnessHours);
+  if (Number.isFinite(fh) && fh < 72) lines.push('Свежая (<72ч)');
+  if (item.applyMode === 'ats_form') lines.push('Отклик: форма на сайте компании');
+  else if (item.applyMode === 'manual_link') lines.push('Отклик: вручную');
   if (item.remoteNote) lines.push(item.remoteNote);
   if (item.workFormat?.city && !String(item.remoteNote || '').includes(item.workFormat.city)) {
     lines.push(`Город: ${item.workFormat.city}`);
@@ -3059,7 +3264,8 @@ approvedModalEl?.querySelector('.btn-copy-approved')?.addEventListener('click', 
 function bindDismiss(node, item) {
   const dismissBtn = node.querySelector('.card-dismiss');
   if (!dismissBtn) return;
-  dismissBtn.addEventListener('click', async () => {
+  dismissBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
     if (!confirm('Удалить эту запись из очереди? (без «подходит / не подходит»)')) return;
     dismissBtn.disabled = true;
     try {
@@ -3069,9 +3275,74 @@ function bindDismiss(node, item) {
       });
       showToast('Запись удалена из очереди', 'neutral');
       await load();
-    } catch (e) {
-      alert(e.message);
+    } catch (err) {
+      alert(err.message);
       dismissBtn.disabled = false;
+    }
+  });
+}
+
+async function sendVacancyDecision(item, action, reason = '') {
+  try {
+    const data = await api('/api/action', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: item.id,
+        action,
+        reason: String(reason || '').trim(),
+      }),
+    });
+    if (action === 'approve') {
+      showToast('Сохранено: подходит', 'good');
+    } else {
+      const n = Array.isArray(data?.autoRejected) ? data.autoRejected.length : 0;
+      const trimmed = String(reason || '').trim();
+      if (n > 0) {
+        showToast(
+          trimmed
+            ? `Отклонено + ещё ${n} похожих («${trimmed}»)`
+            : `Отклонено + ещё ${n} похожих`,
+          'bad'
+        );
+      } else {
+        showToast('Сохранено: не подходит', 'bad');
+      }
+    }
+    await load({ preserveScroll: true, anchorCardId: item.id });
+  } catch (e) {
+    alert(e.message);
+    throw e;
+  }
+}
+
+function bindCardDecision(node, item) {
+  if (item.status !== 'pending') return;
+  const approveBtn = node.querySelector('.btn-tile-approve');
+  const rejectBtn = node.querySelector('.btn-tile-reject');
+  if (!approveBtn && !rejectBtn) return;
+
+  const setBusy = (busy) => {
+    if (approveBtn) approveBtn.disabled = busy;
+    if (rejectBtn) rejectBtn.disabled = busy;
+  };
+
+  approveBtn?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    setBusy(true);
+    try {
+      await sendVacancyDecision(item, 'approve');
+    } catch {
+      setBusy(false);
+    }
+  });
+
+  rejectBtn?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    setBusy(true);
+    try {
+      await sendVacancyDecision(item, 'reject');
+    } catch {
+      setBusy(false);
     }
   });
 }
@@ -3147,6 +3418,13 @@ function renderCard(item, options = {}) {
   const a = node.querySelector('.title-link');
   a.href = item.url;
   a.textContent = item.title || item.url;
+  a.title = formatSourceOpenLabel(item.source);
+
+  const sourceRow = node.querySelector('.card-source-row');
+  if (sourceRow) {
+    sourceRow.hidden = false;
+    sourceRow.replaceChildren(buildSourceBadgeFragment(item));
+  }
 
   const cardLayout = inModal
     ? 'expanded'
@@ -3156,8 +3434,6 @@ function renderCard(item, options = {}) {
   node.classList.add(`card--density-${density}`);
   if (inModal) {
     node.classList.add('card--in-modal', 'card--layout-expanded');
-  } else if (cardLayout === 'tile-medium') {
-    node.classList.add('card--layout-medium');
   } else if (cardLayout === 'expanded') {
     node.classList.add('card--layout-expanded');
   }
@@ -3718,58 +3994,18 @@ function renderCard(item, options = {}) {
   const actions = node.querySelector('.actions');
   const doneReason = node.querySelector('.done-reason');
   const restoreBtn = node.querySelector('.card-restore-queue');
+  const ta = node.querySelector('.reason');
 
   if (item.status === 'pending') {
     actions.hidden = false;
-    const ta = actions.querySelector('.reason');
+    if (ta) ta.hidden = false;
     const ok = actions.querySelector('.ok');
     const bad = actions.querySelector('.bad');
-    const coverBtn = actions.querySelector('.btn-cover');
     const refreshBtn = actions.querySelector('.btn-refresh-vacancy');
-
-    if (coverBtn) {
-      coverBtn.addEventListener('click', async () => {
-      coverBtn.disabled = true;
-      if (refreshBtn) refreshBtn.disabled = true;
-      try {
-        const gen = await requestCoverLetterGenerate(item.id, false);
-        showToast(
-          gen.autoApproved ? 'Письмо сгенерировано и утверждено' : 'Сгенерированы варианты сопроводительного',
-          'good'
-        );
-        invalidateLetterStatsCache();
-        await load();
-        void refreshLetterStatsSidebar(true);
-      } catch (e) {
-        if (e.status === 409) {
-          const confirmed = confirm(
-            'Письмо уже утверждено. Пересоздать черновик? (утверждённый текст будет сброшен до нового согласования)'
-          );
-          if (confirmed) {
-            try {
-              await requestCoverLetterGenerate(item.id, true);
-              showToast('Новые варианты готовы', 'good');
-              invalidateLetterStatsCache();
-              await load();
-              void refreshLetterStatsSidebar(true);
-            } catch (e2) {
-              alert(e2.message);
-            }
-          }
-        } else {
-          alert(e.message);
-        }
-      } finally {
-        coverBtn.disabled = false;
-        if (refreshBtn) refreshBtn.disabled = false;
-      }
-    });
-    }
 
     if (refreshBtn) {
       refreshBtn.addEventListener('click', async () => {
       refreshBtn.disabled = true;
-      if (coverBtn) coverBtn.disabled = true;
       if (ok) ok.disabled = true;
       if (bad) bad.disabled = true;
       try {
@@ -3788,7 +4024,6 @@ function renderCard(item, options = {}) {
       } catch (e) {
         alert(e.message);
         refreshBtn.disabled = false;
-        if (coverBtn) coverBtn.disabled = false;
         if (ok) ok.disabled = false;
         if (bad) bad.disabled = false;
       }
@@ -3799,27 +4034,8 @@ function renderCard(item, options = {}) {
       if (ok) ok.disabled = true;
       if (bad) bad.disabled = true;
       try {
-        const data = await api('/api/action', {
-          method: 'POST',
-          body: JSON.stringify({
-            id: item.id,
-            action,
-            reason: ta.value.trim(),
-          }),
-        });
-        if (action === 'approve') {
-          showToast('Сохранено: подходит', 'good');
-        } else {
-          const n = Array.isArray(data?.autoRejected) ? data.autoRejected.length : 0;
-          if (n > 0) {
-            showToast(`Отклонено + ещё ${n} похожих («${ta.value.trim()}»)`, 'bad');
-          } else {
-            showToast('Сохранено: не подходит', 'bad');
-          }
-        }
-        await load({ preserveScroll: true, anchorCardId: item.id });
-      } catch (e) {
-        alert(e.message);
+        await sendVacancyDecision(item, action, ta?.value || '');
+      } catch {
         if (ok) ok.disabled = false;
         if (bad) bad.disabled = false;
       }
@@ -3837,6 +4053,7 @@ function renderCard(item, options = {}) {
       );
     }
   } else if (item.status === 'rejected' || item.status === 'approved') {
+    if (ta) ta.hidden = true;
     const autoPrefix = item.status === 'rejected' ? autoRejectDoneReasonPrefix(item) : '';
     doneReason.textContent = item.feedbackReason
       ? `${autoPrefix}Комментарий: ${item.feedbackReason}`
@@ -3874,6 +4091,7 @@ function renderCard(item, options = {}) {
       }
     }
   } else if (doneReason) {
+    if (ta) ta.hidden = true;
     doneReason.textContent = '';
   }
 
@@ -4187,9 +4405,8 @@ function renderRoutingHealthBanner(st) {
   const nc = st.negotiationsCache;
   const parts = [];
   if (rh && !rh.ok) {
-    parts.push(
-      `Резюме: ${rh.issues.map((i) => i.label).join(', ')} — hash в config/resume-routing.json`
-    );
+    const roles = rh.issues.map((i) => i.label).join(', ');
+    parts.push(`Резюме ${roles}: нет привязки на hh.ru`);
   }
   if (nc?.count != null) {
     parts.push(`Кэш hh: ${nc.count} откликов`);
@@ -4459,6 +4676,10 @@ function formatDashboardStatsExtra(stats) {
   return parts.join(' · ');
 }
 
+async function refreshIntelligenceSourcesMini() {
+  await refreshIntelligencePanel({ api });
+}
+
 function renderFunnelMini(stats) {
   const el = document.getElementById('funnel-mini');
   if (!el || !stats) return;
@@ -4473,31 +4694,47 @@ function renderFunnelMini(stats) {
   const max = Math.max(applied, viewed, invited, 1);
   const invitePct = f.inviteRatePct ?? stats.rates?.invitePct ?? 0;
   const viewPct = f.viewRatePct ?? stats.rates?.viewPct ?? 0;
+  const invitePctRounded = Math.round(Number(invitePct) || 0);
+  const viewPctRounded = Math.round(Number(viewPct) || 0);
   const inQueue =
     stats.byStatus != null ? (stats.byStatus.pending || 0) + (stats.byStatus.approved || 0) : '—';
+  const queueNum = Number(inQueue);
+  const maxCount = Math.max(
+    Number.isFinite(queueNum) ? queueNum : 0,
+    applied,
+    viewed,
+    invited,
+    1
+  );
   const steps = [
-    { label: 'Очередь', count: inQueue, w: Math.min(100, (Number(inQueue) / Math.max(applied, 1)) * 100) },
-    { label: 'Откл.', count: applied, w: (applied / max) * 100 },
-    { label: 'Просм.', count: viewed, w: (viewed / max) * 100 },
-    { label: 'Пригл.', count: invited, w: (invited / max) * 100 },
-  ];
+    { label: 'Очер.', count: inQueue },
+    { label: 'Откл.', count: applied },
+    { label: 'Просм.', count: viewed },
+    { label: 'Пригл.', count: invited },
+  ].map((s) => {
+    const n = Number(s.count);
+    const ratio = Number.isFinite(n) ? n / maxCount : 0;
+    return { ...s, fh: `${Math.max(6, Math.round(ratio * 100))}%` };
+  });
   el.hidden = false;
+  el.title = `${sinceLabel}: ${applied} откл.${onHh > applied ? ` · hh ${onHh}` : ''} · ${viewPct}% просм. · ${invitePct}% пригл. · ждём ${awaiting} · отказ ${declined}`;
   const hhExtra = onHh > applied ? ` · hh ${onHh}` : '';
   const sparkline = renderDailySparklineHtml(stats.applyTimelineLast7 || []);
   el.innerHTML = `
     ${sparkline}
-    <div class="funnel-mini__rates">${sinceLabel}: ${applied} откл.${hhExtra} · ${viewPct}% просм. · ${invitePct}% пригл. · ждём ${awaiting} · отказ ${declined}</div>
-    <div class="funnel-mini__bars">
+    <div class="funnel-mini__bars" aria-hidden="true">
       ${steps
         .map(
           (s) =>
-            `<div class="funnel-mini__step" title="${s.label}: ${s.count}">
-              <span class="funnel-mini__bar" style="width:${Math.max(4, s.w)}%"></span>
+            `<div class="funnel-mini__step" title="${escapeHtml(s.label)}: ${s.count}">
+              <span class="funnel-mini__label">${escapeHtml(s.label)}</span>
+              <span class="funnel-mini__bar" style="--fh:${s.fh}"></span>
               <span class="funnel-mini__num">${s.count}</span>
             </div>`
         )
         .join('')}
-    </div>`;
+    </div>
+    <div class="funnel-mini__rates">${applied} откл.${hhExtra} · ${viewPctRounded}% просм. · ${invitePctRounded}% пригл.</div>`;
 }
 
 function readFunnelFiltersFromUI() {
@@ -4798,6 +5035,62 @@ function initFunnelUi() {
   }
 }
 
+async function refreshInterviewHubModal() {
+  const body = document.getElementById('interview-hub-body');
+  if (!body) return;
+  body.innerHTML = '<p class="funnel-loading">Загрузка…</p>';
+  try {
+    const hub = await api('/api/interview-hub');
+    body.innerHTML = renderInterviewHubHtml(hub);
+    body.querySelectorAll('[data-hub-action]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const action = btn.getAttribute('data-hub-action');
+        const li = btn.closest('.interview-hub__item');
+        const out = li?.querySelector('.interview-hub__output');
+        if (!id || !out) return;
+        btn.disabled = true;
+        out.hidden = false;
+        out.textContent = 'Загрузка…';
+        try {
+          let path = '/api/interview-prep';
+          if (action === 'mock-tech') path = '/api/interview-mock-tech';
+          if (action === 'mock-hr') path = '/api/interview-mock-hr';
+          const res = await api(path, { method: 'POST', body: JSON.stringify({ id }) });
+          const pack = res.interviewPrep || res.mock || res.hrMock;
+          out.innerHTML = renderMockOutputHtml(pack);
+        } catch (e) {
+          out.textContent = e.message || String(e);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  } catch (e) {
+    body.innerHTML = `<p class="err">${e.message}</p>`;
+  }
+}
+
+function openInterviewHubModal() {
+  closeServiceDrawer();
+  const modal = document.getElementById('interview-hub-modal');
+  if (!modal) return;
+  openModalEl(modal);
+  void refreshInterviewHubModal();
+}
+
+function closeInterviewHubModal() {
+  const modal = document.getElementById('interview-hub-modal');
+  if (!modal) return;
+  closeModalEl(modal);
+}
+
+function initInterviewHubUi() {
+  document.querySelectorAll('[data-close-interview-hub]').forEach((el) => {
+    el.addEventListener('click', closeInterviewHubModal);
+  });
+}
+
 function renderDashboardStats(stats) {
   const panel = document.getElementById('stats-panel');
   const grid = document.getElementById('stats-grid');
@@ -4811,6 +5104,7 @@ function renderDashboardStats(stats) {
   const f = stats.funnel || {};
   if (panel) panel.hidden = false;
   renderFunnelMini(stats);
+  void refreshIntelligenceSourcesMini();
   const compact = panel?.classList.contains('stats-panel--crm');
   const invitePct = f.inviteRatePct ?? stats.rates?.invitePct ?? 0;
   const viewPct = f.viewRatePct ?? stats.rates?.viewPct ?? 0;
@@ -4835,8 +5129,11 @@ function renderDashboardStats(stats) {
         { label: '% пригл.', value: `${invitePct}%`, highlight: true },
         {
           label: 'Неделя',
-          value: weekly.currentInvitePct != null ? `${weekly.currentInvitePct}%${weeklyTrend ? ` (${weeklyTrend})` : ''}` : '—',
-          title: 'Конверсия приглашений за текущую неделю',
+          value: weekly.currentInvitePct != null ? `${weekly.currentInvitePct}%` : '—',
+          title:
+            weekly.currentInvitePct != null
+              ? `Конверсия приглашений за неделю${weeklyTrend ? ` · ${weeklyTrend}` : ''}`
+              : 'Конверсия приглашений за текущую неделю',
         },
         ...(noEditPct != null
           ? [
@@ -4845,6 +5142,7 @@ function renderDashboardStats(stats) {
                 value: `${noEditPct}%`,
                 title: 'Отклики без правки письма (K-01) — открыть настройки писем',
                 statAction: 'letters',
+                moreOnly: true,
               },
             ]
           : []),
@@ -4880,8 +5178,9 @@ function renderDashboardStats(stats) {
       value: `${stats.hhNegotiations.viewed} / ${stats.hhNegotiations.declined}`,
     });
   }
-  grid.replaceChildren(
-    ...items.map((it) => {
+
+  const buildStatNodes = (list) =>
+    list.map((it) => {
       const div = document.createElement('div');
       div.className = `stat-item${it.wide ? ' stat-item--wide' : ''}${it.statAction ? ' stat-item--clickable' : ''}`;
       if (it.title) div.title = it.title;
@@ -4894,23 +5193,60 @@ function renderDashboardStats(stats) {
       lab.textContent = it.label;
       div.append(val, lab);
       return div;
-    })
-  );
+    });
+
+  const shell = document.getElementById('app-shell');
+  const focusSimple =
+    compact &&
+    shell?.classList.contains('workspace-shell--focus') &&
+    shell.dataset.uiMode === UI_MODES.simple;
+  const moreFold = document.getElementById('stats-more-fold');
+  const moreGrid = document.getElementById('stats-grid-more');
+  const moreOnlyItems = items.filter((it) => it.moreOnly);
+  const primaryItems = items.filter((it) => !it.moreOnly);
+  let visibleItems = primaryItems;
+  if (focusSimple) {
+    const pending = stats.byStatus?.pending ?? '—';
+    visibleItems = [
+      { label: 'Отклики', value: stats.applied ?? f.applied ?? 0 },
+      { label: '% пригл.', value: `${invitePct}%`, highlight: true },
+      {
+        label: 'Очередь',
+        value: stats.byStatus ? (stats.byStatus.pending || 0) + (stats.byStatus.approved || 0) : '—',
+      },
+      { label: 'На проверке', value: pending },
+    ];
+    const moreItems = primaryItems.filter((it) => !['Отклики', '% пригл.', 'Очередь'].includes(it.label));
+    const moreAll = [...moreItems, ...moreOnlyItems];
+    if (moreFold) moreFold.hidden = moreAll.length === 0;
+    if (moreGrid) moreGrid.replaceChildren(...buildStatNodes(moreAll));
+  } else if (moreFold) {
+    if (moreOnlyItems.length) {
+      moreFold.hidden = false;
+      if (moreGrid) moreGrid.replaceChildren(...buildStatNodes(moreOnlyItems));
+    } else {
+      moreFold.hidden = true;
+      if (moreGrid) moreGrid.replaceChildren();
+    }
+  }
+
+  grid.replaceChildren(...buildStatNodes(visibleItems));
   grid.querySelectorAll('[data-stat-action="letters"]').forEach((el) => {
     el.addEventListener('click', () =>
-      openDashboardSettings('letters', { focusId: 'settings-letters-presets' })
+      openDashboardSettings('letters', { focusId: 'settings-letters-group' })
     );
   });
 
   const extraEl = document.getElementById('stats-extra');
-  if (extraEl) {
+  const techFold = document.getElementById('stats-tech-fold');
+  if (extraEl && techFold) {
     const extra = formatDashboardStatsExtra(stats);
     if (extra) {
       extraEl.textContent = extra;
-      extraEl.hidden = false;
+      techFold.hidden = false;
     } else {
       extraEl.textContent = '';
-      extraEl.hidden = true;
+      techFold.hidden = true;
     }
   }
 }
@@ -4967,12 +5303,15 @@ function renderTopFalsePositives(data) {
     `<ul class="fp-top__list">` +
     top
       .map((row) => {
-        const samples = (row.samples || [])
+        const sampleTitles = (row.samples || [])
           .slice(0, 2)
-          .map((s) => escapeHtml(s.title || '—'))
-          .join(' · ');
+          .map((s) => String(s.title || '—'));
+        const samplesFull = sampleTitles.join(' · ');
+        const focusTitle = samplesFull
+          ? `Показать отклонённые этой категории · ${samplesFull}`
+          : 'Показать отклонённые этой категории';
         const suggestion = falsePositiveSuggestedPattern(row);
-        return `<li class="fp-top__item"><button type="button" class="fp-top__focus" data-fp-key="${escapeHtml(row.key || 'прочее')}" title="Показать отклонённые этой категории">${escapeHtml(row.key || 'прочее')}</button><strong class="fp-top__count">${Number(row.count || 0)}</strong>${suggestion ? `<button type="button" class="fp-top__learn" data-fp-learn="1" data-fp-pattern="${escapeHtml(suggestion.pattern)}" data-fp-target="${escapeHtml(suggestion.target)}" title="Добавить в правила">+ ${escapeHtml(suggestion.pattern)}</button>` : ''}<span class="fp-top__samples">${samples}</span></li>`;
+        return `<li class="fp-top__item"><button type="button" class="fp-top__focus" data-fp-key="${escapeHtml(row.key || 'прочее')}" title="${escapeHtml(focusTitle)}">${escapeHtml(row.key || 'прочее')}</button><strong class="fp-top__count">${Number(row.count || 0)}</strong>${suggestion ? `<button type="button" class="fp-top__learn" data-fp-learn="1" data-fp-pattern="${escapeHtml(suggestion.pattern)}" data-fp-target="${escapeHtml(suggestion.target)}" title="Добавить в правила">+ ${escapeHtml(suggestion.pattern)}</button>` : ''}</li>`;
       })
       .join('') +
     '</ul>' +
@@ -5373,6 +5712,8 @@ function updateListCount(items, counts) {
       threshold: scoreThreshold,
       appliedFunnel: currentAppliedFunnel,
       hasLocalFilter: Boolean(hasLocalFilter),
+      sourceFilter: filters.source,
+      tierFilter: filters.tier,
     })
   );
 }
@@ -5385,6 +5726,12 @@ function updateLetterQualityFilterButton() {
     filterLetterQualityBtnEl.textContent = `Письма: проверка${issueCount > 0 ? ` (${issueCount})` : ''}`;
     filterLetterQualityBtnEl.classList.toggle('active', Boolean(filters.onlyLetterIssues));
     filterLetterQualityBtnEl.setAttribute('aria-pressed', filters.onlyLetterIssues ? 'true' : 'false');
+  }
+  if (letterToolbarChipEl) {
+    const label = issueCount > 0 ? `Письма · ${issueCount}` : 'Письма';
+    letterToolbarChipEl.textContent = label;
+    letterToolbarChipEl.classList.toggle('active', Boolean(filters.onlyLetterIssues));
+    letterToolbarChipEl.setAttribute('aria-pressed', filters.onlyLetterIssues ? 'true' : 'false');
   }
   if (btnBulkImproveLettersEl) {
     btnBulkImproveLettersEl.hidden = fixableCount === 0;
@@ -5420,7 +5767,7 @@ function renderListFromCache(scrollState) {
       listEl.appendChild(
         renderEmptyState('Нет вакансий с анкетой в этом разделе.', [
           {
-            label: 'Probe анкет',
+            label: 'Проверка анкет',
             primary: true,
             onClick: () => document.getElementById('btn-questionnaire-probe-filter')?.click(),
           },
@@ -5472,7 +5819,7 @@ function renderListFromCache(scrollState) {
   }
   const browseMode = currentBrowseMode();
   items.forEach((it) => {
-    if (browseMode) listEl.appendChild(renderCardTile(it, scoreThreshold, renderCard, bindDismiss));
+    if (browseMode) listEl.appendChild(renderCardTile(it, scoreThreshold, renderCard, bindDismiss, bindCardDecision));
     else listEl.appendChild(renderCard(it));
   });
   listEl.querySelectorAll('.card, .card-tile').forEach((el) => {
@@ -5632,6 +5979,7 @@ async function load(opts = {}) {
     updateApplyViewTabCounts(counts);
     renderListFromCache(scrollState);
     void refreshLetterStatsSidebar();
+    void refreshTopTierList({ api, onFilterTier: setTierFilter });
   } catch (e) {
     listEl.innerHTML = `<p class="err">${e.message}</p>`;
     restoreListScroll(scrollState);
@@ -5870,7 +6218,7 @@ document.getElementById('btn-questionnaire-reprobe-batch')?.addEventListener('cl
       method: 'POST',
       body: JSON.stringify({ limit: 5 }),
     });
-    showToast(res.message || `Probe: ${res.okCount}`, res.failed ? 'neutral' : 'good');
+    showToast(res.message || COPY.questionnaireProbeToast.replace('{n}', String(res.okCount ?? 0)), res.failed ? 'neutral' : 'good');
     await loadItems();
   } catch (e) {
     alert(e.message);
@@ -5895,7 +6243,7 @@ document.getElementById('btn-questionnaire-probe-filter')?.addEventListener('cli
       method: 'POST',
       body: JSON.stringify({ limit: 5, scope: 'questionnaire' }),
     });
-    showToast(res.message || `Probe: ${res.okCount}`, res.failed ? 'neutral' : 'good');
+    showToast(res.message || COPY.questionnaireProbeToast.replace('{n}', String(res.okCount ?? 0)), res.failed ? 'neutral' : 'good');
     await loadItems();
   } catch (e) {
     alert(e.message);
@@ -6048,6 +6396,9 @@ async function runServiceAction(action, triggerEl) {
         });
         break;
       }
+      case 'open-interview-hub':
+        openInterviewHubModal();
+        break;
       case 'import-interview-notes': {
         const res = await api('/api/import-interview-notes', { method: 'POST', body: '{}' });
         showToast(res.ok ? `Импорт: ${res.count} файлов` : res.error, res.ok ? 'good' : 'bad');
@@ -6166,13 +6517,15 @@ async function loadDailyRoutineSteps() {
 
 document.getElementById('btn-daily-routine')?.addEventListener('click', async () => {
   const withHarvest = document.getElementById('daily-routine-harvest')?.checked;
+  const withHabrHarvest = document.getElementById('daily-routine-habr-harvest')?.checked;
   if (
     !confirm(
       'Запустить утренний цикл?\n\n' +
         '1) Синхр. откликов hh.ru (браузер)\n' +
         '2) Обновление статусов в очереди\n' +
         '3) Синхр. чатов (браузер)' +
-        (withHarvest ? '\n4) Сбор вакансий (harvest)' : '') +
+        (withHarvest ? '\n4) Сбор вакансий на hh.ru' : '') +
+        (withHabrHarvest ? `\n+ ${COPY.dailyRoutineExternalConfirm}` : '') +
         '\n\nНе закрывайте окно Chromium до завершения.'
     )
   ) {
@@ -6183,7 +6536,7 @@ document.getElementById('btn-daily-routine')?.addEventListener('click', async ()
   try {
     const res = await api('/api/daily-routine-run', {
       method: 'POST',
-      body: JSON.stringify({ withHarvest: !!withHarvest }),
+      body: JSON.stringify({ withHarvest: !!withHarvest, withHabrHarvest: !!withHabrHarvest }),
     });
     showToast(res.message || 'Рутина запущена', 'good');
     dailyRoutineWasRunning = true;
@@ -6195,7 +6548,6 @@ document.getElementById('btn-daily-routine')?.addEventListener('click', async ()
     if (btn) btn.disabled = false;
   }
 });
-
 
 document.getElementById('btn-run-harvest')?.addEventListener('click', async () => {
   const periodRaw = document.getElementById('harvest-period')?.value;
@@ -6261,16 +6613,27 @@ document.getElementById('filter-reset')?.addEventListener('click', () => {
     filterLetterQualityBtnEl.classList.remove('active');
     filterLetterQualityBtnEl.setAttribute('aria-pressed', 'false');
   }
+  if (letterToolbarChipEl) {
+    letterToolbarChipEl.classList.remove('active');
+    letterToolbarChipEl.setAttribute('aria-pressed', 'false');
+  }
   if (filterMinScoreEl) filterMinScoreEl.value = '';
   if (filterSortEl) filterSortEl.value = 'score-desc';
+  if (filterSourceEl) filterSourceEl.value = 'all';
+  if (filterTierEl) filterTierEl.value = 'all';
+  if (sidebarFilterSourceEl) sidebarFilterSourceEl.value = 'all';
+  if (sidebarFilterTierEl) sidebarFilterTierEl.value = 'all';
+  filterPresetExtras = { onlyManual: false, onlyFresh: false };
+  document.querySelectorAll('[data-preset]').forEach((btn) => btn.classList.remove('active'));
   if (filterSalaryEl) filterSalaryEl.checked = false;
   renderListFromCache(null);
 });
 
-filterLetterQualityBtnEl?.addEventListener('click', () => {
-  const next = !(filterLetterQualityBtnEl.getAttribute('aria-pressed') === 'true');
-  filterLetterQualityBtnEl.setAttribute('aria-pressed', next ? 'true' : 'false');
-  filterLetterQualityBtnEl.classList.toggle('active', next);
+function onLetterQualityFilterClick() {
+  const probe = letterToolbarChipEl || filterLetterQualityBtnEl;
+  if (!probe) return;
+  const next = !(probe.getAttribute('aria-pressed') === 'true');
+  setLetterIssuesFilter(next);
   if (next && filterLetterWeakBtnEl) {
     filterLetterWeakBtnEl.setAttribute('aria-pressed', 'false');
     filterLetterWeakBtnEl.classList.remove('active');
@@ -6280,15 +6643,17 @@ filterLetterQualityBtnEl?.addEventListener('click', () => {
     next ? 'Фильтр: только карточки с проблемами письма' : 'Фильтр писем снят',
     'neutral'
   );
-});
+}
+
+letterToolbarChipEl?.addEventListener('click', onLetterQualityFilterClick);
+filterLetterQualityBtnEl?.addEventListener('click', onLetterQualityFilterClick);
 
 filterLetterWeakBtnEl?.addEventListener('click', () => {
   const next = !(filterLetterWeakBtnEl.getAttribute('aria-pressed') === 'true');
   filterLetterWeakBtnEl.setAttribute('aria-pressed', next ? 'true' : 'false');
   filterLetterWeakBtnEl.classList.toggle('active', next);
-  if (next && filterLetterQualityBtnEl) {
-    filterLetterQualityBtnEl.setAttribute('aria-pressed', 'false');
-    filterLetterQualityBtnEl.classList.remove('active');
+  if (next && (letterToolbarChipEl || filterLetterQualityBtnEl)) {
+    setLetterIssuesFilter(false);
   }
   renderListFromCache(null);
   showToast(next ? 'Фильтр: письма с оценкой ниже 6/10' : 'Фильтр «Письмо <6» снят', 'neutral');
@@ -6311,6 +6676,7 @@ btnLetterCenterRegenEl?.addEventListener('click', async () => {
 btnLetterCenterFilterEl?.addEventListener('click', () => {
   setLetterIssuesFilter(true);
   renderListFromCache(null);
+  closeModalEl(document.getElementById('letter-issues-modal'));
 });
 
 btnLetterCenterFixableEl?.addEventListener('click', (ev) => {
@@ -6334,14 +6700,21 @@ btnLetterCenterMissingEl?.addEventListener('click', () => {
 
 btnLetterCenterMoreEl?.addEventListener('click', () => openLetterQualityHubModal());
 
-letterStatsBodyEl?.addEventListener('click', () => openLetterQualityHubModal());
+btnStatusLettersIssuesEl?.addEventListener('click', () => openLetterIssuesModal());
+
+letterStatsBodyEl?.addEventListener('click', (ev) => {
+  if (ev.target.closest('.status-kpi--need-work')) {
+    openLetterIssuesModal();
+    return;
+  }
+  openLetterQualityHubModal();
+});
 letterStatsBodyEl?.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter' || ev.key === ' ') {
     ev.preventDefault();
     openLetterQualityHubModal();
   }
 });
-letterHubExtraEl?.addEventListener('click', () => openLetterQualityHubModal());
 
 btnBulkImproveLettersEl?.addEventListener('click', async () => {
   const batchScope = batchScopeForCurrentView();
@@ -6366,9 +6739,50 @@ btnBulkImproveLettersEl?.addEventListener('click', async () => {
   }
 });
 
-for (const el of [filterSearchEl, filterMinScoreEl, filterSortEl, filterSalaryEl]) {
-  el?.addEventListener('input', rerenderListDebounced);
-  el?.addEventListener('change', rerenderListDebounced);
+document.getElementById('btn-review-tier-a')?.addEventListener('click', () => {
+  setTierFilter('A');
+  showToast(`Фильтр: ${tierClassLabel('A')}`, 'neutral');
+});
+
+for (const el of [
+  filterSearchEl,
+  filterMinScoreEl,
+  filterSortEl,
+  filterSalaryEl,
+  filterSourceEl,
+  filterTierEl,
+  sidebarFilterSourceEl,
+  sidebarFilterTierEl,
+]) {
+  el?.addEventListener('input', () => {
+    if (el === filterSourceEl || el === sidebarFilterSourceEl) {
+      syncFilterControlsFrom(el.value, filterTierEl?.value || sidebarFilterTierEl?.value || 'all');
+    }
+    if (el === filterTierEl || el === sidebarFilterTierEl) {
+      syncFilterControlsFrom(filterSourceEl?.value || sidebarFilterSourceEl?.value || 'all', el.value);
+    }
+    filterPresetExtras = { onlyManual: false, onlyFresh: false };
+    document.querySelectorAll('[data-preset]').forEach((btn) => btn.classList.remove('active'));
+    rerenderListDebounced();
+  });
+  el?.addEventListener('change', () => {
+    if (el === filterSourceEl || el === sidebarFilterSourceEl) {
+      syncFilterControlsFrom(el.value, filterTierEl?.value || sidebarFilterTierEl?.value || 'all');
+    }
+    if (el === filterTierEl || el === sidebarFilterTierEl) {
+      syncFilterControlsFrom(filterSourceEl?.value || sidebarFilterSourceEl?.value || 'all', el.value);
+    }
+    filterPresetExtras = { onlyManual: false, onlyFresh: false };
+    document.querySelectorAll('[data-preset]').forEach((btn) => btn.classList.remove('active'));
+    rerenderListDebounced();
+  });
+}
+
+for (const btn of document.querySelectorAll('[data-preset]')) {
+  btn.addEventListener('click', () => {
+    const preset = btn.getAttribute('data-preset');
+    if (preset) applyFilterPreset(/** @type {'tierAFresh'|'manualApply'|'allSources'} */ (preset));
+  });
 }
 
 for (const el of document.querySelectorAll('[data-pref]')) {
@@ -6460,7 +6874,7 @@ async function ensureChatTemplates() {
   return chatTemplatesCache;
 }
 
-function openDashboardSettings(tabId = 'system', { focusId, clearUrl = true, layout } = {}) {
+function openDashboardSettings(tabId = 'system', { focusId, clearUrl = true, layout, focusToast } = {}) {
   closeServiceDrawer();
   const settingsModal = document.getElementById('settings-modal');
   if (!settingsModal) return;
@@ -6484,7 +6898,8 @@ function openDashboardSettings(tabId = 'system', { focusId, clearUrl = true, lay
   if (!alreadyOpen) openModalEl(settingsModal);
   applySettingsOpenLayout(layout);
   settingsModalHooks?.onOpen(normalizedTab);
-  if (focusId) focusSettingsField(focusId);
+  if (!settingsProfileSelectEl?.value) void refreshProfileSelect();
+  if (focusId) focusSettingsField(focusId, { toast: focusToast || '' });
   if (clearUrl) clearSettingsLocationParams();
 }
 
@@ -6608,7 +7023,6 @@ function initCrmUi() {
     system: document.getElementById('settings-panel-system'),
     targeting: document.getElementById('settings-panel-targeting'),
     apply: document.getElementById('settings-panel-apply'),
-    letters: document.getElementById('settings-panel-letters'),
     appearance: document.getElementById('settings-panel-appearance'),
   };
 
@@ -6661,6 +7075,9 @@ function initCrmUi() {
       invalidateLettersSnapshot();
     },
     hasCompletedBatch: () => (lastJobStatus?.batchLastReport?.done || 0) > 0,
+    onOpenTab: (id) => {
+      if (id === 'system') void refreshProfileSelect();
+    },
   });
   document.getElementById('btn-open-settings')?.addEventListener('click', () => openDashboardSettings());
   settingsModal?.querySelector('[data-close-settings]')?.addEventListener('click', closeSettingsModal);
@@ -6673,6 +7090,7 @@ function initCrmUi() {
     const tab = detail.tab ? normalizeSettingsTab(detail.tab) : undefined;
     openDashboardSettings(tab, {
       focusId: detail.focus || '',
+      focusToast: detail.focusToast || '',
       layout: detail.layout || '',
       clearUrl: false,
     });
@@ -6720,6 +7138,7 @@ function openServiceDrawer() {
   requestAnimationFrame(() => {
     drawer.classList.add('service-drawer--open');
     panel.focus();
+    void refreshMarketSkillsPanel({ api });
   });
 }
 
@@ -6756,36 +7175,181 @@ function initShortcutsModal() {
 }
 
 function initCommandPaletteAndShortcuts() {
+  const panelPaletteActions = Object.entries(SIDEBAR_PANELS)
+    .filter(([id]) => id !== 'brand')
+    .map(([id, meta]) => ({
+      id: `panel-${id}`,
+      group: 'Панели',
+      label: `Панель: ${meta.label}`,
+      hint: 'Показать в боковой колонке',
+      keywords: `панель sidebar ${meta.label} ${id}`,
+      run: () => enableSidebarPanel(id),
+    }));
+
   registerCommandPaletteActions([
     {
-      id: 'daily-routine',
-      label: 'Утренний цикл',
-      hint: 'Синхронизация откликов и чатов',
-      keywords: 'sync routine утро',
-      run: () => document.getElementById('btn-daily-routine')?.click(),
-    },
-    {
       id: 'harvest',
+      group: 'Найти',
       label: COPY.harvestRun || 'Запустить поиск',
-      hint: 'Harvest вакансий',
-      keywords: 'поиск harvest',
+      hint: 'Поиск вакансий на hh.ru',
+      keywords: 'поиск hh вакансии',
       run: () => document.getElementById('btn-run-harvest')?.click(),
     },
     {
+      id: 'ingest-url',
+      group: 'Найти',
+      label: COPY.ingestUrl || 'Вставить ссылку',
+      hint: 'Добавить вакансию по URL',
+      keywords: 'ingest url habr ats ссылка',
+      run: () => openIngestUrlModal(),
+    },
+    {
+      id: 'harvest-habr',
+      group: 'Найти',
+      label: COPY.harvestHabr || 'Сбор с Хабра',
+      hint: 'Внешние источники',
+      keywords: 'хабр habr внешние сбор telegram',
+      run: async () => {
+        enableSidebarPanel('sources', { toast: false });
+        const sel = document.getElementById('sources-external-target');
+        if (sel) sel.value = 'habr';
+        document.getElementById('btn-sources-external-run')?.click();
+      },
+    },
+    {
+      id: 'top-tier-a',
+      group: 'Найти',
+      label: 'Топ в списке',
+      hint: 'Фильтр лучших вакансий',
+      keywords: 'топ класс а top качество',
+      run: () => setTierFilter('A'),
+    },
+    {
+      id: 'intelligence-digest',
+      group: 'Найти',
+      label: COPY.intelligenceDigest || 'Сводка по источникам',
+      hint: 'Статистика по источникам вакансий',
+      keywords: 'intelligence digest источники сводка',
+      run: () => document.getElementById('btn-open-intelligence-digest')?.click(),
+    },
+    {
+      id: 'letter-issues',
+      group: 'Разобрать',
+      label: 'Фильтр: проблемы писем',
+      hint: 'Только карточки с проверкой письма',
+      keywords: 'письмо letter quality filter',
+      run: () => toggleLetterIssuesFilter(),
+    },
+    {
+      id: 'letter-hub',
+      group: 'Разобрать',
+      label: 'Качество писем — подробнее',
+      keywords: 'письмо hub golden',
+      run: () => openLetterQualityHubModal(),
+    },
+    {
+      id: 'view-deferred',
+      group: 'Разобрать',
+      label: COPY.navDeferred || 'Отложенные',
+      hint: 'Раздел списка',
+      keywords: 'deferred отложенные',
+      run: () => applyViewTabsEl?.querySelector('[data-apply-view="deferred"]')?.click(),
+    },
+    {
+      id: 'band-low',
+      group: 'Разобрать',
+      label: COPY.tabBelowThreshold || 'Ниже порога',
+      hint: 'Полоса оценки в списке',
+      keywords: 'low band порог',
+      run: () => document.querySelector('[data-band="low"]')?.click(),
+    },
+    {
+      id: 'card-size-compact',
+      group: 'Разобрать',
+      label: 'Вид карточек: компактный',
+      keywords: 'card size compact вид',
+      run: () => applyCardSizePreset('compact'),
+    },
+    {
+      id: 'card-size-medium',
+      group: 'Разобрать',
+      label: 'Вид карточек: средний',
+      keywords: 'card size medium вид',
+      run: () => applyCardSizePreset('medium'),
+    },
+    {
+      id: 'card-size-full',
+      group: 'Разобрать',
+      label: 'Вид карточек: полный',
+      keywords: 'card size full вид',
+      run: () => applyCardSizePreset('full'),
+    },
+    {
       id: 'batch-auto',
+      group: 'Откликнуться',
       label: COPY.batchAuto,
       hint: 'Серия ≥ порога',
       keywords: 'batch auto серия',
       run: () => document.getElementById('btn-batch-auto')?.click(),
     },
     {
+      id: 'batch-manual',
+      group: 'Откликнуться',
+      label: COPY.batchManual || 'Ручные отклики',
+      hint: 'Серия ниже порога',
+      keywords: 'batch manual ручные',
+      run: () => document.getElementById('btn-batch-manual')?.click(),
+    },
+    {
+      id: 'daily-routine',
+      group: 'Следить',
+      label: 'Утренний цикл',
+      hint: 'Синхронизация откликов и чатов',
+      keywords: 'sync routine утро',
+      run: () => document.getElementById('btn-daily-routine')?.click(),
+    },
+    {
+      id: 'chat-inbox',
+      group: 'Следить',
+      label: 'Чаты hh.ru — inbox',
+      hint: 'Ответы и черновики',
+      keywords: 'chat inbox чаты переписка',
+      run: () => void openChatInboxModal(),
+    },
+    {
+      id: 'funnel',
+      group: 'Следить',
+      label: 'Воронка и конверсия',
+      keywords: 'stats funnel график',
+      run: () => openFunnelModal(),
+    },
+    ...panelPaletteActions,
+    {
+      id: 'ui-mode-expert',
+      group: 'Настройки',
+      label: 'Расширенный интерфейс',
+      hint: 'Все кнопки и панели на экране',
+      keywords: 'expert ui режим',
+      run: () => switchUiMode(UI_MODES.expert),
+    },
+    {
+      id: 'ui-mode-simple',
+      group: 'Настройки',
+      label: 'Простой интерфейс',
+      hint: 'Меньше элементов — функции через Ctrl+K',
+      keywords: 'simple ui режим',
+      run: () => switchUiMode(UI_MODES.simple),
+    },
+    {
       id: 'settings',
+      group: 'Настройки',
       label: COPY.openSettings,
       keywords: 'настройки system preferences',
       run: () => openDashboardSettings('system'),
     },
     {
       id: 'settings-fullscreen',
+      group: 'Настройки',
       label: 'Настройки: полный экран',
       hint: 'Alt+F в окне настроек',
       keywords: 'настройки fullscreen полноэкранный',
@@ -6797,6 +7361,7 @@ function initCommandPaletteAndShortcuts() {
     },
     {
       id: 'settings-wide',
+      group: 'Настройки',
       label: 'Настройки: широкое окно',
       hint: 'Пресет для писем и таргетинга',
       keywords: 'настройки wide широкое окно layout',
@@ -6804,85 +7369,76 @@ function initCommandPaletteAndShortcuts() {
     },
     {
       id: 'settings-before-batch',
+      group: 'Настройки',
       label: 'Настройки: перед батчем',
       hint: 'Письма и порог',
       keywords: 'батч письма пресет',
-      run: () => openDashboardSettings('letters', { focusId: 'settings-letters-presets' }),
+      run: () => openDashboardSettings('letters', { focusId: 'settings-letters-group' }),
     },
     {
       id: 'settings-targeting',
+      group: 'Настройки',
       label: 'Настройки: таргетинг',
       keywords: 'настройки remote salary targeting',
       run: () => openDashboardSettings('targeting'),
     },
     {
       id: 'settings-letters',
+      group: 'Настройки',
       label: 'Настройки: письма и батч',
       keywords: 'настройки letter quality batch precheck',
       run: () => openDashboardSettings('letters'),
     },
     {
       id: 'settings-apply',
+      group: 'Настройки',
       label: 'Настройки: отклики и лимиты',
       keywords: 'настройки threshold batch limits',
       run: () => openDashboardSettings('apply'),
     },
     {
       id: 'settings-appearance',
+      group: 'Настройки',
       label: 'Настройки: интерфейс',
       keywords: 'настройки theme layout panels',
       run: () => openDashboardSettings('appearance'),
     },
     {
-      id: 'chat-inbox',
-      label: 'Чаты hh.ru — inbox',
-      hint: 'Ответы и черновики',
-      keywords: 'chat inbox чаты переписка',
-      run: () => void openChatInboxModal(),
+      id: 'service',
+      group: 'Настройки',
+      label: COPY.openService,
+      keywords: 'сервис sync',
+      run: () => openServiceDrawer(),
     },
     {
       id: 'load-demo-queue',
+      group: 'Справка',
       label: 'Загрузить демо-очередь',
       hint: '10 вакансий для знакомства с UI',
       keywords: 'demo демо очередь empty',
       run: () => void loadDemoQueue().catch((e) => showToast(e.message || String(e), 'bad')),
     },
     {
-      id: 'service',
-      label: COPY.openService,
-      keywords: 'сервис sync',
-      run: () => openServiceDrawer(),
-    },
-    {
-      id: 'funnel',
-      label: 'Воронка и конверсия',
-      keywords: 'stats funnel график',
-      run: () => openFunnelModal(),
-    },
-    {
-      id: 'letter-issues',
-      label: 'Фильтр: проблемы писем',
-      hint: 'В списке только карточки с проверкой письма',
-      keywords: 'письмо letter quality filter',
-      run: () => toggleLetterIssuesFilter(),
-    },
-    {
-      id: 'letter-hub',
-      label: 'Качество писем — подробнее',
-      keywords: 'письмо hub golden',
-      run: () => openLetterQualityHubModal(),
-    },
-    {
       id: 'log',
+      group: 'Справка',
       label: COPY.openLog,
       keywords: 'журнал log',
       run: () => document.querySelector('.btn-log-apply')?.click(),
     },
     {
       id: 'shortcuts',
+      group: 'Справка',
       label: 'Горячие клавиши',
       hint: '?',
       run: () => openShortcutsModal(),
+    },
+    {
+      id: 'open-palette',
+      group: 'Справка',
+      label: COPY.allFeatures || 'Все функции',
+      hint: 'Ctrl+K',
+      keywords: 'palette команды поиск',
+      run: () => openCommandPalette(),
     },
   ]);
 
@@ -6925,17 +7481,30 @@ loadDailyRoutineSteps();
 applyCopyToDom();
 initServiceActions();
 initChatInboxUi({ api, showToast });
+initSourcesPanel({
+  api,
+  showToast,
+  onFilterTier: setTierFilter,
+  onFocusVacancy: focusVacancyCard,
+  onOpenIngest: () => openIngestUrlModal(),
+});
+initIngestUrlModal({ api, showToast, onAdded: () => load() });
+initIntelligencePanel({ api });
+initMarketSkillsPanel({ api });
+restoreFilterPresetFromStorage();
 document.addEventListener('hh-open-chat-inbox', (e) => {
   const id = e.detail?.id;
   void openChatInboxModal({ threadId: id || undefined, filter: 'needs_reply' });
 });
 initFunnelUi();
+initInterviewHubUi();
 initJobProgressOpenLog();
 document.getElementById('btn-batch-report')?.addEventListener('click', () => openBatchReportModal());
 initCrmUi();
 initBrandHardReload();
 initLimitsStatusLink();
 initShortcutsModal();
+initAllFeaturesButton();
 initCommandPaletteAndShortcuts();
 initListKeyboardNav(listEl, () => [...listEl.querySelectorAll('.card, .card-tile')]);
 loadDashboardSettings().then(() => {

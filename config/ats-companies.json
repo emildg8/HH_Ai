@@ -1,0 +1,44 @@
+[
+  {
+    "company": "JetBrains",
+    "ats": "greenhouse",
+    "slug": "jetbrains",
+    "boardUrl": "https://boards.greenhouse.io/jetbrains",
+    "keyword": "devops"
+  },
+  {
+    "company": "Revolut",
+    "ats": "lever",
+    "slug": "revolut",
+    "boardUrl": "https://jobs.lever.co/revolut",
+    "keyword": "devops"
+  },
+  {
+    "company": "Hashicorp",
+    "ats": "greenhouse",
+    "slug": "hashicorp",
+    "boardUrl": "https://boards.greenhouse.io/hashicorp",
+    "keyword": "platform"
+  },
+  {
+    "company": "GitLab",
+    "ats": "greenhouse",
+    "slug": "gitlab",
+    "boardUrl": "https://boards.greenhouse.io/gitlab",
+    "keyword": "devops"
+  },
+  {
+    "company": "Cloudflare",
+    "ats": "greenhouse",
+    "slug": "cloudflare",
+    "boardUrl": "https://boards.greenhouse.io/cloudflare",
+    "keyword": "sre"
+  },
+  {
+    "company": "Datadog",
+    "ats": "greenhouse",
+    "slug": "datadog",
+    "boardUrl": "https://boards.greenhouse.io/datadog",
+    "keyword": "devops"
+  }
+]

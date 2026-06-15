@@ -60,7 +60,8 @@ import {
   resolveMaxOpenRouterCallsPerRun,
   scoreVacancyWithLlm,
 } from '../lib/openrouter-score.mjs';
-import { addVacancyRecord, knownVacancyIds } from '../lib/store.mjs';
+import { addVacancyRecord, knownVacancyIds, loadQueue } from '../lib/store.mjs';
+import { scoreSource } from '../lib/source-quality.mjs';
 import { scoreVacancyLocally, resolveScoreMode } from '../lib/local-vacancy-score.mjs';
 
 loadEnv();
@@ -537,6 +538,9 @@ async function main() {
 
       const record = {
         id: crypto.randomUUID(),
+        source: 'hh',
+        externalKey: vacancyId ? `hh:${vacancyId}` : undefined,
+        applyMode: 'hh_auto',
         vacancyId,
         url,
         searchQuery: query,
@@ -587,6 +591,14 @@ async function main() {
             }
           : {}),
       };
+
+      const qMeta = scoreSource(record, { allRecords: loadQueue() });
+      Object.assign(record, {
+        sourceQualityTier: qMeta.sourceQualityTier,
+        sourceQualityScore: qMeta.sourceQualityScore,
+        freshnessHours: qMeta.freshnessHours,
+        publishedAt: record.createdAt,
+      });
 
       if (qTextHint.likely) {
         console.log(

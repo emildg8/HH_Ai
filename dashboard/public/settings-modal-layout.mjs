@@ -6,18 +6,23 @@ import { syncFullscreenIcon } from './apply-copy-dom.mjs';
 
 export const SETTINGS_FULLSCREEN_STORAGE_KEY = 'hh-settings-modal-fullscreen';
 export const SETTINGS_SIZE_STORAGE_KEY = 'hh-settings-modal-size';
+export const SETTINGS_SIZE_SCHEMA_STORAGE_KEY = 'hh-settings-modal-size-version';
 export const SETTINGS_LAYOUT_PRESET_STORAGE_KEY = 'hh-settings-modal-layout-preset';
 export const SETTINGS_OPEN_FULLSCREEN_STORAGE_KEY = 'hh-settings-modal-open-fullscreen';
 
 /** Краткая подсказка для футера модалки (десктоп). */
-export const SETTINGS_LAYOUT_FOOTER_SUFFIX = ' · Alt+1–5 вкладки · Alt+F экран';
+export const SETTINGS_LAYOUT_FOOTER_SUFFIX = ' · Alt+1–4 разделы · Alt+F экран';
 
 /** @typedef {'compact' | 'standard' | 'wide' | 'fullscreen' | 'custom'} SettingsLayoutPresetId */
 
+export const SETTINGS_DIALOG_DEFAULT = { w: 960, h: 840 };
+export const SETTINGS_DIALOG_MIN = { w: 720, h: 520 };
+export const SETTINGS_SIZE_SCHEMA_VERSION = 2;
+
 /** @type {Record<string, { label: string, w?: number, h?: number, reset?: boolean, fullscreen?: boolean }>} */
 export const SETTINGS_LAYOUT_PRESETS = {
-  compact: { label: 'Компакт', w: 448, h: 560 },
-  standard: { label: 'Стандарт', reset: true },
+  compact: { label: 'Компакт', w: 760, h: 600 },
+  standard: { label: 'Стандарт', w: 960, h: 840 },
   wide: { label: 'Широкое', w: 960, h: 720 },
   fullscreen: { label: 'На весь экран', fullscreen: true },
 };
@@ -29,19 +34,31 @@ let settingsLayoutToast = null;
 
 /** @returns {HTMLElement | null} */
 export function getSettingsDialogEl() {
-  return document.querySelector('#settings-modal .settings-dialog--v4');
+  return document.querySelector('#settings-modal .settings-dialog--v5, #settings-modal .settings-dialog--v4');
 }
 
 /** @param {number} w @param {number} h */
 export function clampSettingsDialogSize(w, h) {
-  const maxW = Math.max(280, Math.floor(window.innerWidth - 16));
-  const maxH = Math.max(200, Math.floor(window.innerHeight - 16));
-  const minW = Math.min(448, maxW);
-  const minH = Math.min(320, maxH);
+  const maxW = Math.max(SETTINGS_DIALOG_MIN.w, Math.floor(window.innerWidth - 16));
+  const maxH = Math.max(SETTINGS_DIALOG_MIN.h, Math.floor(window.innerHeight - 16));
+  const minW = Math.min(SETTINGS_DIALOG_MIN.w, maxW);
+  const minH = Math.min(SETTINGS_DIALOG_MIN.h, maxH);
   return {
     w: Math.max(minW, Math.min(w, maxW)),
     h: Math.max(minH, Math.min(h, maxH)),
   };
+}
+
+/** Сброс устаревшего размера окна после смены дефолта. */
+export function migrateSettingsDialogSizeSchema() {
+  try {
+    const v = Number(localStorage.getItem(SETTINGS_SIZE_SCHEMA_STORAGE_KEY) || 0);
+    if (v >= SETTINGS_SIZE_SCHEMA_VERSION) return;
+    localStorage.removeItem(SETTINGS_SIZE_STORAGE_KEY);
+    localStorage.setItem(SETTINGS_SIZE_SCHEMA_STORAGE_KEY, String(SETTINGS_SIZE_SCHEMA_VERSION));
+  } catch {
+    /* ignore */
+  }
 }
 
 /** @returns {{ w: number, h: number } | null} */
@@ -52,8 +69,15 @@ export function readStoredSettingsDialogSize() {
     const o = JSON.parse(raw);
     const w = Number(o?.w);
     const h = Number(o?.h);
-    if (Number.isFinite(w) && Number.isFinite(h) && w >= 280 && h >= 200) {
+    if (Number.isFinite(w) && Number.isFinite(h) && w >= SETTINGS_DIALOG_MIN.w && h >= SETTINGS_DIALOG_MIN.h) {
       return clampSettingsDialogSize(w, h);
+    }
+    if (Number.isFinite(w) && Number.isFinite(h)) {
+      try {
+        localStorage.removeItem(SETTINGS_SIZE_STORAGE_KEY);
+      } catch {
+        /* ignore */
+      }
     }
   } catch {
     /* ignore */
@@ -113,13 +137,27 @@ function applyStoredSettingsDialogSize() {
   });
 }
 
+function readDialogSizeForPersist(dlg) {
+  const rect = dlg.getBoundingClientRect();
+  const styledW = Number.parseInt(dlg.style.width, 10);
+  const styledH = Number.parseInt(dlg.style.height, 10);
+  const w =
+    dlg.classList.contains('settings-dialog--user-sized') && Number.isFinite(styledW) && styledW > 0
+      ? styledW
+      : Math.round(rect.width);
+  const h =
+    dlg.classList.contains('settings-dialog--user-sized') && Number.isFinite(styledH) && styledH > 0
+      ? styledH
+      : Math.round(rect.height);
+  return clampSettingsDialogSize(w, h);
+}
+
 function persistSettingsDialogSize() {
   if (suppressSettingsSizePersist > 0 || settingsModalFullscreen) return;
   if (window.matchMedia('(max-width: 640px)').matches) return;
   const dlg = getSettingsDialogEl();
   if (!dlg) return;
-  const rect = dlg.getBoundingClientRect();
-  const { w, h } = clampSettingsDialogSize(Math.round(rect.width), Math.round(rect.height));
+  const { w, h } = readDialogSizeForPersist(dlg);
   dlg.classList.add('settings-dialog--user-sized');
   try {
     localStorage.setItem(SETTINGS_SIZE_STORAGE_KEY, JSON.stringify({ w, h }));
@@ -135,10 +173,24 @@ function persistSettingsDialogSize() {
 export function detectSettingsLayoutPreset() {
   if (settingsModalFullscreen) return 'fullscreen';
   const size = readStoredSettingsDialogSize();
+  const storedId = readStoredLayoutPresetId();
+  if (size && storedId && storedId !== 'custom' && SETTINGS_LAYOUT_PRESETS[storedId]?.w) {
+    const preset = SETTINGS_LAYOUT_PRESETS[storedId];
+    if (
+      preset.w &&
+      preset.h &&
+      Math.abs(size.w - preset.w) <= 36 &&
+      Math.abs(size.h - preset.h) <= 56
+    ) {
+      return /** @type {SettingsLayoutPresetId} */ (storedId);
+    }
+  }
   if (!size) return 'standard';
   for (const [id, preset] of Object.entries(SETTINGS_LAYOUT_PRESETS)) {
     if (!preset.w || !preset.h) continue;
-    if (Math.abs(size.w - preset.w) <= 28 && Math.abs(size.h - preset.h) <= 36) return /** @type {SettingsLayoutPresetId} */ (id);
+    if (Math.abs(size.w - preset.w) <= 28 && Math.abs(size.h - preset.h) <= 36) {
+      return /** @type {SettingsLayoutPresetId} */ (id);
+    }
   }
   return 'custom';
 }
@@ -160,9 +212,9 @@ export function syncSettingsLayoutPresetUi() {
 
 /** Прокрутить к пресетам окна и кратко подсветить панель. */
 export function focusSettingsLayoutBar() {
-  const bar = document.getElementById('settings-layout-bar');
-  if (!bar || bar.hidden) {
-    settingsLayoutToast?.('Пресеты окна — в шапке модалки (на узком экране скрыты)', 'neutral');
+  const bar = document.getElementById('settings-layout-presets-group') || document.getElementById('settings-layout-bar');
+  if (!bar) {
+    settingsLayoutToast?.('Пресеты окна — в разделе «Интерфейс»', 'neutral');
     return;
   }
   bar.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -325,7 +377,7 @@ export function applySettingsOpenLayout(explicitLayout) {
     setSettingsModalFullscreen(true);
     return;
   }
-  if (stored && stored !== 'custom' && stored !== 'standard' && SETTINGS_LAYOUT_PRESETS[stored]?.w) {
+  if (stored && stored !== 'custom' && SETTINGS_LAYOUT_PRESETS[stored]?.w) {
     applySettingsLayoutPreset(stored, { toast: false });
     return;
   }
@@ -396,6 +448,8 @@ function initSettingsLayoutPresetControls() {
  */
 export function initSettingsDialogLayout(deps) {
   settingsLayoutToast = deps?.showToast || null;
+
+  migrateSettingsDialogSizeSchema();
 
   try {
     settingsModalFullscreen = localStorage.getItem(SETTINGS_FULLSCREEN_STORAGE_KEY) === '1';

@@ -18,15 +18,21 @@
   --radius-lg: 14px;
   --radius-full: 999px;
 
-  /* Typography */
-  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Consolas, monospace;
-  --text-xs: 0.68rem;
-  --text-sm: 0.78rem;
+  /* Typography — канон (единый шрифт всего приложения) */
+  --ds-root-size: 14px;
+  --font-ui: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Cascadia Code', 'Cascadia Mono', ui-monospace, 'Segoe UI Mono', Consolas, monospace;
+  --font-weight-normal: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 650;
+  --text-xs: 0.72rem;
+  --text-sm: 0.8125rem;
   --text-base: 0.875rem;
   --text-lg: 1rem;
+  --text-xl: 1.125rem;
   --leading-tight: 1.25;
   --leading-normal: 1.45;
+  --tracking-label: 0.04em;
 
   /* Semantic (dark default — дополняет shell) */
   --ds-accent: #0a84ff;
@@ -119,6 +125,36 @@
   --hh-success: var(--ds-good);
   --hh-radius: var(--radius-lg);
   --hh-radius-sm: var(--radius-sm);
+
+  /* Multi-source ingest (UX v4) */
+  --source-hh: #0a84ff;
+  --source-habr: #6c5ce7;
+  --source-telegram: #2aabee;
+  --source-ats: #30d158;
+  --source-jobboard: #ff9f0a;
+  --tier-a: var(--ds-good);
+  --tier-b: var(--ds-accent);
+  --tier-c: var(--ds-warn);
+  --tier-d: var(--text-secondary);
+
+  /* Единый шрифт UI (модалки вне #app-shell наследуют с html/body) */
+  --font: var(--font-ui);
+
+  /* Legacy → канон (глобально, не только в v4 shell) */
+  --accent: var(--ds-accent);
+  --accent-soft: var(--ds-accent-muted);
+  --good: var(--ds-good);
+  --good-soft: var(--ds-good-muted);
+  --bad: var(--ds-bad);
+  --bad-soft: var(--ds-bad-muted);
+  --warn: var(--ds-warn);
+  --bg: var(--ui-canvas);
+  --bg-elevated: var(--ui-surface);
+  --bg-secondary: var(--ui-tile);
+  --border: var(--ui-border);
+  --text: var(--ui-text);
+  --text-secondary: var(--ui-muted);
+  --radius: var(--radius-md);
 
   /* Deprecated aliases (--v4-* → --hh-*) */
   --v4-accent: var(--hh-accent);

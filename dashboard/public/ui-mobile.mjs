@@ -79,6 +79,12 @@ export function applyMobileStageLayout() {
     if (leftSplit) leftSplit.style.display = 'none';
     if (rightSplit) rightSplit.style.display = 'none';
   } else {
+    const stage = document.querySelector('.workspace-stage');
+    if (stage) stage.style.removeProperty('grid-template-columns');
+    const leftSplit = document.getElementById('splitter-left');
+    const rightSplit = document.getElementById('splitter-right');
+    if (leftSplit) leftSplit.style.removeProperty('display');
+    if (rightSplit) rightSplit.style.removeProperty('display');
     window.dispatchEvent(new CustomEvent('hh-docks-refresh'));
   }
 }

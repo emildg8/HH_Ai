@@ -2,7 +2,7 @@
  * Command palette — быстрые действия (Ctrl+K / /).
  */
 
-/** @typedef {{ id: string, label: string, hint?: string, keywords?: string, run: () => void | Promise<void> }} PaletteAction */
+/** @typedef {{ id: string, label: string, hint?: string, keywords?: string, group?: string, run: () => void | Promise<void> }} PaletteAction */
 
 let paletteEl = null;
 let inputEl = null;
@@ -23,7 +23,8 @@ function ensureDom() {
   paletteEl.querySelector('.command-palette__backdrop')?.addEventListener('click', closeCommandPalette);
   inputEl.addEventListener('input', () => {
     activeIndex = 0;
-    renderList(filterActions(inputEl.value));
+    const q = inputEl.value.trim();
+    renderList(filterActions(inputEl.value), !q);
   });
   inputEl.addEventListener('keydown', (e) => {
     const items = listEl.querySelectorAll('.command-palette__item');
@@ -63,30 +64,60 @@ function filterActions(q) {
   });
 }
 
-/** @param {PaletteAction[]} filtered */
-function renderList(filtered) {
+const GROUP_ORDER = ['Найти', 'Разобрать', 'Откликнуться', 'Следить', 'Панели', 'Настройки', 'Справка'];
+
+/** @param {PaletteAction[]} filtered @param {boolean} [grouped] */
+function renderList(filtered, grouped = false) {
   if (!listEl) return;
   if (!filtered.length) {
     listEl.innerHTML = '<li class="command-palette__empty">Ничего не найдено</li>';
     return;
   }
-  listEl.replaceChildren(
-    ...filtered.map((a, i) => {
-      const li = document.createElement('li');
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `command-palette__item${i === activeIndex ? ' active' : ''}`;
-      btn.innerHTML = `<span class="command-palette__item-label">${escapeHtml(a.label)}</span>${
-        a.hint ? `<span class="command-palette__item-hint">${escapeHtml(a.hint)}</span>` : ''
-      }`;
-      btn.addEventListener('click', async () => {
-        closeCommandPalette();
-        await a.run();
-      });
-      li.appendChild(btn);
-      return li;
-    })
-  );
+
+  const fragments = [];
+  let globalIdx = 0;
+
+  const appendAction = (a) => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const i = globalIdx;
+    btn.className = `command-palette__item${i === activeIndex ? ' active' : ''}`;
+    btn.innerHTML = `<span class="command-palette__item-label">${escapeHtml(a.label)}</span>${
+      a.hint ? `<span class="command-palette__item-hint">${escapeHtml(a.hint)}</span>` : ''
+    }`;
+    btn.addEventListener('click', async () => {
+      closeCommandPalette();
+      await a.run();
+    });
+    li.appendChild(btn);
+    fragments.push(li);
+    globalIdx += 1;
+  };
+
+  if (grouped && filtered.some((a) => a.group)) {
+    for (const group of GROUP_ORDER) {
+      const items = filtered.filter((a) => a.group === group);
+      if (!items.length) continue;
+      const head = document.createElement('li');
+      head.className = 'command-palette__group';
+      head.textContent = group;
+      fragments.push(head);
+      for (const a of items) appendAction(a);
+    }
+    const other = filtered.filter((a) => !a.group || !GROUP_ORDER.includes(a.group));
+    if (other.length) {
+      const head = document.createElement('li');
+      head.className = 'command-palette__group';
+      head.textContent = 'Другое';
+      fragments.push(head);
+      for (const a of other) appendAction(a);
+    }
+  } else {
+    for (const a of filtered) appendAction(a);
+  }
+
+  listEl.replaceChildren(...fragments);
 }
 
 /** @param {string} s */
@@ -107,12 +138,13 @@ export function registerCommandPaletteActions(actionList, opts = {}) {
   ensureDom();
 }
 
-export function openCommandPalette() {
+export function openCommandPalette(prefill = '') {
   ensureDom();
   if (!paletteEl || !inputEl) return;
   activeIndex = 0;
-  inputEl.value = '';
-  renderList(actions);
+  inputEl.value = prefill;
+  const q = prefill.trim();
+  renderList(filterActions(prefill), !q);
   paletteEl.hidden = false;
   requestAnimationFrame(() => inputEl.focus());
 }

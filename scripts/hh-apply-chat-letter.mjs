@@ -442,6 +442,14 @@ async function main() {
   }
   let page = openPages[0] && !openPages[0].isClosed() ? openPages[0] : await ctx.newPage();
 
+  if (tailorResume && resumePick.hash && !dryRun) {
+    page = await assertHhLoggedIn(page, { log: logLine, captchaContext: 'подгонка резюме' });
+    const { applyMicroAboutBeforeApply } = await import('../lib/resume-micro-tailor-apply.mjs');
+    const mt = await applyMicroAboutBeforeApply(page, rec, resumePick.hash, { log: logLine });
+    if (mt.ok) logLine('[hh-apply-chat] Блок «О себе» подогнан под вакансию');
+    else if (!mt.skipped) logLine(`[hh-apply-chat] Подгонка «О себе»: ${mt.reason || 'ошибка'}`);
+  }
+
   const ensureActivePage = async (stage) => {
     if (!page.isClosed()) return page;
     const revived = await waitForActivePage(ctx, page, 8000);

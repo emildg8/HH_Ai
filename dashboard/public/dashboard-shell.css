@@ -327,14 +327,17 @@ body {
 }
 
 #dock-right .stats-grid .stat-value {
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 
 #dock-right .stats-grid .stat-label {
-  font-size: 0.62rem;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  margin-top: 0.12rem;
   color: var(--text-muted);
 }
 

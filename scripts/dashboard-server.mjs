@@ -68,8 +68,20 @@ import { buildHhApplySiteStatePatch, hhSiteStateLabel } from '../lib/hh-vacancy-
 import { computeConversionStats } from '../lib/conversion-stats.mjs';
 import { computeDashboardStats } from '../lib/offers-stats.mjs';
 import { computeFunnelAnalytics } from '../lib/funnel-analytics.mjs';
+import {
+  runIntelligenceLoop,
+  INTELLIGENCE_DIGEST_FILE,
+} from '../lib/intelligence-loop.mjs';
+import { listTopTierRecords } from '../lib/source-quality.mjs';
+import { ingestUrl, ingestUrlsFromText } from '../lib/vacancy-ingest.mjs';
+import { parseUrlMetadata } from '../lib/vacancy-id.mjs';
+import { classifyAllRecords } from '../lib/outcome-classifier.mjs';
+import { loadAnalyticsUnionRecords } from '../lib/queue-aggregate.mjs';
 import { importInterviewNotesFromDir } from '../lib/interview-notes.mjs';
 import { buildInterviewPrepPack } from '../lib/interview-prep.mjs';
+import { buildTechnicalMockInterview } from '../lib/interview-mock.mjs';
+import { buildHrScreeningMock } from '../lib/interview-mock-hr.mjs';
+import { buildOffersTrackerSnapshot, setOfferDecision } from '../lib/offer-tracker.mjs';
 import { draftChatReply } from '../lib/chat-reply-draft.mjs';
 import { buildChatInbox, getChatThreadDetail } from '../lib/chat-inbox.mjs';
 import { classifyChatFollowUp, defaultInviteNudgeText, listChatFollowUps } from '../lib/chat-follow-up.mjs';
@@ -138,6 +150,11 @@ import {
 } from '../lib/reject-source.mjs';
 import { appendFeedback } from '../lib/feedback-context.mjs';
 import { loadCvBundle } from '../lib/cv-load.mjs';
+import {
+  buildMarketSkillsReport,
+  compareMarketVsVacancy,
+  readCvTextSync,
+} from '../lib/market-skills.mjs';
 import {
   createLlmRoutingContext,
   hasScoreProviderCredentials,
@@ -662,6 +679,66 @@ const server = http.createServer(async (req, res) => {
     );
   }
 
+  if (req.method === 'GET' && pathname === '/api/intelligence-digest') {
+    const refresh = url.searchParams.get('refresh') === '1';
+    if (refresh) {
+      return sendJson(res, 200, runIntelligenceLoop({ label: 'api' }));
+    }
+    if (fs.existsSync(INTELLIGENCE_DIGEST_FILE)) {
+      try {
+        return sendJson(res, 200, JSON.parse(fs.readFileSync(INTELLIGENCE_DIGEST_FILE, 'utf8')));
+      } catch {
+        /* fall through */
+      }
+    }
+    return sendJson(res, 200, runIntelligenceLoop({ label: 'api' }));
+  }
+
+  if (req.method === 'GET' && pathname === '/api/market-skills') {
+    const role = url.searchParams.get('role') || process.env.HH_PROFILE || 'devops';
+    const prefs = loadPreferences();
+    if (!prefs.marketSkillsEnabled) {
+      return sendJson(res, 200, { ok: true, enabled: false });
+    }
+    let cvText = readCvTextSync();
+    try {
+      const cvBundle = await loadCvBundle();
+      if (cvBundle?.text) cvText = cvBundle.text;
+    } catch {
+      /* sync fallback */
+    }
+    const report = buildMarketSkillsReport(role, cvText);
+    let vacancySample = null;
+    try {
+      const union = loadAnalyticsUnionRecords();
+      const sample =
+        union.records.find((r) => r.status === 'pending' && r.title) || union.records.find((r) => r.title);
+      if (sample) {
+        vacancySample = compareMarketVsVacancy(sample, report.bundle.skills);
+      }
+    } catch {
+      /* optional */
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      enabled: true,
+      role: report.bundle.role,
+      bundle: report.bundle,
+      cvCompare: report.cvCompare,
+      vacancySample,
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/outcome-buckets') {
+    const union = loadAnalyticsUnionRecords();
+    const classified = classifyAllRecords(union.records);
+    return sendJson(res, 200, {
+      at: new Date().toISOString(),
+      summary: classified.summary,
+      items: classified.items.slice(0, 200),
+    });
+  }
+
   if (
     (req.method === 'GET' || req.method === 'POST') &&
     (pathname === '/api/batch-control' || pathname === '/api/hh-batch-control')
@@ -730,6 +807,8 @@ const server = http.createServer(async (req, res) => {
     const scoreBand = url.searchParams.get('scoreBand') || 'all';
     const applyViewRaw = url.searchParams.get('applyView') || 'queue';
     const rejectSourceFilterRaw = url.searchParams.get('rejectSource') || 'all';
+    const sourceFilter = url.searchParams.get('source') || 'all';
+    const tierFilter = url.searchParams.get('tier') || 'all';
     const rejectSourceFilter =
       rejectSourceFilterRaw === 'auto' || rejectSourceFilterRaw === 'manual'
         ? rejectSourceFilterRaw
@@ -800,6 +879,12 @@ const server = http.createServer(async (req, res) => {
       if (minScore > 0) q = q.filter((x) => scoreOfItem(x) >= minScore);
     } else {
       q = filterByScoreBand(q, scoreBand, threshold);
+    }
+    if (sourceFilter !== 'all') {
+      q = q.filter((x) => String(x.source || 'hh').toLowerCase() === sourceFilter.toLowerCase());
+    }
+    if (tierFilter !== 'all') {
+      q = q.filter((x) => String(x.sourceQualityTier || '').toUpperCase() === tierFilter.toUpperCase());
     }
     let negotiationsOnlyCount = 0;
     if (applyView === 'applied') {
@@ -3030,6 +3115,64 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === 'GET' && pathname === '/api/interview-hub') {
+    const tracker = buildOffersTrackerSnapshot();
+    let digest = null;
+    try {
+      digest = runIntelligenceLoop({ writeDigest: false, label: 'interview-hub' });
+    } catch {
+      /* */
+    }
+    return sendJson(res, 200, {
+      offers: tracker.offers,
+      summary: tracker.summary,
+      buckets: digest ? { summary: digest.buckets, rates: digest.rates } : null,
+      suggestions: digest?.suggestions || [],
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-mock-tech') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const rec = getVacancyRecord(body.id);
+    if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+    try {
+      const mock = await buildTechnicalMockInterview(rec);
+      return sendJson(res, 200, { ok: true, mock });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-mock-hr') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const rec = body.id ? getVacancyRecord(body.id) : null;
+    return sendJson(res, 200, { ok: true, hrMock: buildHrScreeningMock(rec || {}) });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/offer-decision') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const id = String(body.id || '').trim();
+    const status = String(body.status || 'pending').trim();
+    if (!id) return sendJson(res, 400, { error: 'id обязателен' });
+    const tracker = setOfferDecision(id, status, String(body.note || ''));
+    return sendJson(res, 200, { ok: true, tracker: buildOffersTrackerSnapshot() });
+  }
+
   if (req.method === 'POST' && pathname === '/api/import-interview-notes') {
     try {
       const dir = process.env.HH_INTERVIEW_DIR || 'D:\\Dev\\HH\\hh\\Интервью';
@@ -3146,13 +3289,91 @@ const server = http.createServer(async (req, res) => {
     } catch {
       /* */
     }
-    const extra = body.withHarvest ? ['--with-harvest'] : [];
+    const extra = [];
+    if (body.withHarvest) extra.push('--with-harvest');
+    if (body.withHabrHarvest) extra.push('--with-habr-harvest');
     const child = spawnSideJob('dailyRoutine', 'daily-routine.mjs', extra);
     return sendJson(res, 200, {
       ok: true,
       pid: child.pid,
       message: 'Ежедневная рутина запущена (синхр. отклики → кэш → чаты)',
     });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/run-external-harvest') {
+    let body = {};
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const target = String(body.target || 'all').toLowerCase();
+    const scriptMap = {
+      habr: 'harvest-habr.mjs',
+      telegram: 'harvest-telegram-channels.mjs',
+      ats: 'harvest-ats.mjs',
+      all: 'harvest-all.mjs',
+      jobboards: 'harvest-jobboards.mjs',
+    };
+    const script = scriptMap[target];
+    if (!script) {
+      return sendJson(res, 400, { error: `Unknown target: ${target}` });
+    }
+    const args = target === 'all' && body.withJobboards ? ['--with-jobboards'] : [];
+    const child = spawnBackground(process.execPath, [path.join(ROOT, 'scripts', script), ...args], {
+      cwd: ROOT,
+      detached: true,
+      stdio: 'ignore',
+      env: process.env,
+    });
+    child.unref();
+    return sendJson(res, 200, { ok: true, pid: child.pid, target, script });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/ingest-url') {
+    let body = {};
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    try {
+      let results;
+      if (body.text) {
+        results = await ingestUrlsFromText(String(body.text));
+      } else if (body.url) {
+        results = [await ingestUrl(String(body.url))];
+      } else {
+        return sendJson(res, 400, { error: 'url or text required' });
+      }
+      const added = results.filter((r) => r.added).length;
+      return sendJson(res, 200, { ok: true, added, total: results.length, results });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'GET' && pathname === '/api/parse-url') {
+    const raw = url.searchParams.get('url') || '';
+    if (!raw.trim()) return sendJson(res, 400, { error: 'url required' });
+    return sendJson(res, 200, parseUrlMetadata(raw.trim()));
+  }
+
+  if (req.method === 'GET' && pathname === '/api/top-tier') {
+    const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit')) || 20));
+    const records = loadQueue();
+    const top = listTopTierRecords(records, { limit, tiers: ['A', 'B'] });
+    return sendJson(res, 200, { ok: true, count: top.length, items: top });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/backfill-source-meta') {
+    const child = spawnBackground(process.execPath, [path.join(ROOT, 'scripts', 'backfill-source-meta.mjs')], {
+      cwd: ROOT,
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+    return sendJson(res, 200, { ok: true, pid: child.pid });
   }
 
   if (req.method === 'POST' && pathname === '/api/chat-reply-batch') {

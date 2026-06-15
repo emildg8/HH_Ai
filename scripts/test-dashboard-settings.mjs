@@ -57,6 +57,35 @@ async function main() {
       errors.push('settings: тост «не загрузились» — модуль settings-modal не подключился');
     }
 
+    const toolbar = await page.locator('#settings-toolbar').count();
+    if (toolbar > 0) errors.push('settings: устаревший #settings-toolbar');
+
+    const navOk = await page.locator('.settings-nav').count();
+    if (navOk < 1) errors.push('settings: нет боковой навигации (.settings-nav)');
+
+    const hubExtra = await page.locator('#letter-hub-extra').count();
+    if (hubExtra > 0) errors.push('settings: устаревший #letter-hub-extra в DOM');
+
+    const profileOpts = await page.evaluate(() => {
+      const sel = document.getElementById('settings-profile-select');
+      return sel ? sel.options.length : 0;
+    });
+    if (profileOpts < 1) {
+      errors.push('settings: #settings-profile-select без опций после открытия');
+    }
+
+    const footerJargon = await page.locator('#settings-footer-tab-note').count();
+    if (footerJargon > 0) {
+      errors.push('settings: устаревший #settings-footer-tab-note в футере');
+    }
+
+    const autosaveHint = await page.evaluate(
+      () => document.getElementById('settings-save-hint')?.textContent || ''
+    );
+    if (!/сохраняются автоматически/i.test(autosaveHint)) {
+      errors.push(`settings: нет подсказки автосохранения в футере («${autosaveHint}»)`);
+    }
+
     for (const tab of SETTINGS_TAB_IDS) {
       await page.locator(`[data-settings-tab="${tab}"]`).click();
       await page.waitForTimeout(60);
@@ -69,24 +98,32 @@ async function main() {
     }
 
     const layoutBar = await page.locator('#settings-layout-bar').count();
-    if (layoutBar < 1) errors.push('settings: нет полосы пресетов окна (#settings-layout-bar)');
+    if (layoutBar < 1) errors.push('settings: нет пресетов окна (#settings-layout-bar)');
 
+    await page.locator('[data-settings-tab="appearance"]').click();
+    await page.waitForTimeout(80);
     await page.locator('[data-settings-layout-preset="compact"]').first().click();
     await page.waitForTimeout(200);
     const compactW = await page.evaluate(() => {
-      const dlg = document.querySelector('#settings-modal .settings-dialog--v4');
+      const dlg = document.querySelector('#settings-modal .settings-dialog--v5, #settings-modal .settings-dialog--v4');
       return dlg ? Math.round(dlg.getBoundingClientRect().width) : 0;
     });
-    if (compactW < 400 || compactW > 520) {
-      errors.push(`settings layout: compact width=${compactW}, ожидалось ~448`);
+    if (compactW < 720 || compactW > 820) {
+      errors.push(`settings layout: compact width=${compactW}, ожидалось ~760`);
     }
 
-    await page.locator('[data-settings-path="limits"]').click();
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new CustomEvent('hh-open-settings', {
+          detail: { tab: 'apply', focus: 'settings-limits-hh' },
+        })
+      );
+    });
     await page.waitForTimeout(200);
     const limitsPanel = await page.evaluate(
       () => !document.getElementById('settings-panel-apply')?.hidden
     );
-    if (!limitsPanel) errors.push('settings quick path: «Лимиты» не открыл вкладку Отклики');
+    if (!limitsPanel) errors.push('settings deep link: apply + лимиты не открылись');
 
     await page.locator('[data-settings-tab="targeting"]').click();
     await page.waitForTimeout(80);
@@ -98,21 +135,24 @@ async function main() {
       const dirtyTargeting = await page.evaluate(() =>
         document
           .querySelector('[data-settings-tab="targeting"]')
-          ?.classList.contains('settings-tabs__btn--dirty')
+          ?.classList.contains('settings-nav__btn--dirty')
       );
-      const dirtyLetters = await page.evaluate(() =>
+      const dirtyApply = await page.evaluate(() =>
         document
-          .querySelector('[data-settings-tab="letters"]')
-          ?.classList.contains('settings-tabs__btn--dirty')
+          .querySelector('[data-settings-tab="apply"]')
+          ?.classList.contains('settings-nav__btn--dirty')
       );
       if (!dirtyTargeting) errors.push('settings: dirty только на вкладке targeting');
-      if (dirtyLetters) errors.push('settings: dirty ошибочно на вкладке letters');
+      if (dirtyApply) errors.push('settings: dirty ошибочно на вкладке apply');
       await targetingField.fill(prev);
     }
 
-    await page.locator('[data-settings-tab="letters"]').click();
+    await page.locator('[data-settings-tab="apply"]').click();
     await page.waitForTimeout(120);
     await page.locator('[data-letter-preset="strict"]').click();
+    await page.waitForTimeout(80);
+    const saveVisible = await page.locator('#btn-settings-save-now').isVisible();
+    if (!saveVisible) errors.push('settings: «Сохранить сейчас» не появилась после изменения');
     await page.locator('#btn-settings-save-now').click();
     await page
       .waitForFunction(
@@ -133,9 +173,6 @@ async function main() {
     if (prefs.batchAutoApproveBestLetter !== true) {
       errors.push('settings API: batchAutoApproveBestLetter !== true после Строгий');
     }
-
-    const chips = await page.locator('#settings-dialog-summary .settings-chip').count();
-    if (chips < 2) errors.push('settings: мало чипов в сводке');
 
     await page.locator('[data-settings-tab="appearance"]').click();
     await page.waitForTimeout(80);
@@ -168,24 +205,24 @@ async function main() {
     await page.goto(`${BASE}/?settings=letters&focus=fp`, { waitUntil: 'domcontentloaded' });
     await waitSettingsModalOpen(page);
     const deepOk = await page.evaluate(() => {
-      const panel = document.getElementById('settings-panel-letters');
+      const panel = document.getElementById('settings-panel-apply');
       const fp = document.getElementById('batch-false-positive-max');
       return Boolean(panel && !panel.hidden && fp);
     });
-    if (!deepOk) errors.push('settings deep link: letters + поле FP');
+    if (!deepOk) errors.push('settings deep link: apply + поле ложных пропусков');
 
     await page.keyboard.press('Alt+1');
     await page.waitForTimeout(80);
     const systemPanel = await page.evaluate(
       () => !document.getElementById('settings-panel-system')?.hidden
     );
-    if (!systemPanel) errors.push('settings: Alt+1 не переключил на Система');
+    if (!systemPanel) errors.push('settings: Alt+1 не переключил на Профиль');
 
     await page.locator('[data-settings-tab="targeting"]').click();
     await page.waitForTimeout(80);
     await page.locator('#pref-min-monthly-rub').fill('155000');
     const dirtyTabIds = await page.evaluate(() =>
-      [...document.querySelectorAll('.settings-tabs__btn--dirty')].map(
+      [...document.querySelectorAll('.settings-nav__btn--dirty')].map(
         (b) => b.getAttribute('data-settings-tab')
       )
     );
@@ -201,7 +238,7 @@ async function main() {
     await page.waitForTimeout(80);
     const reverted = await page.evaluate(() => {
       const btn = document.querySelector('[data-settings-tab="targeting"]');
-      return !btn?.classList.contains('settings-tabs__btn--dirty');
+      return !btn?.classList.contains('settings-nav__btn--dirty');
     });
     if (!reverted) errors.push('settings: отмена на вкладке не сняла dirty');
 
@@ -230,7 +267,7 @@ async function main() {
     });
     await waitSettingsModalOpen(page);
     const wideW = await page.evaluate(() => {
-      const dlg = document.querySelector('#settings-modal .settings-dialog--v4');
+      const dlg = document.querySelector('#settings-modal .settings-dialog--v5, #settings-modal .settings-dialog--v4');
       return dlg ? Math.round(dlg.getBoundingClientRect().width) : 0;
     });
     if (wideW < 800) errors.push(`settings layout deep link: wide width=${wideW}, ожидалось ≥800`);

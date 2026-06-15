@@ -8,6 +8,10 @@ import {
   DASHBOARD_APP_JS_VERSION,
   DASHBOARD_V4_CSS_VERSION,
   DASHBOARD_UNIFY_CSS_VERSION,
+  DASHBOARD_FOCUS_CSS_VERSION,
+  DASHBOARD_CONTROLS_POLISH_CSS_VERSION,
+  DASHBOARD_DESIGN_FOUNDATION_VERSION,
+  DASHBOARD_SETTINGS_CSS_VERSION,
 } from '../lib/dashboard-asset-version.mjs';
 import {
   findJsdocBrokenBeforeExport,
@@ -61,8 +65,12 @@ assert.equal(
 );
 const bustHtml = `<script type="module" src="/app.js?v=${DASHBOARD_APP_JS_VERSION}"></script>
 <link href="/dashboard-v4.css?v=${DASHBOARD_V4_CSS_VERSION}">
+<link href="/dashboard-settings.css?v=${DASHBOARD_SETTINGS_CSS_VERSION}">
 <link href="/dashboard-unify.css?v=${DASHBOARD_UNIFY_CSS_VERSION}">
-<link href="/design-tokens.css?v=${DASHBOARD_UNIFY_CSS_VERSION}">`;
+<link href="/design-tokens.css?v=${DASHBOARD_UNIFY_CSS_VERSION}">
+<link href="/design-foundation.css?v=${DASHBOARD_DESIGN_FOUNDATION_VERSION}">
+<link href="/dashboard-focus.css?v=${DASHBOARD_FOCUS_CSS_VERSION}">
+<link href="/dashboard-controls-polish.css?v=${DASHBOARD_CONTROLS_POLISH_CSS_VERSION}">`;
 assert.equal(findCacheBustMismatches(bustHtml).length, 0);
 assert.ok(findCacheBustMismatches('<link href="/dashboard-v4.css?v=old">').length > 0);
 

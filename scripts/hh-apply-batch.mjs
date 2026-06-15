@@ -58,6 +58,7 @@ import {
 } from '../lib/batch-skip-reason.mjs';
 import { pruneRespondedFromActiveQueue, pruneVacancyFromActiveQueue } from '../lib/queue-prune.mjs';
 import { assessVacancyForApply } from '../lib/vacancy-targeting.mjs';
+import { assessApplyRedFlags } from '../lib/apply-red-flags.mjs';
 import { runBatchPreflight, repairProfileIfNeeded } from '../lib/batch-preflight.mjs';
 import { writeBatchRunReport } from '../lib/batch-run-report.mjs';
 import { pickBatchPrefsSnapshot } from '../lib/batch-prefs-diff.mjs';
@@ -459,6 +460,22 @@ async function main() {
           });
           syncBatchCounters({ done, failed, skipped, letterIdx, processedIds: [...processedIds] });
           batchProgress.step(done, `Пропуск (не IT) ${stepNum}/${planned}`, { done, failed, skipped });
+          continue;
+        }
+      }
+
+      if (!dryRun && String(process.env.HH_BATCH_RED_FLAGS ?? '1').trim() !== '0') {
+        const red = await assessApplyRedFlags(rec, { allRecords: candidates, prefs });
+        if (red.blocked) {
+          skipped++;
+          processedIds.add(rec.id);
+          const msg = red.flags.map((f) => f.message).join('; ');
+          bumpSkip('стоп-сигнал');
+          logBatchSkipReason(msg);
+          logBatch(`RED-FLAG ${stepNum}/${planned}: ${stepTitle}`);
+          reportItems.push({ title: stepTitle, status: 'red-flag', reason: msg });
+          syncBatchCounters({ done, failed, skipped, letterIdx, processedIds: [...processedIds] });
+          batchProgress.step(done, `Пропуск (стоп) ${stepNum}/${planned}`, { done, failed, skipped });
           continue;
         }
       }

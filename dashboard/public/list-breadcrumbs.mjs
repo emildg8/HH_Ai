@@ -29,6 +29,23 @@ const FUNNEL_LABELS = {
   declined: 'Отказы',
 };
 
+import { SOURCE_UI_LABELS, TIER_CLASS_LABEL, tierClassLabel } from './dashboard-copy-ru.mjs';
+
+/** @type {Record<string, string>} */
+const SOURCE_FILTER_LABELS = {
+  all: 'Все источники',
+  ...SOURCE_UI_LABELS,
+};
+
+/** @type {Record<string, string>} */
+const TIER_FILTER_LABELS = {
+  all: TIER_CLASS_LABEL.all,
+  A: TIER_CLASS_LABEL.A,
+  B: TIER_CLASS_LABEL.B,
+  C: TIER_CLASS_LABEL.C,
+  D: TIER_CLASS_LABEL.D,
+};
+
 /** @type {Record<string, string>} */
 const REJECTED_SOURCE_LABELS = {
   all: 'Все',
@@ -47,6 +64,8 @@ const REJECTED_SOURCE_LABELS = {
  *   appliedFunnel?: string,
  *   rejectedSource?: string,
  *   hasLocalFilter?: boolean,
+ *   sourceFilter?: string,
+ *   tierFilter?: string,
  * }} ctx
  * @returns {Array<{ label: string, current?: boolean }>}
  */
@@ -66,6 +85,13 @@ export function buildListBreadcrumbItems(ctx) {
 
   if (ctx.applyView === 'applied' && ctx.appliedFunnel && ctx.appliedFunnel !== 'all') {
     items.push({ label: FUNNEL_LABELS[ctx.appliedFunnel] || ctx.appliedFunnel });
+  }
+
+  if (ctx.tierFilter && ctx.tierFilter !== 'all') {
+    items.push({ label: TIER_FILTER_LABELS[ctx.tierFilter] || tierClassLabel(ctx.tierFilter) });
+  }
+  if (ctx.sourceFilter && ctx.sourceFilter !== 'all') {
+    items.push({ label: SOURCE_FILTER_LABELS[ctx.sourceFilter] || ctx.sourceFilter });
   }
 
   const shown = Number(ctx.count) || 0;

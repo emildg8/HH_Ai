@@ -1,0 +1,13 @@
+{
+  "comment": "Политика ключевых слов резюме — скопируйте в resume-keyword-policy.json",
+  "honestKeysOnly": true,
+  "maxKeysInAbout": 6,
+  "forbiddenPatterns": [
+    "keyword stuffing",
+    "навыки: навыки:",
+    "\\b\\w+\\s*,\\s*\\w+\\s*,\\s*\\w+\\s*,\\s*\\w+\\s*,\\s*\\w+\\s*,\\s*\\w+\\s*,\\s*\\w+"
+  ],
+  "mustHaveFromCv": true,
+  "tailorWhenGapBelow": 40,
+  "clusterSyncRoles": ["devops", "data", "support"]
+}

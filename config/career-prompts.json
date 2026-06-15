@@ -1,0 +1,19 @@
+{
+  "profile": {
+    "role": "DevOps junior+/middle",
+    "background": "банковский L2, Linux/Docker/мониторинг/релизы",
+    "salary": "150–180k ₽",
+    "format": "удалёнка/гибрид Москва",
+    "start": "1–2 недели"
+  },
+  "prompts": {
+    "resumeAts": "Оптимизируй резюме под ATS и ключи из JD. Профиль: {{profile.role}}. CV: {{cv}}. JD: {{jd}}",
+    "profileOptimize": "Заголовок и «О себе» для поиска рекрутера DevOps. Мост L2→DevOps + 1 цифра. CV: {{cv}}",
+    "searchPlan7d": "План поиска работы на 7 дней для {{profile.role}}, вилка {{profile.salary}}. Очередь: {{queueStats}}",
+    "coldHrMessage": "Короткое сообщение HR после просмотра резюме. Компания: {{company}}. Вакансия: {{title}}",
+    "coverLetter": "Сопроводительное без «Я откликаюсь…». Hook → факт → цифра → CTA. JD: {{jd}}. CV: {{cv}}",
+    "interviewPrep": "Подготовка к собесу {{company}} / {{title}}. Стек из JD: {{jd}}",
+    "followUp": "Follow-up после паузы/отказа. Тон профессиональный, без навязчивости. Контекст: {{context}}",
+    "antiAi": "Перепиши текст естественнее, убери шаблонные AI-фразы, сохрани факты и цифры: {{text}}"
+  }
+}
