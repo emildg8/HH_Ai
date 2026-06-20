@@ -105,6 +105,8 @@ import {
   buildFollowUpDraft,
   detectVideoCapabilities,
 } from '../lib/interview-copilot-post.mjs';
+import { autoPrepAfterNegotiationSync } from '../lib/interview-auto-prep.mjs';
+import { recordDebriefPattern } from '../lib/interview-debrief-patterns.mjs';
 import { buildCandidateContext } from '../lib/candidate-context-bundle.mjs';
 import { injectQuestion, getLiveSessionId } from '../lib/interview-copilot-session.mjs';
 import { recordSpokenAnswer, getSpokenTurns } from '../lib/interview-copilot-spoken.mjs';
@@ -3667,12 +3669,19 @@ const server = http.createServer(async (req, res) => {
       unexpectedQuestion: body.unexpectedQuestion,
     });
     const followUpDraft = buildFollowUpDraft(debrief);
+    let debriefPattern = null;
+    try {
+      debriefPattern = recordDebriefPattern(debrief);
+    } catch {
+      /* knowledge optional */
+    }
     const tracker = buildOffersTrackerSnapshot();
     const slot = tracker.offers?.find((o) => o.id === recordId || o.vacancyId === String(s.vacancyId));
     return sendJson(res, 200, {
       ok: true,
       debrief,
       followUpDraft,
+      debriefPattern,
       offerTracker: slot
         ? {
             id: slot.id,
@@ -4060,12 +4069,16 @@ const server = http.createServer(async (req, res) => {
         it.status = parseNegotiationStatusText(it.statusRaw);
       }
       const r = mergeNegotiationsIntoQueue(cache);
+      const prep = await autoPrepAfterNegotiationSync(r.updatedIds || []);
       return sendJson(res, 200, {
         ok: true,
         updated: r.updated,
         total: r.total,
         negotiations: (cache.items || []).length,
-        message: `Обновлено карточек: ${r.updated}`,
+        autoPrep: prep,
+        message: `Обновлено карточек: ${r.updated}${
+          prep.prepared?.length ? ` · auto prep: ${prep.prepared.length}` : ''
+        }`,
       });
     } catch (e) {
       return sendJson(res, 500, { error: e.message || String(e) });

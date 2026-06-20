@@ -20,6 +20,7 @@ import {
   mergeNegotiationsIntoQueue,
 } from '../lib/hh-negotiations-sync.mjs';
 import { computeConversionStats } from '../lib/conversion-stats.mjs';
+import { autoPrepAfterNegotiationSync } from '../lib/interview-auto-prep.mjs';
 import { setSideJobPid } from '../lib/browser-guard.mjs';
 import { assertBrowserFreeForSideJob } from '../lib/browser-guard.mjs';
 
@@ -56,6 +57,13 @@ async function main() {
         try {
           const r = mergeNegotiationsIntoQueue({ items });
           console.log(`[sync-responses] Обновлено карточек в очереди: ${r.updated} / ${r.total}`);
+          const prep = await autoPrepAfterNegotiationSync(r.updatedIds || []);
+          if (prep.prepared?.length) {
+            console.log(
+              `[sync-responses] Auto prep (invite): ${prep.prepared.length}`,
+              prep.prepared.map((p) => p.company || p.title).join(', ')
+            );
+          }
         } catch (e) {
           console.warn('[sync-responses] Кэш сохранён, очередь не обновлена:', e.message);
           console.warn('Нажмите «Статусы в очередь» в дашборде или npm run devops:apply-negotiations-cache');

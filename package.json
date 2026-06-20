@@ -123,6 +123,7 @@
     "test:interview-copilot-offer-guard": "node scripts/test-interview-copilot-offer-guard.mjs",
     "test:interview-speaker-role": "node scripts/test-interview-speaker-role.mjs",
     "test:interview-copilot-replay": "node scripts/test-interview-copilot-replay.mjs",
+    "test:interview-auto-prep": "node scripts/test-interview-auto-prep.mjs",
     "test:interview-copilot-spoken": "node scripts/test-interview-copilot-spoken.mjs",
     "test:copilot": "node scripts/test-copilot-gate.mjs",
     "test:settings-registry": "node scripts/test-settings-registry.mjs && node scripts/test-settings-patch-flatten.mjs",
