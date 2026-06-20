@@ -184,6 +184,7 @@
     "devops:knowledge-backfill": "node scripts/knowledge-backfill.mjs",
     "test:knowledge-store": "node scripts/test-knowledge-store.mjs && node scripts/test-knowledge-apply-record.mjs",
     "test:employer-dossier": "node scripts/test-employer-dossier.mjs",
+    "test:employer-rag": "node scripts/test-employer-rag.mjs",
     "check:knowledge-infra": "node scripts/check-knowledge-infra.mjs",
     "devops:ops-readiness": "node scripts/ops-readiness-check.mjs",
     "devops:ops-weekly-report": "node scripts/ops-weekly-report.mjs",
