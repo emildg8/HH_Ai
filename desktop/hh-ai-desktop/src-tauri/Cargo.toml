@@ -1,6 +1,6 @@
 [package]
 name = "hh-ai-desktop"
-version = "3.0.5"
+version = "3.3.0"
 description = "HH Ai desktop shell"
 authors = ["HH Ai"]
 edition = "2021"
@@ -10,6 +10,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-global-shortcut = "2"
 
 [profile.release]
 panic = "abort"

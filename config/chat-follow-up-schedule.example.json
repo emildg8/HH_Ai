@@ -1,5 +1,5 @@
 {
-  "enabled": true,
+  "enabled": false,
   "timezone": "Europe/Moscow",
   "slots": [10, 18],
   "windowMinutes": 45,

@@ -12,6 +12,9 @@ import {
   DASHBOARD_CONTROLS_POLISH_CSS_VERSION,
   DASHBOARD_DESIGN_FOUNDATION_VERSION,
   DASHBOARD_SETTINGS_CSS_VERSION,
+  DASHBOARD_SETTINGS_V5_LAYER_VERSION,
+  DASHBOARD_SETTINGS_V6_VERSION,
+  DASHBOARD_STYLE_CSS_VERSION,
 } from '../lib/dashboard-asset-version.mjs';
 import {
   findJsdocBrokenBeforeExport,
@@ -64,8 +67,11 @@ assert.equal(
   0
 );
 const bustHtml = `<script type="module" src="/app.js?v=${DASHBOARD_APP_JS_VERSION}"></script>
+<link href="/style.css?v=${DASHBOARD_STYLE_CSS_VERSION}">
 <link href="/dashboard-v4.css?v=${DASHBOARD_V4_CSS_VERSION}">
 <link href="/dashboard-settings.css?v=${DASHBOARD_SETTINGS_CSS_VERSION}">
+<link href="/dashboard-settings-v5-layer.css?v=${DASHBOARD_SETTINGS_V5_LAYER_VERSION}">
+<link href="/dashboard-settings-v6.css?v=${DASHBOARD_SETTINGS_V6_VERSION}">
 <link href="/dashboard-unify.css?v=${DASHBOARD_UNIFY_CSS_VERSION}">
 <link href="/design-tokens.css?v=${DASHBOARD_UNIFY_CSS_VERSION}">
 <link href="/design-foundation.css?v=${DASHBOARD_DESIGN_FOUNDATION_VERSION}">

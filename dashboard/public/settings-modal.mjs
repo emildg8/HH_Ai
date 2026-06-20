@@ -21,11 +21,23 @@ import {
   syncSettingsLayoutPresetUi,
   focusSettingsLayoutBar,
   toggleSettingsModalFullscreen,
+  runWithSuppressedSettingsSizePersist,
+  runWithStableSettingsDialogLayout,
+  lockBodyScrollForSettings,
+  unlockBodyScrollForSettings,
+  getSettingsDialogEl,
 } from './settings-modal-layout.mjs';
 import {
   dispatchOpenSettingsForCategory,
   settingsNavForRejectCategory,
 } from './settings-targeting-nav.mjs';
+import {
+  readSettingsPatchFromHub,
+  filterSettingsSearch,
+  fillCopilotDeviceSelects,
+  hydrateSettingsHub,
+  expandDotPatch,
+} from './settings-hub.mjs';
 
 export {
   SETTINGS_LAYOUT_PRESETS,
@@ -38,7 +50,7 @@ export {
   toggleSettingsModalFullscreen,
 };
 
-/** @typedef {'system' | 'targeting' | 'apply' | 'appearance'} SettingsTabId */
+/** @typedef {'system'|'harvest'|'targeting'|'apply'|'letters'|'teleprompter'|'appearance'|'services'|'expert'} SettingsTabId */
 
 /**
  * Зависимости initSettingsModal (передаются из app.js).
@@ -59,11 +71,22 @@ export {
  *     applyRates?: object,
  *   }) => void,
  *   hasCompletedBatch?: () => boolean,
+ *   onScoreThresholdChange?: (value: number) => void,
  * }} SettingsModalDeps
  */
 
 /** @type {SettingsTabId[]} */
-export const SETTINGS_TAB_ORDER = ['system', 'targeting', 'apply', 'appearance'];
+export const SETTINGS_TAB_ORDER = [
+  'system',
+  'harvest',
+  'targeting',
+  'apply',
+  'letters',
+  'teleprompter',
+  'appearance',
+  'services',
+  'expert',
+];
 
 /** @type {Record<string, SettingsTabId>} */
 const TAB_ALIASES = {
@@ -71,7 +94,8 @@ const TAB_ALIASES = {
   profile: 'system',
   playwright: 'system',
   browser: 'system',
-  service: 'system',
+  harvest: 'harvest',
+  ingest: 'harvest',
   targeting: 'targeting',
   eligibility: 'targeting',
   remote: 'targeting',
@@ -80,13 +104,20 @@ const TAB_ALIASES = {
   batch: 'apply',
   limits: 'apply',
   threshold: 'apply',
-  letters: 'apply',
-  letter: 'apply',
-  quality: 'apply',
-  fp: 'apply',
+  letters: 'letters',
+  letter: 'letters',
+  quality: 'letters',
+  fp: 'letters',
+  teleprompter: 'teleprompter',
+  copilot: 'teleprompter',
+  суфлер: 'teleprompter',
   appearance: 'appearance',
   list: 'appearance',
   ui: 'appearance',
+  services: 'services',
+  telegram: 'services',
+  service: 'services',
+  expert: 'expert',
 };
 
 /** @type {Record<string, string>} */
@@ -114,7 +145,9 @@ export const SETTINGS_FOCUS_ALIASES = {
   'exclude-irrelevant': 'pref-exclude-irrelevant',
   insights: 'settings-targeting-insights',
   window: 'settings-layout-presets-group',
-  layout: 'settings-layout-presets-group',
+  copilot: 'settings-copilot-group',
+  mic: 'settings-copilot-mic',
+  wasapi: 'settings-copilot-wasapi',
 };
 
 /** Пресеты качества писем / батча (патч preferences). */
@@ -169,6 +202,70 @@ export const LETTER_QUALITY_PRESETS = {
   },
 };
 
+/** Пресеты конверсии (подгружаются из GET /api/settings). */
+/** @type {Record<string, { label?: string, hint?: string, patch: Record<string, unknown> }>} */
+let conversionPresetsById = {};
+
+export function setConversionPresetsFromApi(presets) {
+  conversionPresetsById = {};
+  for (const p of presets || []) {
+    if (p?.id) conversionPresetsById[p.id] = p;
+  }
+  highlightActiveConversionPreset();
+  updateConversionPresetHint();
+}
+
+function getConversionPatchFromUI() {
+  const modal = document.getElementById('settings-modal');
+  if (!modal) return {};
+  const hub = readSettingsPatchFromHub(modal);
+  return {
+    ...hub,
+    dashboardMinScoreFilter: Number(document.querySelector('[data-pref="dashboardMinScoreFilter"]')?.value),
+    batchLetterMinScore10: Number(document.querySelector('[data-setting="batchLetterMinScore10"]')?.value),
+    minKeywordGapScore: Number(document.querySelector('[data-setting="minKeywordGapScore"]')?.value),
+  };
+}
+
+function conversionPresetMatches(a, b) {
+  for (const [k, v] of Object.entries(b)) {
+    if (k.includes('.')) {
+      const parts = k.split('.');
+      let cur = a;
+      for (const p of parts) cur = cur?.[p];
+      if (cur !== v) return false;
+    } else if (a[k] !== v) return false;
+  }
+  return true;
+}
+
+function highlightActiveConversionPreset() {
+  const patch = getConversionPatchFromUI();
+  let active = '';
+  for (const [id, preset] of Object.entries(conversionPresetsById)) {
+    if (conversionPresetMatches(patch, preset.patch)) active = id;
+  }
+  document.querySelectorAll('[data-conversion-preset]').forEach((btn) => {
+    if (!(btn instanceof HTMLElement)) return;
+    const on = btn.dataset.conversionPreset === active;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  updateConversionPresetHint();
+}
+
+function updateConversionPresetHint() {
+  const el = document.getElementById('settings-conversion-preset-hint');
+  if (!el) return;
+  const patch = getConversionPatchFromUI();
+  let active = '';
+  for (const [id, preset] of Object.entries(conversionPresetsById)) {
+    if (conversionPresetMatches(patch, preset.patch)) active = id;
+  }
+  const preset = active && conversionPresetsById[active];
+  el.textContent = preset?.hint || 'Настройте gate вручную или выберите пресет';
+}
+
 /** Сброс раздела к заводским значениям дашборда (серверные prefs). */
 export const SETTINGS_SECTION_DEFAULTS = {
   system: {
@@ -197,21 +294,103 @@ export const SETTINGS_SECTION_DEFAULTS = {
     hhApplyChatMaxPerHour: 50,
     hhApplyChatMaxPerDay: 1000,
     hhApplyChatMaxPerMonth: 5000,
+  },
+  letters: {
     batchAutoPrepareLetters: true,
     batchLetterRequireMetric: false,
     batchAutoApproveBestLetter: false,
     batchFalsePositiveMax: 20,
     learningAutoApplyPatterns: false,
     learningAutoApplyMinCount: 3,
+    batchLetterMinScore10: 7,
+    batchLetterMaxAiScore: 35,
+    letterHumanizeTwoPass: true,
+  },
+  harvest: {
+    ingestMaxTierCPerDay: 80,
+    marketSkillsEnabled: false,
+  },
+  teleprompter: {
+    interviewCopilot: {
+      eyeContact: 'on',
+      eyeContactRemind: true,
+      dockPreset: 'above-meeting',
+      liveBarMaxLines: 2,
+      liveFontSize: 26,
+      scriptOnlyOverlay: true,
+      listenMic: true,
+      learnFromSpoken: true,
+      interviewStage: 'tech',
+      wasapiDevice: 'default',
+      micDevice: '',
+      answerFormat: 'scaffold',
+    },
+  },
+  expert: {
+    remotePositivePatterns: [],
+    hybridPatterns: [],
+    officeOnlyPatterns: [],
+    excludeSeniorRolePatterns: [],
+    exclude1CRolePatterns: [],
+    excludeDeveloperRolePatterns: [],
+    excludeIrrelevantTitlePatterns: [],
   },
 };
 
 /** Быстрые сценарии (deep link / палитра). */
 export const SETTINGS_QUICK_PATHS = {
-  batch: { tab: 'apply', focus: 'settings-letters-group', layout: 'wide' },
+  batch: { tab: 'letters', focus: 'settings-letters-group', layout: 'wide' },
   'off-target': { tab: 'targeting', focus: 'settings-targeting-insights', layout: 'wide' },
   limits: { tab: 'apply', focus: 'settings-limits-hh', layout: 'compact' },
   profile: { tab: 'system', focus: 'settings-profile-card' },
+  copilot: { tab: 'teleprompter', focus: 'settings-copilot-group', layout: 'wide' },
+  'interview-prep': { tab: 'teleprompter', focus: 'settings-copilot-presets-banner', layout: 'wide' },
+};
+
+/** Пресеты суфлёра перед собеседованием. */
+export const COPILOT_SESSION_PRESETS = {
+  screening: {
+    label: 'HR-скрининг',
+    patch: {
+      'interviewCopilot.interviewStage': 'screening',
+      'interviewCopilot.answerFormat': 'scaffold',
+      'interviewCopilot.eyeContact': 'on',
+      'interviewCopilot.scriptOnlyOverlay': true,
+    },
+  },
+  hr: {
+    label: 'Собеседование с HR',
+    patch: {
+      'interviewCopilot.interviewStage': 'hr',
+      'interviewCopilot.answerFormat': 'scaffold',
+      'interviewCopilot.eyeContact': 'on',
+    },
+  },
+  tech: {
+    label: 'Техничка',
+    patch: {
+      'interviewCopilot.interviewStage': 'tech',
+      'interviewCopilot.answerFormat': 'scaffold',
+      'interviewCopilot.scriptOnlyOverlay': true,
+      'interviewCopilot.liveBarMaxLines': 2,
+    },
+  },
+  negotiation: {
+    label: 'Переговоры',
+    patch: {
+      'interviewCopilot.interviewStage': 'negotiation',
+      'interviewCopilot.answerFormat': 'full',
+      'interviewCopilot.scriptOnlyOverlay': false,
+    },
+  },
+  final: {
+    label: 'Финал',
+    patch: {
+      'interviewCopilot.interviewStage': 'final',
+      'interviewCopilot.answerFormat': 'scaffold',
+      'interviewCopilot.liveBarMaxLines': 2,
+    },
+  },
 };
 
 const PLAYWRIGHT_MODE_LABELS_UI = PLAYWRIGHT_MODE_LABELS;
@@ -264,12 +443,17 @@ export const TARGETING_PRESETS = {
   },
 };
 
-/** Мета вкладок: горячие клавиши Alt+1…5. */
+/** Мета вкладок: горячие клавиши Alt+1…9. */
 export const SETTINGS_TAB_META = {
-  system: { label: 'Профиль', hotkey: '1' },
-  targeting: { label: 'Отбор вакансий', hotkey: '2' },
-  apply: { label: 'Отклики', hotkey: '3' },
-  appearance: { label: 'Интерфейс', hotkey: '4' },
+  system: { label: 'Профиль и система', hotkey: '1' },
+  harvest: { label: 'Поиск вакансий', hotkey: '2' },
+  targeting: { label: 'Кого берём', hotkey: '3' },
+  apply: { label: 'Серия откликов', hotkey: '4' },
+  letters: { label: 'Письма', hotkey: '5' },
+  teleprompter: { label: 'На собеседовании', hotkey: '6' },
+  appearance: { label: 'Внешний вид', hotkey: '7' },
+  services: { label: 'Сервисы и ИИ', hotkey: '8' },
+  expert: { label: 'Тонкая настройка', hotkey: '9' },
 };
 
 /** Подсказки под полями. */
@@ -315,7 +499,9 @@ let showToastFn = null;
 /** @param {string} tabId */
 export function normalizeSettingsTab(tabId) {
   const t = String(tabId || 'system').trim().toLowerCase();
-  return TAB_ALIASES[t] || 'system';
+  if (TAB_ALIASES[t]) return TAB_ALIASES[t];
+  if (SETTINGS_TAB_ORDER.includes(/** @type {SettingsTabId} */ (t))) return /** @type {SettingsTabId} */ (t);
+  return 'system';
 }
 
 /** @param {string} focus */
@@ -414,55 +600,48 @@ export function isSettingsDirty() {
 }
 
 function getSystemPrefsFromUI() {
-  /** @type {Record<string, unknown>} */
-  const patch = {};
-  const sel = document.querySelector('[data-pref-select="dashboardPlaywrightDisplayMode"]');
-  if (sel instanceof HTMLSelectElement) patch.dashboardPlaywrightDisplayMode = sel.value;
-  return patch;
+  return readSettingsPatchFromHub(document.getElementById('settings-panel-system') || document);
+}
+
+function getHarvestPrefsFromUI() {
+  return readSettingsPatchFromHub(document.getElementById('settings-panel-harvest') || document);
+}
+
+function getTeleprompterPrefsFromUI() {
+  return readSettingsPatchFromHub(document.getElementById('settings-panel-teleprompter') || document);
+}
+
+function getExpertPrefsFromUI() {
+  return readSettingsPatchFromHub(document.getElementById('settings-panel-expert') || document);
 }
 
 function getApplyPrefsFromUI() {
-  /** @type {Record<string, unknown>} */
-  const patch = {};
-  const keys = [
-    'dashboardMinScoreFilter',
-    'dashboardBatchSize',
-    'batchRequireRemote',
-    'hhApplyChatMaxPerHour',
-    'hhApplyChatMaxPerDay',
-    'hhApplyChatMaxPerMonth',
-  ];
-  for (const key of keys) {
-    const boolEl = document.querySelector(`[data-pref-bool="${key}"]`);
-    if (boolEl instanceof HTMLInputElement) {
-      patch[key] = boolEl.checked;
-      continue;
-    }
-    const numEl = document.querySelector(`[data-pref="${key}"]`);
-    if (numEl instanceof HTMLInputElement) {
-      const n = Number(numEl.value);
-      if (Number.isFinite(n)) patch[key] = n;
-    }
-  }
-  return patch;
+  return readSettingsPatchFromHub(document.getElementById('settings-panel-apply') || document);
 }
 
 /** @param {SettingsTabId} tabId */
 function captureTabBaseline(tabId) {
   if (tabId === 'appearance') return;
   if (tabId === 'apply') {
-    tabBaselines.set(
-      'apply',
-      structuredClone({ ...getApplyPrefsFromUI(), ...getLetterPrefsFromUI() })
-    );
+    tabBaselines.set('apply', structuredClone(getApplyPrefsFromUI()));
+    return;
+  }
+  if (tabId === 'letters') {
+    tabBaselines.set('letters', structuredClone(getLetterPrefsFromUI()));
     return;
   }
   const getter =
     tabId === 'system'
       ? getSystemPrefsFromUI
-      : tabId === 'targeting'
-        ? getTargetingPrefsFromUI
-        : null;
+      : tabId === 'harvest'
+        ? getHarvestPrefsFromUI
+        : tabId === 'targeting'
+          ? getTargetingPrefsFromUI
+          : tabId === 'teleprompter'
+            ? getTeleprompterPrefsFromUI
+            : tabId === 'expert'
+              ? getExpertPrefsFromUI
+              : null;
   if (!getter) return;
   tabBaselines.set(tabId, structuredClone(getter()));
 }
@@ -494,9 +673,9 @@ function syncSettingsTabDirtyIndicator() {
 }
 
 function syncSettingsSaveUi() {
-  const modal = document.getElementById('settings-modal');
-  modal?.classList.toggle('settings-dialog--dirty', saveState.dirty);
-  modal?.classList.toggle('settings-dialog--saving', saveState.saving > 0);
+  const dlg = getSettingsDialogEl();
+  dlg?.classList.toggle('settings-dialog--dirty', saveState.dirty);
+  dlg?.classList.toggle('settings-dialog--saving', saveState.saving > 0);
   syncSettingsTabDirtyIndicator();
   const saveNow = document.getElementById('btn-settings-save-now');
   if (saveNow instanceof HTMLButtonElement) {
@@ -509,7 +688,7 @@ function syncSettingsSaveUi() {
     return;
   }
   if (saveState.dirty) {
-    setHintFn('Есть несохранённые изменения — закроется через автосохранение', 'pending');
+    setHintFn('Есть несохранённые изменения', 'pending');
     return;
   }
   const hintEl = document.getElementById('settings-save-hint');
@@ -546,6 +725,8 @@ export function syncSettingsDerivedState() {
   updateSettingsPresetHint();
   highlightActiveLetterPreset();
   highlightActiveTargetingPreset();
+  highlightActiveCopilotPreset();
+  highlightActiveConversionPreset();
   updateSettingsSummaryFromUI();
 }
 
@@ -554,7 +735,12 @@ export function syncSettingsDerivedState() {
  * @param {{ silent?: boolean }} [opts]
  */
 export function applyPreferencePatchToUI(patch, opts = {}) {
+  const modal = document.getElementById('settings-modal');
+  const hasDot = Object.keys(patch).some((k) => k.includes('.'));
+  const nested = hasDot ? expandDotPatch(patch) : { ...patch };
+  hydrateSettingsHub(modal || document, nested);
   for (const [key, value] of Object.entries(patch)) {
+    if (key.includes('.')) continue;
     const numEl = document.querySelector(`[data-pref="${key}"]`);
     if (numEl instanceof HTMLInputElement && typeof value === 'number') {
       numEl.value = String(value);
@@ -572,12 +758,18 @@ export function applyPreferencePatchToUI(patch, opts = {}) {
     }
   }
   syncLearningMinVisibility();
+  if (opts.skipDerived) {
+    highlightActiveConversionPreset();
+    return;
+  }
   updateSettingsLetterWarnings();
   updateSettingsRemoteWarnings();
   updateSettingsPresetHint();
   updateSettingsSummaryFromUI();
   highlightActiveLetterPreset();
   highlightActiveTargetingPreset();
+  highlightActiveCopilotPreset();
+  highlightActiveConversionPreset();
   if (!opts.silent) markSettingsDirty();
 }
 
@@ -720,6 +912,56 @@ export function renderSystemHealthList(status) {
         li.title = li.title || 'Нажмите — подсказка в разделе «Профиль»';
         li.dataset.healthJump = item.id;
       }
+      return li;
+    })
+  );
+}
+
+/**
+ * @param {(path: string, opts?: object) => Promise<unknown>} api
+ */
+export async function refreshCopilotHealthPills(api) {
+  const list = document.getElementById('settings-copilot-health');
+  if (!list) return;
+  /** @type {Array<{ label: string, tone: string }>} */
+  const pills = [];
+  /** @type {{ ffmpeg?: boolean, wasapi?: Array<{id:string,label:string}>, mic?: Array<{id:string,label:string}> }} */
+  let data = {
+    ffmpeg: false,
+    wasapi: [{ id: 'default', label: 'По умолчанию (системный звук)' }],
+    mic: [],
+  };
+  try {
+    data = await api('/api/copilot/audio-devices');
+  } catch {
+    pills.push({
+      label: 'Список устройств недоступен — укажите вручную или npm run devops:copilot-devices',
+      tone: 'warn',
+    });
+  }
+  fillCopilotDeviceSelects(data);
+  pills.push({
+    label: data.ffmpeg ? 'Захват звука: готов' : 'Нужен ffmpeg в PATH',
+    tone: data.ffmpeg ? 'ok' : 'warn',
+  });
+  const micEl = document.getElementById('settings-mic-select');
+  const micManual = document.getElementById('settings-mic-manual');
+  const mic =
+    micManual instanceof HTMLInputElement && !micManual.hidden && micManual.value
+      ? String(micManual.value).trim()
+      : micEl instanceof HTMLSelectElement
+        ? String(micEl.value || '').trim()
+        : '';
+  pills.push({
+    label: mic ? 'Микрофон выбран' : 'Укажите микрофон или отключите прослушивание',
+    tone: mic ? 'ok' : 'warn',
+  });
+  pills.push({ label: 'Desktop — для подсказки поверх созвона', tone: 'muted' });
+  list.replaceChildren(
+    ...pills.map((p) => {
+      const li = document.createElement('li');
+      li.className = `settings-health-pill settings-health-pill--${p.tone}`;
+      li.textContent = p.label;
       return li;
     })
   );
@@ -896,6 +1138,30 @@ function syncProfileTipBanner() {
     /* ignore */
   }
   box.hidden = false;
+}
+
+function highlightActiveCopilotPreset() {
+  const full = readSettingsPatchFromHub(document.getElementById('settings-panel-teleprompter') || document);
+  const ic = full.interviewCopilot || {};
+  let active = '';
+  for (const [id, preset] of Object.entries(COPILOT_SESSION_PRESETS)) {
+    const nested = expandDotPatch(preset.patch);
+    const want = nested.interviewCopilot || {};
+    let ok = Object.keys(want).length > 0;
+    for (const [k, v] of Object.entries(want)) {
+      if (ic[k] !== v) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) active = id;
+  }
+  document.querySelectorAll('[data-copilot-preset]').forEach((btn) => {
+    if (!(btn instanceof HTMLElement)) return;
+    const on = btn.dataset.copilotPreset === active;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
 }
 
 function highlightActiveLetterPreset() {
@@ -1082,29 +1348,7 @@ export function getDashboardPrefsExportJson(patch) {
 }
 
 export function getLetterPrefsFromUI() {
-  /** @type {Record<string, unknown>} */
-  const patch = {};
-  const keys = [
-    'batchAutoPrepareLetters',
-    'batchLetterRequireMetric',
-    'batchAutoApproveBestLetter',
-    'batchFalsePositiveMax',
-    'learningAutoApplyPatterns',
-    'learningAutoApplyMinCount',
-  ];
-  for (const key of keys) {
-    const boolEl = document.querySelector(`[data-pref-bool="${key}"]`);
-    if (boolEl instanceof HTMLInputElement) {
-      patch[key] = boolEl.checked;
-      continue;
-    }
-    const numEl = document.querySelector(`[data-pref="${key}"]`);
-    if (numEl instanceof HTMLInputElement) {
-      const n = Number(numEl.value);
-      if (Number.isFinite(n)) patch[key] = n;
-    }
-  }
-  return patch;
+  return readSettingsPatchFromHub(document.getElementById('settings-panel-letters') || document);
 }
 
 function onSettingsSectionActivated(tabId) {
@@ -1228,7 +1472,7 @@ async function refreshSystemHealth(api) {
  * @param {SettingsTabId} tabId
  */
 async function refreshLettersSnapshot(api, tabId) {
-  if (normalizeSettingsTab(tabId) !== 'apply') return;
+  if (normalizeSettingsTab(tabId) !== 'letters') return;
   const box = document.getElementById('settings-letters-snapshot');
   if (!box) return;
   const now = Date.now();
@@ -1340,15 +1584,27 @@ export function initSettingsModal(deps) {
     }
   });
 
-  document.getElementById('btn-settings-import-prefs')?.addEventListener('click', async () => {
-    let raw = '';
-    try {
-      raw =
-        window.prompt('Вставьте JSON: объект настроек или { "patch": { ... } }', '') || '';
-    } catch {
+  document.getElementById('btn-settings-import-prefs')?.addEventListener('click', () => {
+    const panel = document.getElementById('settings-import-panel');
+    const textarea = document.getElementById('settings-import-textarea');
+    if (panel) panel.hidden = false;
+    if (textarea instanceof HTMLTextAreaElement) textarea.focus();
+  });
+
+  document.getElementById('btn-settings-import-cancel')?.addEventListener('click', () => {
+    const panel = document.getElementById('settings-import-panel');
+    const textarea = document.getElementById('settings-import-textarea');
+    if (panel) panel.hidden = true;
+    if (textarea instanceof HTMLTextAreaElement) textarea.value = '';
+  });
+
+  document.getElementById('btn-settings-import-apply')?.addEventListener('click', async () => {
+    const textarea = document.getElementById('settings-import-textarea');
+    const raw = textarea instanceof HTMLTextAreaElement ? textarea.value.trim() : '';
+    if (!raw) {
+      deps.showToast?.('Вставьте JSON настроек', 'bad');
       return;
     }
-    if (!raw.trim()) return;
     let parsed;
     try {
       parsed = JSON.parse(raw);
@@ -1366,12 +1622,31 @@ export function initSettingsModal(deps) {
       });
       deps.applyPreferencesResponse?.(res);
       markSettingsSaved();
-      const backup = res?.backupPath ? ` · бэкап: ${res.backupPath}` : '';
+      document.getElementById('settings-import-panel')?.setAttribute('hidden', '');
+      if (textarea instanceof HTMLTextAreaElement) textarea.value = '';
+      const backup = res?.backupPath ? ` · Резервная копия: ${res.backupPath}` : '';
       deps.showToast?.(`Импорт применён${backup}`, 'good');
       void refreshTargetingInsights(deps.api);
     } catch (e) {
       deps.showToast?.(e?.message || 'Ошибка импорта', 'bad');
     }
+  });
+
+  document.querySelectorAll('[data-copilot-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.copilotPreset;
+      const preset = id && COPILOT_SESSION_PRESETS[id];
+      if (!preset) return;
+      if (saveState.dirty && !window.confirm('Применить сценарий? Несохранённые изменения на вкладке останутся в полях.')) {
+        return;
+      }
+      applyPreferencePatchToUI(preset.patch, { silent: true });
+      document.querySelectorAll('[data-copilot-preset]').forEach((b) => {
+        b.classList.toggle('active', b === btn);
+      });
+      markSettingsDirty('teleprompter');
+      deps.scheduleSaveSettings();
+    });
   });
 
   document.querySelectorAll('[data-letter-preset]').forEach((btn) => {
@@ -1383,6 +1658,19 @@ export function initSettingsModal(deps) {
       markSettingsDirty();
       deps.scheduleSaveSettings();
       invalidateLettersSnapshot();
+    });
+  });
+
+  document.querySelectorAll('[data-conversion-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.conversionPreset;
+      const preset = id && conversionPresetsById[id];
+      if (!preset?.patch) return;
+      runWithStableSettingsDialogLayout(() => {
+        applyPreferencePatchToUI(preset.patch, { silent: true, skipDerived: true });
+      });
+      markSettingsDirty('apply');
+      deps.scheduleSaveSettings();
     });
   });
 
@@ -1517,6 +1805,24 @@ export function initSettingsModal(deps) {
     deps.openServiceFromSettings?.();
   });
 
+  document.getElementById('btn-settings-open-service-from-tab')?.addEventListener('click', () => {
+    deps.openServiceFromSettings?.();
+  });
+
+  document.getElementById('settings-search')?.addEventListener('input', (e) => {
+    const q = e.target instanceof HTMLInputElement ? e.target.value : '';
+    filterSettingsSearch(modal, q);
+  });
+
+  document.getElementById('settings-mic-manual')?.addEventListener('input', () => {
+    markSettingsDirty();
+    deps.scheduleSaveSettings();
+  });
+
+  document.getElementById('btn-settings-refresh-copilot-health')?.addEventListener('click', () => {
+    void refreshCopilotHealthPills(deps.api);
+  });
+
   function runSettingsQuickPath(pathId) {
     const path = pathId && SETTINGS_QUICK_PATHS[pathId];
     if (!path) return;
@@ -1571,26 +1877,27 @@ export function initSettingsModal(deps) {
   document.getElementById('learning-auto-apply')?.addEventListener('change', () => {
     syncLearningMinVisibility();
     updateSettingsLetterWarnings();
-    markSettingsDirty();
+    markSettingsDirty('letters');
+    deps.scheduleSaveSettings();
   });
 
-  for (const el of modal.querySelectorAll('[data-pref], [data-pref-bool], [data-pref-select]')) {
-    el.addEventListener('input', () => {
+  for (const el of modal.querySelectorAll('[data-pref], [data-pref-bool], [data-pref-select], [data-setting], [data-copilot-pref]')) {
+    const onFieldChange = () => {
+      if (el.id === 'score-threshold-input') {
+        const n = Number(/** @type {HTMLInputElement} */ (el).value);
+        deps.onScoreThresholdChange?.(n);
+      }
       markSettingsDirty(el);
+      deps.scheduleSaveSettings();
       updateSettingsSummaryFromUI();
       updateSettingsLetterWarnings();
       updateSettingsRemoteWarnings();
       highlightActiveLetterPreset();
       highlightActiveTargetingPreset();
-    });
-    el.addEventListener('change', () => {
-      markSettingsDirty(el);
-      updateSettingsSummaryFromUI();
-      updateSettingsLetterWarnings();
-      updateSettingsRemoteWarnings();
-      highlightActiveLetterPreset();
-      highlightActiveTargetingPreset();
-    });
+      highlightActiveCopilotPreset();
+    };
+    el.addEventListener('input', onFieldChange);
+    el.addEventListener('change', onFieldChange);
   }
 
   const tablist = modal.querySelector('.settings-nav');
@@ -1624,6 +1931,7 @@ export function initSettingsModal(deps) {
   syncProfileTipBanner();
   highlightActiveLetterPreset();
   highlightActiveTargetingPreset();
+  highlightActiveCopilotPreset();
   updateSettingsRemoteWarnings();
 
   const thresholdInput = document.getElementById('score-threshold-input');
@@ -1654,6 +1962,7 @@ export function initSettingsModal(deps) {
       if (id === 'system') void refreshSystemHealth(deps.api);
       if (id === 'targeting') void refreshTargetingInsights(deps.api);
       if (id === 'apply') void refreshApplyPreview(deps.api);
+      if (id === 'teleprompter') void refreshCopilotHealthPills(deps.api);
       void refreshLettersSnapshot(deps.api, id);
     },
     onOpen(tabId) {
@@ -1666,12 +1975,14 @@ export function initSettingsModal(deps) {
       updateSettingsRemoteWarnings();
       highlightActiveLetterPreset();
       highlightActiveTargetingPreset();
+      highlightActiveConversionPreset();
       syncOnboardingBanner();
       syncProfileTipBanner();
       syncSettingsSaveUi();
       if (id === 'system') void refreshSystemHealth(deps.api);
       if (id === 'targeting') void refreshTargetingInsights(deps.api);
       if (id === 'apply') void refreshApplyPreview(deps.api);
+      if (id === 'teleprompter') void refreshCopilotHealthPills(deps.api);
       void refreshLettersSnapshot(deps.api, id);
       deps.onOpenTab?.(id);
     },
@@ -1679,6 +1990,7 @@ export function initSettingsModal(deps) {
       renderSystemHealthList(status);
     },
     syncDerivedState: syncSettingsDerivedState,
+    setConversionPresetsFromApi,
     afterPreferencesLoaded() {
       saveState.dirty = false;
       saveState.dirtyTabs.clear();

@@ -62,7 +62,9 @@ export function openBatchPrecheckModal(ctx) {
           ? `<div class="batch-precheck-meter" title="Готовность писем в выборке"><div class="batch-precheck-meter__fill" style="width:${Math.max(0, Math.min(100, letterPct))}%"></div></div>`
           : '',
         letterBlocked > 0
-          ? `<p class="batch-precheck-hint">Письма не проходят проверку: ${letterBlocked}</p>`
+          ? `<p class="batch-precheck-hint">Письма не проходят проверку: ${letterBlocked}${
+              ready <= 0 ? ' — сначала «Перегенерировать» или «Подготовить»' : ''
+            }</p>`
           : '',
         fixable > 0 ? `<p class="batch-precheck-warn">Автоподготовка без LLM: ${fixable}</p>` : '',
         fpGuard && fpMax > 0
@@ -140,22 +142,28 @@ export function openBatchPrecheckModal(ctx) {
 
     if (btnStart) {
       btnStart.disabled = ready <= 0;
+      btnStart.textContent = ready > 0 ? 'Запустить серию' : 'Запустить серию (нет готовых)';
       btnStart.title =
         fpGuard && ready > 0
           ? `Много подходящих вакансий в «Неподходит» (${fp} > ${fpMax}). Запуск с подтверждением.`
           : ready > 0
             ? 'Запустить серию откликов'
-            : 'Нет готовых карточек';
+            : letterBlocked > 0
+              ? 'Нет утверждённых писем — сначала перегенерируйте или подготовьте'
+              : 'Нет готовых карточек';
       btnStart.classList.toggle('btn--guardrail', fpGuard && ready > 0);
+      btnStart.classList.toggle('btn-primary', ready > 0);
     }
     if (btnPrepare) {
       btnPrepare.hidden = fixable <= 0 && !(blocked.letterQuality > 0);
       btnPrepare.textContent = fixable > 0 ? `Подготовить (${fixable})` : 'Подготовить письма';
+      btnPrepare.classList.toggle('btn-primary', ready <= 0 && fixable > 0);
     }
     if (btnRegen) {
       const failN = blocked.letterQuality || 0;
       btnRegen.hidden = failN <= 0;
       btnRegen.textContent = failN > 0 ? `Перегенерировать (${failN})` : 'Перегенерировать';
+      btnRegen.classList.toggle('btn-primary', ready <= 0 && failN > 0 && fixable <= 0);
     }
     if (btnFilter) {
       btnFilter.hidden = !((blocked.letterQuality || 0) + fixable > 0);

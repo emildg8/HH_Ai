@@ -1,0 +1,50 @@
+{
+  "at": "2026-06-19T12:00:00.000Z",
+  "label": "baseline-example",
+  "conversion": {
+    "total": 0,
+    "applied": 0,
+    "invited": 0,
+    "declined": 0,
+    "viewed": 0,
+    "awaiting": 0,
+    "pending": 0,
+    "unionVacancyIds": 0,
+    "dataSources": [],
+    "rates": {
+      "invitePct": 0,
+      "declinePct": 0,
+      "viewPct": 0
+    }
+  },
+  "buckets": {
+    "A": 0,
+    "B": 0,
+    "C": 0,
+    "D": 0,
+    "E": 0,
+    "F": 0,
+    "other": 0
+  },
+  "rates": {
+    "templateRejectPct": 0,
+    "slotPct": 0,
+    "viewPct": 0,
+    "invitePct": 0
+  },
+  "topEmployers": [],
+  "ghostEmployers": [],
+  "viewedProactive": [],
+  "bySource": {},
+  "byTier": { "A": 0, "B": 0, "C": 0, "D": 0 },
+  "prefsSnapshot": {
+    "batchAutoApproveBestLetter": true,
+    "batchLetterMinScore10": 7,
+    "minKeywordGapScore": 40
+  },
+  "suggestions": [],
+  "baselineMeta": {
+    "wave": "1",
+    "note": "Пример структуры. Реальный снимок: npm run devops:intelligence-baseline"
+  }
+}

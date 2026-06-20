@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>HH Ai — сценарий собеса</title>
+    <link rel="stylesheet" href="/teleprompter-shared.css" />
+  </head>
+  <body>
+    <div class="tp-shell" id="tp-shell">
+      <div class="tp-toolbar">
+        <span class="tp-prep-badge">Сценарий</span>
+        <button type="button" id="tp-play" title="Пауза / плей" aria-label="Пауза или плей">⏸</button>
+        <button type="button" id="tp-hide" title="Скрыть текст (H)" aria-label="Скрыть текст">Скрыть</button>
+        <button type="button" id="tp-top" title="В начало" aria-label="В начало">↑</button>
+        <label style="font-size:0.7rem;color:#ccc;display:flex;align-items:center;gap:0.25rem;-webkit-app-region:no-drag">
+          α
+          <input type="range" id="tp-opacity" min="40" max="100" value="88" title="Прозрачность" aria-label="Прозрачность" />
+        </label>
+        <span class="tp-meta" id="tp-meta">сценарий…</span>
+      </div>
+      <p class="tp-hint" id="tp-hint">Тезисы для подготовки — не зачитывайте дословно на собесе.</p>
+      <div class="tp-scroll" id="tp-scroll" aria-live="polite" aria-atomic="true">
+        <div id="tp-text">Загрузка сценария…</div>
+      </div>
+    </div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      if (params.get('overlay') === '1') document.body.classList.add('overlay');
+
+      const CHANNEL = 'prep';
+      const shellEl = document.getElementById('tp-shell');
+      const scrollEl = document.getElementById('tp-scroll');
+      const textEl = document.getElementById('tp-text');
+      const metaEl = document.getElementById('tp-meta');
+      const opacityEl = document.getElementById('tp-opacity');
+      let timer = null;
+      let paused = false;
+      let lastRevision = 0;
+      let lastText = '';
+      let speed = 28;
+      let connected = false;
+
+      function applyOpacity(pct) {
+        shellEl.style.opacity = String(pct / 100);
+      }
+
+      function updateMeta(st) {
+        metaEl.textContent =
+          [st.title, st.company, st.presetLabel || st.preset, st.sourceLabel || st.source]
+            .filter(Boolean)
+            .join(' · ') || 'сценарий';
+      }
+
+      function applyState(st) {
+        if (!st) return;
+        if (st.revision && st.revision === lastRevision) return;
+        lastRevision = st.revision || Date.now();
+        connected = true;
+
+        const nextText = (st.text || '').trim();
+        const textChanged = nextText !== lastText;
+        lastText = nextText;
+
+        if (nextText) {
+          textEl.textContent = nextText;
+          textEl.classList.remove('tp-empty');
+        } else {
+          textEl.textContent = 'Сценарий пуст — откройте «План собеса» в хабе.';
+          textEl.classList.add('tp-empty');
+        }
+
+        if (textChanged) {
+          textEl.classList.remove('tp-flash');
+          void textEl.offsetWidth;
+          textEl.classList.add('tp-flash');
+        }
+
+        textEl.style.fontSize = (st.fontSize || st.liveFontSize || 22) + 'px';
+        speed = st.scrollSpeed || 28;
+        opacityEl.value = Math.round((st.opacity ?? 0.88) * 100);
+        applyOpacity(opacityEl.value);
+        updateMeta(st);
+
+        paused = !!st.paused;
+        document.getElementById('tp-play').textContent = paused ? '▶' : '⏸';
+        if (!paused && st.autoScroll !== false) startScroll();
+        else stopScroll();
+      }
+
+      async function poll() {
+        try {
+          const r = await fetch(`/api/interview-prompt/state?channel=${CHANNEL}`, { cache: 'no-store' });
+          if (r.ok) {
+            applyState((await r.json()).state);
+          } else if (!connected) {
+            metaEl.textContent = 'нет связи с дашбордом';
+          }
+        } catch {
+          if (!connected) metaEl.textContent = 'нет связи с дашбордом';
+        }
+      }
+
+      function startScroll() {
+        stopScroll();
+        if (paused) return;
+        timer = setInterval(() => {
+          scrollEl.scrollTop += 1;
+          if (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 2) scrollEl.scrollTop = 0;
+        }, Math.max(12, 120 - speed));
+      }
+
+      function stopScroll() {
+        if (timer) clearInterval(timer);
+        timer = null;
+      }
+
+      document.getElementById('tp-play').addEventListener('click', () => {
+        paused = !paused;
+        document.getElementById('tp-play').textContent = paused ? '▶' : '⏸';
+        if (paused) stopScroll();
+        else startScroll();
+      });
+      document.getElementById('tp-hide').addEventListener('click', () => scrollEl.classList.toggle('hidden'));
+      document.getElementById('tp-top').addEventListener('click', () => {
+        scrollEl.scrollTop = 0;
+      });
+      opacityEl.addEventListener('input', () => applyOpacity(opacityEl.value));
+      document.addEventListener('keydown', (e) => {
+        if (e.key === ' ') {
+          e.preventDefault();
+          document.getElementById('tp-play').click();
+        }
+        if (e.key === 'h' || e.key === 'H') document.getElementById('tp-hide').click();
+      });
+
+      poll();
+      setInterval(poll, 400);
+      startScroll();
+    </script>
+  </body>
+</html>

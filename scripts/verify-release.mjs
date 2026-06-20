@@ -64,6 +64,8 @@ run('test-dashboard-a11y', ['scripts/test-dashboard-a11y.mjs']);
 run('test-chat-inbox-ui', ['scripts/test-chat-inbox-ui.mjs']);
 run('test-dashboard-screenshots', ['scripts/test-dashboard-screenshots.mjs']);
 run('quickstart:gate', ['scripts/quickstart-gate.mjs', '--skip-npm']);
+run('test:copilot', ['scripts/test-copilot-gate.mjs']);
+run('desktop:check', ['scripts/desktop-check.mjs']);
 
 if (!skipSmoke) {
   run('smoke:release', ['scripts/smoke-release.mjs']);

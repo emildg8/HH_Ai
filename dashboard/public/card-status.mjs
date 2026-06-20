@@ -16,6 +16,36 @@ function isVacancyDeferredClient(rec, nowMs = Date.now()) {
   return Number.isFinite(until) && until > nowMs;
 }
 
+/**
+ * Read-only chip работодателя (score, invite%, ghost).
+ * @param {object | null | undefined} intel
+ * @returns {{ kind: string, label: string, title: string, warn?: boolean, employerId?: string } | null}
+ */
+export function buildEmployerChipMeta(intel) {
+  if (!intel || !intel.applied) return null;
+  const ghostWarn = intel.applied >= 2 && intel.ghost >= intel.invited && intel.ghost >= 2;
+  const parts = [`${intel.score}`];
+  if (intel.inviteRatePct > 0) parts.push(`invite ${intel.inviteRatePct}%`);
+  else if (intel.ghost > 0) parts.push(`ghost ${intel.ghost}`);
+  const label = `HR ${parts.join(' · ')}`;
+  const title = [
+    intel.company || intel.id || 'работодатель',
+    `score ${intel.score}`,
+    `invite ${intel.inviteRatePct}%`,
+    `ghost ${intel.ghost}/${intel.applied}`,
+    ghostWarn ? 'часто тишина после отклика' : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return {
+    kind: 'employer',
+    label,
+    title,
+    warn: ghostWarn,
+    employerId: intel.id,
+  };
+}
+
 /** @param {object} item */
 export function vacancyHasHhApply(item) {
   const h = item?.hhApply;
@@ -72,6 +102,9 @@ export function buildCardStatusChips(item) {
       warn,
     });
   }
+
+  const employerChip = buildEmployerChipMeta(item.employerIntel);
+  if (employerChip) chips.push(employerChip);
 
   const letterMetric = letterMetricsLabel(item.coverLetter?.metrics);
   if (letterMetric && item.coverLetter?.status === 'approved') {
@@ -136,6 +169,7 @@ export function renderStatusChips(host, item) {
         : '';
     span.className = `status-chip status-chip--${c.kind}${c.warn ? ' status-chip--warn' : ''}${extraClass}`;
     span.textContent = c.label;
+    if (c.title) span.title = c.title;
     frag.appendChild(span);
   }
   if (item.targeting?.eligible === false) {

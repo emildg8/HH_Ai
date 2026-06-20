@@ -8,11 +8,14 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import { loadEnv } from '../lib/load-env.mjs';
 import { DATA_DIR } from '../lib/paths.mjs';
+
+loadEnv();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
-const INTERVIEW_DIR = process.env.HH_INTERVIEW_DIR || 'D:\\Dev\\HH\\hh\\Интервью';
+const INTERVIEW_DIR = process.env.HH_INTERVIEW_DIR || path.join(ROOT, 'my');
 const OUT_DIR = path.join(DATA_DIR, 'interview-transcripts');
 const MODEL = process.env.WHISPER_MODEL || 'base';
 
@@ -55,9 +58,11 @@ async function main() {
     const txtOut = path.join(OUT_DIR, `${base}.txt`);
     const jsonOut = path.join(OUT_DIR, `${base}.json`);
 
-    if (fs.existsSync(txtOut) && fs.statSync(txtOut).size > 100) {
-      console.log('[skip]', base);
-      manifest.push({ file: video, transcript: txtOut, skipped: true });
+    const hasTxt = fs.existsSync(txtOut) && fs.statSync(txtOut).size > 100;
+    const hasJson = fs.existsSync(jsonOut) && fs.statSync(jsonOut).size > 50;
+    if (hasTxt || hasJson) {
+      console.log('[skip]', base, hasJson ? '(json)' : '(txt)');
+      manifest.push({ file: video, transcript: hasTxt ? txtOut : jsonOut, skipped: true });
       continue;
     }
 

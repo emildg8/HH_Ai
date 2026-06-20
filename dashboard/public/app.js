@@ -1,7 +1,13 @@
 import { vacancyMatchesSearch } from './vacancy-search.mjs';
 import { bucketTimelineForDisplay, renderFunnelTimelineHtml } from './funnel-timeline.mjs';
 import { initFloatingTooltips } from './tooltips.mjs';
-import { initModalLayer, openModalEl, closeModalEl, MODAL_ROOT_IDS } from './modal-layout.mjs';
+import {
+  initModalLayer,
+  openModalEl,
+  closeModalEl,
+  installModalFocusTrap,
+  MODAL_ROOT_IDS,
+} from './modal-layout.mjs';
 import { openBatchPrecheckModal, updateBatchPrecheckModal } from './batch-precheck-modal.mjs';
 import {
   pickBestVariantIndex,
@@ -69,6 +75,16 @@ import {
 import { initKeyboardShortcuts } from './keyboard-shortcuts.mjs';
 import { buildListBreadcrumbItems, mountListBreadcrumbs } from './list-breadcrumbs.mjs';
 import { renderInterviewHubHtml, renderMockOutputHtml } from './interview-hub-ui.mjs';
+import { renderCopilotPanelHtml, initCopilotPanel } from './interview-copilot-ui.mjs';
+import {
+  initInterviewPrompt,
+  openInterviewPromptModal,
+  openInterviewPromptLoading,
+  loadInterviewPromptPack,
+  closeInterviewPromptModal,
+  openLastInterviewPrompt,
+  normalizeToPromptPack,
+} from './interview-prompt.mjs';
 import { initListKeyboardNav } from './list-keyboard-nav.mjs';
 import { renderStatusChips } from './card-status.mjs';
 import { applyCopyToDom, syncFullscreenIcon } from './apply-copy-dom.mjs';
@@ -110,6 +126,18 @@ import {
   toggleSettingsModalFullscreen,
   applySettingsOpenLayout,
 } from './settings-modal.mjs';
+import {
+  lockBodyScrollForSettings,
+  unlockBodyScrollForSettings,
+  isSettingsDialogLayoutSyncSuppressed,
+} from './settings-modal-layout.mjs';
+import {
+  readSettingsPatchFromHub,
+  hydrateSettingsHub,
+  setSettingsRegistryMeta,
+  filterSettingsSearch,
+  fillCopilotDeviceSelects,
+} from './settings-hub.mjs';
 
 const listEl = document.getElementById('list');
 const tpl = document.getElementById('card-tpl');
@@ -165,6 +193,76 @@ let settingsTabSetter = null;
 /** @type {ReturnType<typeof initSettingsModal> | null} */
 let settingsModalHooks = null;
 
+let pendingSettingsDashboardRefresh = false;
+let pendingSettingsScoreBandLabelsRefresh = false;
+/** @type {{ preferences: Record<string, unknown>, ui?: object } | null} */
+let pendingSettingsUiRefresh = null;
+/** @type {unknown} */
+let pendingSettingsApplyRates = null;
+let pendingSettingsDerivedStateRefresh = false;
+/** На десктопе — не пересчитывать shell при смене контента внутри модалки. */
+let settingsShellLayoutFrozen = false;
+
+function isSettingsModalOpen() {
+  const m = document.getElementById('settings-modal');
+  return !!(m && !m.hidden);
+}
+
+function queueDashboardRefreshAfterSettings() {
+  pendingSettingsDashboardRefresh = true;
+}
+
+function queueSettingsScoreBandLabelsRefresh() {
+  pendingSettingsScoreBandLabelsRefresh = true;
+}
+
+function queueSettingsUiRefreshAfterSettings(preferences, ui) {
+  pendingSettingsUiRefresh = { preferences, ui };
+}
+
+function queueSettingsApplyRatesRefresh(rates) {
+  pendingSettingsApplyRates = rates;
+}
+
+function queueSettingsDerivedStateRefresh() {
+  pendingSettingsDerivedStateRefresh = true;
+}
+
+async function flushDashboardRefreshAfterSettings() {
+  const hadWork =
+    pendingSettingsDashboardRefresh ||
+    pendingSettingsScoreBandLabelsRefresh ||
+    pendingSettingsUiRefresh ||
+    pendingSettingsApplyRates != null ||
+    pendingSettingsDerivedStateRefresh;
+  if (!hadWork) return;
+
+  const needDerived = pendingSettingsDerivedStateRefresh;
+  pendingSettingsDerivedStateRefresh = false;
+  if (needDerived) settingsModalHooks?.syncDerivedState?.();
+
+  const needLabels = pendingSettingsScoreBandLabelsRefresh;
+  pendingSettingsScoreBandLabelsRefresh = false;
+  if (needLabels) updateScoreBandTabLabels();
+
+  const uiPending = pendingSettingsUiRefresh;
+  pendingSettingsUiRefresh = null;
+  if (uiPending) {
+    applyDashboardUiFromPreferences(uiPending.preferences, uiPending.ui);
+  }
+
+  const rates = pendingSettingsApplyRates;
+  pendingSettingsApplyRates = null;
+  if (rates) renderApplyRateMeters(rates);
+
+  if (!pendingSettingsDashboardRefresh) return;
+  pendingSettingsDashboardRefresh = false;
+  invalidateLetterStatsCache();
+  invalidateLettersSnapshot();
+  void refreshLetterStatsSidebar(true);
+  if (currentScoreBand !== 'all') await load({ preserveScroll: true });
+}
+
 let currentStatus = 'pending';
 let currentApplyView = 'queue';
 let currentScoreBand = 'high';
@@ -193,6 +291,8 @@ let dashboardUi = {
   panelSides: defaultPanelSides(),
 };
 let layoutSettingsHydrated = false;
+/** @type {(() => void) | null} */
+let settingsFocusTrapCleanup = null;
 
 const DASHBOARD_LAYOUT_LS_KEY = 'hh-dashboard-sidebar-layout-v1';
 
@@ -618,6 +718,7 @@ function applyPreferencesToSettingsUI(preferences, bounds) {
   if (bounds && typeof bounds === 'object') prefBounds = bounds;
   const p = preferences || {};
   dashboardPreferences = p;
+  dispatchPrefsUpdated(p);
   const setNum = (el, key, fallback) => {
     if (!el) return;
     const b = prefBounds[key];
@@ -663,6 +764,17 @@ function applyPreferencesToSettingsUI(preferences, bounds) {
     const mode = String(p.dashboardPlaywrightDisplayMode || 'hidden-captcha');
     pwEl.value = ['hidden-captcha', 'visible', 'headless'].includes(mode) ? mode : 'hidden-captcha';
   }
+  const cop = p.interviewCopilot || {};
+  for (const el of document.querySelectorAll('[data-copilot-pref]')) {
+    const key = el.dataset.copilotPref;
+    if (!key || !(key in cop)) continue;
+    const v = cop[key];
+    if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = v !== false;
+    else if (el instanceof HTMLInputElement && el.type === 'range') el.value = String(v ?? el.value);
+    else if (el instanceof HTMLSelectElement) el.value = String(v);
+    else if (el instanceof HTMLInputElement) el.value = String(v ?? '');
+  }
+  hydrateSettingsHub(document.getElementById('settings-modal') || document, p);
   const targetingTrueDefault = new Set([
     'allowHybrid',
     'allowOfficeMoscow',
@@ -695,9 +807,17 @@ function applyPreferencesToSettingsUI(preferences, bounds) {
   if (batchLimitEl && prefBounds.dashboardBatchSize) {
     batchLimitEl.max = String(prefBounds.dashboardBatchSize.max);
   }
-  updateScoreBandTabLabels();
+  if (isSettingsModalOpen()) {
+    queueSettingsScoreBandLabelsRefresh();
+  } else {
+    updateScoreBandTabLabels();
+  }
   settingsHydrated = true;
-  settingsModalHooks?.syncDerivedState?.();
+  if (isSettingsModalOpen()) {
+    queueSettingsDerivedStateRefresh();
+  } else {
+    settingsModalHooks?.syncDerivedState?.();
+  }
 }
 
 function setProfileSelectPlaceholder(text, { disabled = true } = {}) {
@@ -920,7 +1040,11 @@ function readLayoutPatchFromUI() {
   };
 }
 
-const scheduleSaveLayoutSettings = debounce(() => {
+function scheduleSaveLayoutSettings() {
+  scheduleSaveLayoutOnly();
+}
+
+const scheduleSaveLayoutOnly = debounce(() => {
   if (!layoutSettingsHydrated || preferencesSaveAvailable === false) return;
   const layoutBeforeSave = readLayoutPatchFromUI();
   patchPreferencesApi(layoutBeforeSave)
@@ -935,6 +1059,7 @@ const scheduleSaveLayoutSettings = debounce(() => {
       }
       if (res.ui) applyDashboardUiFromPreferences(prefs, uiFromApi);
       else if (res.preferences) applyDashboardUiFromPreferences(prefs);
+      dispatchPrefsUpdated(prefs);
       flashSettingsSaved();
     })
     .catch((e) => {
@@ -943,25 +1068,14 @@ const scheduleSaveLayoutSettings = debounce(() => {
 }, 600);
 
 function readSettingsPatchFromUI() {
-  /** @type {Record<string, number | string | boolean>} */
-  const patch = {};
-  for (const el of document.querySelectorAll('[data-pref]')) {
-    const key = el.dataset.pref;
-    if (!key) continue;
-    const n = Number(el.value);
-    if (Number.isFinite(n)) patch[key] = n;
-  }
-  for (const el of document.querySelectorAll('[data-pref-bool]')) {
-    const key = el.dataset.prefBool;
-    if (!key) continue;
-    patch[key] = Boolean(el.checked);
-  }
-  for (const el of document.querySelectorAll('[data-pref-select]')) {
-    const key = el.dataset.prefSelect;
-    if (!key) continue;
-    patch[key] = String(el.value || '').trim();
-  }
-  return { ...patch, ...readLayoutPatchFromUI() };
+  const modal = document.getElementById('settings-modal');
+  return { ...readSettingsPatchFromHub(modal || document), ...readLayoutPatchFromUI() };
+}
+
+/** @param {Record<string, unknown>} prefs */
+function dispatchPrefsUpdated(prefs) {
+  window.__hhLastPreferences = prefs;
+  window.dispatchEvent(new CustomEvent('hh:prefs-updated', { detail: { preferences: prefs } }));
 }
 
 let settingsHintClearTimer = null;
@@ -981,6 +1095,9 @@ function setSettingsHint(text, variant = '') {
 
 function flashSettingsSaved() {
   setSettingsHint('Сохранено', 'saved');
+  if (!isSettingsModalOpen()) {
+    showToast('Настройки сохранены', 'good');
+  }
   settingsHintClearTimer = setTimeout(() => {
     settingsHintClearTimer = null;
     if (settingsSaveHintEl?.textContent === 'Сохранено') {
@@ -1001,6 +1118,7 @@ async function probePreferencesSaveApi() {
 async function patchPreferencesApi(patch) {
   const body = JSON.stringify({ patch });
   const tries = [
+    () => api('/api/settings', { method: 'PATCH', body }),
     () => api('/api/preferences/save', { method: 'POST', body }),
     () => api('/api/preferences', { method: 'POST', body }),
     () => api('/api/preferences', { method: 'PATCH', body }),
@@ -1035,14 +1153,23 @@ async function saveSettingsFromUI() {
       uiFromApi.panelSides = patch.dashboardSidebarPanelSides;
     }
     if (res.preferences) applyPreferencesToSettingsUI(res.preferences, prefBounds);
-    applyDashboardUiFromPreferences(prefs, res.ui ? uiFromApi : undefined);
-    if (res.applyRates) renderApplyRateMeters(res.applyRates);
+    if (isSettingsModalOpen()) {
+      queueSettingsUiRefreshAfterSettings(prefs, res.ui ? uiFromApi : undefined);
+      if (res.applyRates) queueSettingsApplyRatesRefresh(res.applyRates);
+      queueDashboardRefreshAfterSettings();
+    } else {
+      applyDashboardUiFromPreferences(prefs, res.ui ? uiFromApi : undefined);
+      if (res.applyRates) renderApplyRateMeters(res.applyRates);
+    }
+    dispatchPrefsUpdated(prefs);
     markSettingsSaved();
     flashSettingsSaved();
-    invalidateLetterStatsCache();
-    invalidateLettersSnapshot();
-    void refreshLetterStatsSidebar(true);
-    if (currentScoreBand !== 'all') load({ preserveScroll: true });
+    if (!isSettingsModalOpen()) {
+      invalidateLetterStatsCache();
+      invalidateLettersSnapshot();
+      void refreshLetterStatsSidebar(true);
+      if (currentScoreBand !== 'all') load({ preserveScroll: true });
+    }
   } catch (e) {
     markSettingsSaveFailed();
     const hint =
@@ -1080,7 +1207,16 @@ function showUiTrimHintOnce() {
 
 async function loadDashboardSettings() {
   try {
-    const data = await api('/api/preferences');
+    /** @type {Record<string, unknown>} */
+    let data;
+    try {
+      data = await api('/api/settings');
+    } catch (e) {
+      if (e?.status === 404) data = await api('/api/preferences');
+      else throw e;
+    }
+    if (data.conversionPresets) settingsModalHooks?.setConversionPresetsFromApi?.(data.conversionPresets);
+    if (data.registry) setSettingsRegistryMeta(data.registry);
     const fromGet = data.apiFeatures?.preferencesSave === true;
     preferencesSaveAvailable = fromGet || (await probePreferencesSaveApi());
     applyPreferencesToSettingsUI(data.preferences, data.bounds);
@@ -1104,8 +1240,27 @@ function closeSettingsModal() {
   const settingsModal = document.getElementById('settings-modal');
   if (!settingsModal || settingsModal.hidden) return;
   if (!tryCloseSettingsModal()) return;
+  settingsFocusTrapCleanup?.();
+  settingsFocusTrapCleanup = null;
   settingsModal.hidden = true;
   closeModalEl(settingsModal);
+  unlockBodyScrollForSettings();
+  const shell = settingsModal.querySelector('.settings-shell');
+  shell?.classList.remove(
+    'settings-shell--pick',
+    'settings-shell--drill',
+    'settings-shell--solo',
+    'settings-shell--sidebar',
+    'settings-shell--wide'
+  );
+  const back = document.getElementById('settings-zone-back');
+  if (back) {
+    back.hidden = true;
+    back.setAttribute('aria-hidden', 'true');
+  }
+  settingsShellLayoutFrozen = false;
+  void flushDashboardRefreshAfterSettings();
+  void refreshJobStatus();
 }
 
 function resetAppearanceSettingsSection({ includeLocalVisual = false } = {}) {
@@ -5035,22 +5190,116 @@ function initFunnelUi() {
   }
 }
 
+function readCachedPromptPack(li) {
+  try {
+    const raw = li?.dataset?.promptPack;
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function cachePromptPack(li, pack) {
+  if (!li || !pack) return;
+  try {
+    li.dataset.promptPack = JSON.stringify(pack);
+  } catch {
+    /* ignore */
+  }
+}
+
 async function refreshInterviewHubModal() {
   const body = document.getElementById('interview-hub-body');
   if (!body) return;
   body.innerHTML = '<p class="funnel-loading">Загрузка…</p>';
   try {
     const hub = await api('/api/interview-hub');
-    body.innerHTML = renderInterviewHubHtml(hub);
+    body.innerHTML = renderInterviewHubHtml(hub) + renderCopilotPanelHtml();
+    const copilot = initCopilotPanel({ api, showToast }, body);
+    const firstSlot = hub.offers?.find((o) => o.bucket === 'E');
+    if (firstSlot && copilot) {
+      copilot.setMeta({
+        title: firstSlot.title,
+        company: firstSlot.company,
+        vacancyId: firstSlot.id,
+        recordId: firstSlot.id,
+      });
+    }
     body.querySelectorAll('[data-hub-action]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
         const action = btn.getAttribute('data-hub-action');
+        const title = btn.getAttribute('data-title') || '';
+        const company = btn.getAttribute('data-company') || '';
+        if (copilot) copilot.setMeta({ title, company, vacancyId: id, recordId: id });
+
+        if (action === 'copilot-go') {
+          copilot?.focusPrepTab?.();
+          window.dispatchEvent(
+            new CustomEvent('hh-open-settings', {
+              detail: {
+                tab: 'teleprompter',
+                focus: 'copilot',
+                layout: 'wide',
+                focusToast: 'Настройки суфлёра перед собеседованием',
+              },
+            })
+          );
+          return;
+        }
+
         const li = btn.closest('.interview-hub__item');
         const out = li?.querySelector('.interview-hub__output');
-        if (!id || !out) return;
+        if (!id) {
+          showToast('Нет ID вакансии — обновите хаб или синхронизируйте отклики hh.ru');
+          return;
+        }
+
+        if (action === 'prompt') {
+          btn.disabled = true;
+          try {
+            const cached = readCachedPromptPack(li);
+            if (cached?.questions?.length) {
+              await openInterviewPromptModal(cached, { api, showToast }, 'script');
+              return;
+            }
+
+            openInterviewPromptLoading({ title, company }, { api, showToast });
+            let pack = null;
+            try {
+              const techRes = await api('/api/interview-mock-tech', {
+                method: 'POST',
+                body: JSON.stringify({ id }),
+              });
+              pack = normalizeToPromptPack(techRes.mock, 'mock-tech', { id, title, company });
+            } catch {
+              const hrRes = await api('/api/interview-mock-hr', {
+                method: 'POST',
+                body: JSON.stringify({ id }),
+              });
+              pack = normalizeToPromptPack(hrRes.hrMock, 'mock-hr', { id, title, company });
+            }
+            if (!pack?.questions?.length) {
+              closeInterviewPromptModal();
+              showToast('Не удалось собрать вопросы — нажмите «Тех. вопросы» или «HR-скрининг»');
+              return;
+            }
+            cachePromptPack(li, pack);
+            await loadInterviewPromptPack(pack, { api, showToast }, 'script');
+          } catch (e) {
+            closeInterviewPromptModal();
+            showToast(e.message || String(e));
+          } finally {
+            btn.disabled = false;
+          }
+          return;
+        }
+
+        if (!out) return;
         btn.disabled = true;
         out.hidden = false;
+        out.classList.add('interview-hub__output--loading');
         out.textContent = 'Загрузка…';
         try {
           let path = '/api/interview-prep';
@@ -5059,9 +5308,26 @@ async function refreshInterviewHubModal() {
           const res = await api(path, { method: 'POST', body: JSON.stringify({ id }) });
           const pack = res.interviewPrep || res.mock || res.hrMock;
           out.innerHTML = renderMockOutputHtml(pack);
+          if (action === 'mock-tech' || action === 'mock-hr' || action === 'prep') {
+            const src = action === 'mock-hr' ? 'mock-hr' : action === 'mock-tech' ? 'mock-tech' : 'prep';
+            const promptPack = normalizeToPromptPack(pack, src, { id, title, company });
+            cachePromptPack(li, promptPack);
+            if (copilot && action === 'prep' && pack) {
+              copilot.setMeta({ title, company, vacancyId: id, recordId: id, interviewPrep: pack });
+            }
+            const promptBtn = document.createElement('button');
+            promptBtn.type = 'button';
+            promptBtn.className = 'btn btn-primary btn-sm interview-hub__prompt-from-output';
+            promptBtn.textContent = 'Открыть суфлёр';
+            promptBtn.addEventListener('click', () => {
+              void openInterviewPromptModal(promptPack, { api, showToast }, 'script');
+            });
+            out.appendChild(promptBtn);
+          }
         } catch (e) {
           out.textContent = e.message || String(e);
         } finally {
+          out.classList.remove('interview-hub__output--loading');
           btn.disabled = false;
         }
       });
@@ -5086,6 +5352,7 @@ function closeInterviewHubModal() {
 }
 
 function initInterviewHubUi() {
+  document.getElementById('btn-open-interview-hub')?.addEventListener('click', openInterviewHubModal);
   document.querySelectorAll('[data-close-interview-hub]').forEach((el) => {
     el.addEventListener('click', closeInterviewHubModal);
   });
@@ -5544,34 +5811,45 @@ async function refreshJobStatus() {
   try {
     const st = await api('/api/job-status');
     lastJobStatus = st;
-    renderJobProgress(st);
-    updateJobControlButtons(st);
-    renderApplyLogInsights(applyLogPreEl()?.dataset.logContent || '', st);
+    const freezeBg = isSettingsModalOpen();
+
+    if (!freezeBg) {
+      renderJobProgress(st);
+      updateJobControlButtons(st);
+      renderApplyLogInsights(applyLogPreEl()?.dataset.logContent || '', st);
+      if (st.applyRates) renderApplyRateMeters(st.applyRates);
+      renderDashboardStats(st.dashboardStats || st.conversion);
+      void refreshTopFalsePositives();
+      initOnboardingPanel(st);
+      const { main, msgs } = formatHumanJobStatus(st);
+      el.textContent = main;
+      el.title = formatJobStatusTooltip(st, { msgs });
+      el.classList.toggle('job-status--busy', msgs.length > 0);
+      el.classList.toggle('job-status--warn', Boolean(st.harvestLog?.lastError && !st.harvest?.running));
+      renderResumeRaiseScheduleStatus(st.resumeRaiseSchedule);
+      renderChatFollowUpScheduleStatus(st.chatFollowUpSchedule);
+    }
+
     if (st.harvestTick?.sequence > lastHarvestTickSeq) {
       lastHarvestTickSeq = st.harvestTick.sequence;
-      load();
+      if (freezeBg) queueDashboardRefreshAfterSettings();
+      else load();
     }
-    const { main, msgs } = formatHumanJobStatus(st);
-    if (st.applyRates) renderApplyRateMeters(st.applyRates);
-    renderDashboardStats(st.dashboardStats || st.conversion);
-    void refreshTopFalsePositives();
-    initOnboardingPanel(st);
-    el.textContent = main;
-    el.title = formatJobStatusTooltip(st, { msgs });
-    el.classList.toggle('job-status--busy', msgs.length > 0);
-    el.classList.toggle('job-status--warn', Boolean(st.harvestLog?.lastError && !st.harvest?.running));
 
     if (applyChatWasRunning && !st.applyChat?.running) {
       const phase = st.applyChatProgress?.phase;
-      await load();
-      if (phase === 'done') {
-        const msg =
-          currentApplyView === 'applied'
-            ? 'Отклик отправлен, список обновлён'
-            : 'Отклик отправлен — карточка в разделе «Отклики»';
-        showToast(msg, 'good');
-      } else if (phase === 'error') {
-        showToast('Отклик завершился с ошибкой — см. журнал', 'neutral');
+      if (freezeBg) queueDashboardRefreshAfterSettings();
+      else await load();
+      if (!freezeBg) {
+        if (phase === 'done') {
+          const msg =
+            currentApplyView === 'applied'
+              ? 'Отклик отправлен, список обновлён'
+              : 'Отклик отправлен — карточка в разделе «Отклики»';
+          showToast(msg, 'good');
+        } else if (phase === 'error') {
+          showToast('Отклик завершился с ошибкой — см. журнал', 'neutral');
+        }
       }
     }
     applyChatWasRunning = Boolean(st.applyChat?.running);
@@ -5580,11 +5858,15 @@ async function refreshJobStatus() {
       const hp = st.harvestProgress;
       const msg = hp?.stats?.message || hp?.label || 'Сбор завершён';
       const added = hp?.stats?.added;
-      const kind = added > 0 ? 'good' : 'neutral';
-      const toastText =
-        typeof added === 'number' && added > 0 ? `${msg} (+${added})` : msg;
-      showToast(toastText, kind);
-      void load();
+      if (freezeBg) {
+        queueDashboardRefreshAfterSettings();
+      } else {
+        const kind = added > 0 ? 'good' : 'neutral';
+        const toastText =
+          typeof added === 'number' && added > 0 ? `${msg} (+${added})` : msg;
+        showToast(toastText, kind);
+        void load();
+      }
     }
     harvestWasRunning = Boolean(st.harvest?.running);
 
@@ -5595,15 +5877,20 @@ async function refreshJobStatus() {
       const skipped = br?.skipped ?? bc.skipped ?? 0;
       const failed = br?.failed ?? bc.failed ?? 0;
       if (br?.finishedAt) {
-        const msg = `Серия завершена: ${br.done}/${br.planned} успешно` +
-          (skipped ? `, пропуск ${skipped}` : '') +
-          (failed ? `, ошибок ${failed}` : '');
-        showToast(msg, failed ? 'neutral' : skipped ? 'neutral' : 'good');
-        invalidateLetterStatsCache();
-        void load();
-        void refreshLetterStatsSidebar(true);
-        if (skipped || failed) {
-          setTimeout(() => openBatchReportModal(), 400);
+        if (freezeBg) {
+          queueDashboardRefreshAfterSettings();
+          invalidateLetterStatsCache();
+        } else {
+          const msg = `Серия завершена: ${br.done}/${br.planned} успешно` +
+            (skipped ? `, пропуск ${skipped}` : '') +
+            (failed ? `, ошибок ${failed}` : '');
+          showToast(msg, failed ? 'neutral' : skipped ? 'neutral' : 'good');
+          invalidateLetterStatsCache();
+          void load();
+          void refreshLetterStatsSidebar(true);
+          if (skipped || failed) {
+            setTimeout(() => openBatchReportModal(), 400);
+          }
         }
       }
     }
@@ -5627,21 +5914,31 @@ async function refreshJobStatus() {
 
     const side = st.sideJobs || {};
     if (syncResponsesWasRunning && !side.syncResponses?.running) {
-      try {
-        await applyNegotiationsCacheToQueue();
-      } catch (e) {
-        showToast(e.message || 'Не удалось применить кэш откликов', 'neutral');
+      if (freezeBg) {
+        queueDashboardRefreshAfterSettings();
+      } else {
+        try {
+          await applyNegotiationsCacheToQueue();
+        } catch (e) {
+          showToast(e.message || 'Не удалось применить кэш откликов', 'neutral');
+        }
       }
     }
     syncResponsesWasRunning = Boolean(side.syncResponses?.running);
     syncChatsWasRunning = Boolean(side.syncChats?.running);
     if (syncChatsWasRunning && !side.syncChats?.running) {
-      void loadItems();
-      showToast('Чаты синхронизированы', 'good');
+      if (freezeBg) queueDashboardRefreshAfterSettings();
+      else {
+        void loadItems();
+        showToast('Чаты синхронизированы', 'good');
+      }
     }
     if (dailyRoutineWasRunning && !side.dailyRoutine?.running) {
-      showToast('Утренний цикл завершён — проверьте вкладку «Отклики»', 'good');
-      void loadItems();
+      if (freezeBg) queueDashboardRefreshAfterSettings();
+      else {
+        showToast('Утренний цикл завершён — проверьте вкладку «Отклики»', 'good');
+        void loadItems();
+      }
     }
     dailyRoutineWasRunning = Boolean(side.dailyRoutine?.running);
     if (resumeRaiseWasRunning && !side.resumeRaise?.running) {
@@ -5652,9 +5949,8 @@ async function refreshJobStatus() {
       showToast(msg, lr?.ok !== false ? 'good' : 'neutral');
     }
     resumeRaiseWasRunning = Boolean(side.resumeRaise?.running);
-    renderResumeRaiseScheduleStatus(st.resumeRaiseSchedule);
 
-    if (!st.applyChat?.running && !st.batch?.running && applyLogPollTimer) {
+    if (!freezeBg && !st.applyChat?.running && !st.batch?.running && applyLogPollTimer) {
       clearInterval(applyLogPollTimer);
       applyLogPollTimer = null;
       document.querySelectorAll('.btn-apply-auto, .btn-apply-chat').forEach((b) => {
@@ -6436,8 +6732,12 @@ async function runServiceAction(action, triggerEl) {
 function renderResumeRaiseScheduleStatus(st) {
   const el = document.getElementById('resume-raise-schedule-status');
   const cb = document.getElementById('resume-raise-auto-enabled');
+  const settingsCb = document.getElementById('settings-resume-raise-auto');
   if (cb && st && typeof st.enabled === 'boolean' && document.activeElement !== cb) {
     cb.checked = st.enabled;
+  }
+  if (settingsCb && st && typeof st.enabled === 'boolean' && document.activeElement !== settingsCb) {
+    settingsCb.checked = st.enabled;
   }
   if (!el || !st) return;
   const slots = (st.slots || []).map((h) => `${h}:00`).join(', ');
@@ -6446,6 +6746,47 @@ function renderResumeRaiseScheduleStatus(st) {
     : 'слоты на сегодня закрыты';
   const last = st.lastRunAt ? ` · ${new Date(st.lastRunAt).toLocaleString('ru-RU')}` : '';
   el.textContent = `${st.enabled ? 'Авто вкл' : 'Авто выкл'} · ${slots} (${st.timezone || 'MSK'}) · ${pending}${last}`;
+}
+
+function renderChatFollowUpScheduleStatus(st) {
+  const el = document.getElementById('chat-follow-up-schedule-status');
+  const cb = document.getElementById('chat-follow-up-auto-enabled');
+  const settingsCb = document.getElementById('settings-chat-follow-up-auto');
+  if (cb && st && typeof st.enabled === 'boolean' && document.activeElement !== cb) {
+    cb.checked = st.enabled;
+  }
+  if (settingsCb && st && typeof st.enabled === 'boolean' && document.activeElement !== settingsCb) {
+    settingsCb.checked = st.enabled;
+  }
+  if (!el || !st) return;
+  const slots = (st.slots || []).map((h) => `${h}:00`).join(', ');
+  const pending = st.pendingToday?.length
+    ? `осталось: ${st.pendingToday.map((p) => `${p.hour}:00`).join(', ')}`
+    : 'слоты на сегодня закрыты';
+  const last = st.lastRunAt ? ` · ${new Date(st.lastRunAt).toLocaleString('ru-RU')}` : '';
+  el.textContent = `${st.enabled ? 'Авто вкл' : 'Авто выкл'} · ${slots} (${st.timezone || 'MSK'}) · ${pending}${last}`;
+  const hint = document.getElementById('settings-automation-schedule-hint');
+  if (hint) {
+    hint.textContent = `Подъём: ${document.getElementById('resume-raise-auto-enabled')?.checked ? 'вкл' : 'выкл'} · Follow-up: ${st.enabled ? 'вкл' : 'выкл'}`;
+  }
+}
+
+async function patchResumeRaiseScheduleEnabled(enabled) {
+  await api('/api/resume-raise-schedule', {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  });
+  showToast(enabled ? 'Авто-подъём включён' : 'Авто-подъём выключен', 'neutral');
+  refreshJobStatus();
+}
+
+async function patchChatFollowUpScheduleEnabled(enabled) {
+  await api('/api/chat-follow-up-schedule', {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  });
+  showToast(enabled ? 'Follow-up чатов включён' : 'Follow-up чатов выключен', 'neutral');
+  refreshJobStatus();
 }
 
 async function fillResumeRaiseRoleSelect() {
@@ -6473,23 +6814,38 @@ async function fillResumeRaiseRoleSelect() {
 
 function initResumeRaiseScheduleUi() {
   fillResumeRaiseRoleSelect();
-  document.getElementById('resume-raise-auto-enabled')?.addEventListener('change', async (e) => {
-    try {
-      await api('/api/resume-raise-schedule', {
-        method: 'PATCH',
-        body: JSON.stringify({ enabled: e.target.checked }),
-      });
-      showToast(e.target.checked ? 'Авто-подъём включён' : 'Авто-подъём выключен', 'neutral');
-      refreshJobStatus();
-    } catch (err) {
-      alert(err.message);
-      e.target.checked = !e.target.checked;
-    }
-  });
+  const bindResumeRaiseToggle = (el) => {
+    el?.addEventListener('change', async (e) => {
+      try {
+        await patchResumeRaiseScheduleEnabled(e.target.checked);
+      } catch (err) {
+        alert(err.message);
+        e.target.checked = !e.target.checked;
+      }
+    });
+  };
+  bindResumeRaiseToggle(document.getElementById('resume-raise-auto-enabled'));
+  bindResumeRaiseToggle(document.getElementById('settings-resume-raise-auto'));
+}
+
+function initChatFollowUpScheduleUi() {
+  const bindFollowUpToggle = (el) => {
+    el?.addEventListener('change', async (e) => {
+      try {
+        await patchChatFollowUpScheduleEnabled(e.target.checked);
+      } catch (err) {
+        alert(err.message);
+        e.target.checked = !e.target.checked;
+      }
+    });
+  };
+  bindFollowUpToggle(document.getElementById('chat-follow-up-auto-enabled'));
+  bindFollowUpToggle(document.getElementById('settings-chat-follow-up-auto'));
 }
 
 function initServiceActions() {
   initResumeRaiseScheduleUi();
+  initChatFollowUpScheduleUi();
   document.querySelectorAll('[data-service-action]').forEach((el) => {
     el.addEventListener('click', () => {
       const action = el.dataset.serviceAction;
@@ -6785,43 +7141,6 @@ for (const btn of document.querySelectorAll('[data-preset]')) {
   });
 }
 
-for (const el of document.querySelectorAll('[data-pref]')) {
-  el.addEventListener('input', () => {
-    if (el === scoreThresholdInputEl) {
-      const n = Number(scoreThresholdInputEl.value);
-      if (Number.isFinite(n) && n >= 0 && n <= 100) {
-        scoreThreshold = n;
-        updateScoreBandTabLabels();
-      }
-    }
-    markSettingsDirty();
-    scheduleSaveSettings();
-  });
-  el.addEventListener('change', () => {
-    if (el === scoreThresholdInputEl) {
-      const n = Number(scoreThresholdInputEl.value);
-      if (Number.isFinite(n) && n >= 0 && n <= 100) {
-        scoreThreshold = n;
-        updateScoreBandTabLabels();
-      }
-    }
-    markSettingsDirty();
-    scheduleSaveSettings();
-  });
-}
-for (const el of document.querySelectorAll('[data-pref-bool]')) {
-  el.addEventListener('change', () => {
-    markSettingsDirty();
-    scheduleSaveSettings();
-  });
-}
-for (const el of document.querySelectorAll('[data-pref-select]')) {
-  el.addEventListener('change', () => {
-    markSettingsDirty();
-    scheduleSaveSettings();
-  });
-}
-
 settingsProfileSelectEl?.addEventListener('change', async () => {
   const id = settingsProfileSelectEl.value;
   if (!id || !profileOptionsLoaded) return;
@@ -6874,6 +7193,91 @@ async function ensureChatTemplates() {
   return chatTemplatesCache;
 }
 
+function getSettingsDialogWidth() {
+  const dlg = document.querySelector('#settings-modal .settings-dialog--v5');
+  return dlg?.getBoundingClientRect().width ?? 0;
+}
+
+function isNarrowSettingsDialog() {
+  const w = getSettingsDialogWidth();
+  if (w > 0) return w <= 640;
+  return window.matchMedia('(max-width: 640px)').matches;
+}
+
+function healSettingsShellLayout() {
+  if (settingsShellLayoutFrozen) return;
+  const dlg = document.querySelector('#settings-modal .settings-dialog--v5');
+  const content = document.querySelector('#settings-modal .settings-content');
+  const shell = document.querySelector('#settings-modal .settings-shell');
+  if (!dlg || !content || !shell) return;
+  const dr = dlg.getBoundingClientRect().width;
+  const cr = content.getBoundingClientRect().width;
+  if (dr > 640 && cr / dr < 0.5) {
+    shell.classList.add('settings-shell--wide');
+  }
+}
+
+function updateSettingsShellLayoutClasses({ mode, force = false } = {}) {
+  if (settingsShellLayoutFrozen && !force) return;
+  const settingsModal = document.getElementById('settings-modal');
+  if (!settingsModal || settingsModal.hidden) return;
+  const shell = settingsModal.querySelector('.settings-shell');
+  if (!shell) return;
+  const wide = getSettingsDialogWidth() > 640;
+  shell.classList.toggle('settings-shell--wide', wide);
+  if (wide) {
+    syncSettingsMobileShell(null);
+  } else {
+    const m = mode ?? (shell.classList.contains('settings-shell--pick') ? 'pick' : 'drill');
+    syncSettingsMobileShell(m);
+  }
+  healSettingsShellLayout();
+}
+
+/** @param {'pick' | 'drill' | null} mode */
+function syncSettingsMobileShell(mode) {
+  if (settingsShellLayoutFrozen) return;
+  const settingsModal = document.getElementById('settings-modal');
+  const shell = settingsModal?.querySelector('.settings-shell');
+  const back = document.getElementById('settings-zone-back');
+  if (!shell) return;
+  const narrow = isNarrowSettingsDialog();
+  shell.classList.remove(
+    'settings-shell--pick',
+    'settings-shell--drill',
+    'settings-shell--solo',
+    'settings-shell--sidebar'
+  );
+  if (!narrow) {
+    shell.classList.add('settings-shell--sidebar');
+    if (back) {
+      back.hidden = true;
+      back.setAttribute('aria-hidden', 'true');
+    }
+  } else if (mode === 'pick') {
+    shell.classList.add('settings-shell--pick', 'settings-shell--sidebar');
+  } else {
+    shell.classList.add('settings-shell--drill', 'settings-shell--solo');
+  }
+  if (back) {
+    const showBack = shell.classList.contains('settings-shell--drill');
+    back.hidden = !showBack;
+    back.setAttribute('aria-hidden', showBack ? 'false' : 'true');
+  }
+  const wide = getSettingsDialogWidth() > 640;
+  shell.classList.toggle('settings-shell--wide', wide);
+  healSettingsShellLayout();
+}
+
+const syncSettingsMobileOnResize = debounce(() => {
+  if (isSettingsDialogLayoutSyncSuppressed()) return;
+  if (isSettingsModalOpen()) {
+    settingsShellLayoutFrozen = !isNarrowSettingsDialog();
+  }
+  updateSettingsShellLayoutClasses({ force: true });
+}, 150);
+window.addEventListener('resize', syncSettingsMobileOnResize);
+
 function openDashboardSettings(tabId = 'system', { focusId, clearUrl = true, layout, focusToast } = {}) {
   closeServiceDrawer();
   const settingsModal = document.getElementById('settings-modal');
@@ -6895,9 +7299,24 @@ function openDashboardSettings(tabId = 'system', { focusId, clearUrl = true, lay
   const alreadyOpen = !settingsModal.hidden && settingsModal.classList.contains('modal--open');
   settingsTabSetter?.(normalizedTab);
   settingsModal.hidden = false;
-  if (!alreadyOpen) openModalEl(settingsModal);
+  if (!alreadyOpen) {
+    lockBodyScrollForSettings();
+    openModalEl(settingsModal);
+    settingsFocusTrapCleanup?.();
+    settingsFocusTrapCleanup = installModalFocusTrap(settingsModal);
+  }
   applySettingsOpenLayout(layout);
   settingsModalHooks?.onOpen(normalizedTab);
+  if (!alreadyOpen) {
+    settingsShellLayoutFrozen = false;
+    syncSettingsMobileShell(isNarrowSettingsDialog() ? (focusId ? 'drill' : 'pick') : null);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        updateSettingsShellLayoutClasses({ force: true });
+        if (!isNarrowSettingsDialog()) settingsShellLayoutFrozen = true;
+      });
+    });
+  }
   if (!settingsProfileSelectEl?.value) void refreshProfileSelect();
   if (focusId) focusSettingsField(focusId, { toast: focusToast || '' });
   if (clearUrl) clearSettingsLocationParams();
@@ -7021,9 +7440,14 @@ function initCrmUi() {
   const settingsTabBtns = settingsModal?.querySelectorAll('[data-settings-tab]') || [];
   const settingsPanels = {
     system: document.getElementById('settings-panel-system'),
+    harvest: document.getElementById('settings-panel-harvest'),
     targeting: document.getElementById('settings-panel-targeting'),
     apply: document.getElementById('settings-panel-apply'),
+    letters: document.getElementById('settings-panel-letters'),
+    teleprompter: document.getElementById('settings-panel-teleprompter'),
     appearance: document.getElementById('settings-panel-appearance'),
+    services: document.getElementById('settings-panel-services'),
+    expert: document.getElementById('settings-panel-expert'),
   };
 
   function setSettingsTab(tabId) {
@@ -7044,8 +7468,18 @@ function initCrmUi() {
       panel.classList.toggle('active', on);
       panel.hidden = !on;
     }
+    if (isNarrowSettingsDialog()) {
+      syncSettingsMobileShell('drill');
+    } else {
+      syncSettingsMobileShell(null);
+    }
+    updateSettingsShellLayoutClasses();
     settingsModalHooks?.onTabChange(id);
   }
+
+  document.getElementById('settings-zone-back')?.addEventListener('click', () => {
+    syncSettingsMobileShell('pick');
+  });
 
   settingsTabBtns.forEach((btn) => {
     btn.addEventListener('click', () => setSettingsTab(btn.dataset.settingsTab));
@@ -7061,6 +7495,12 @@ function initCrmUi() {
     resetAppearanceSection: resetAppearanceSettingsSection,
     setSettingsHint,
     showToast,
+    onScoreThresholdChange: (n) => {
+      if (Number.isFinite(n) && n >= 0 && n <= 100) {
+        scoreThreshold = n;
+        updateScoreBandTabLabels();
+      }
+    },
     openServiceFromSettings: () => {
       if (!tryCloseSettingsModal()) return;
       closeSettingsModal();
@@ -7071,6 +7511,7 @@ function initCrmUi() {
       applyPreferencesToSettingsUI(res.preferences, prefBounds);
       applyDashboardUiFromPreferences(res.preferences, res.ui);
       if (res.applyRates) renderApplyRateMeters(res.applyRates);
+      dispatchPrefsUpdated(res.preferences);
       settingsModalHooks?.syncDerivedState?.();
       invalidateLettersSnapshot();
     },
@@ -7079,6 +7520,8 @@ function initCrmUi() {
       if (id === 'system') void refreshProfileSelect();
     },
   });
+  syncSettingsMobileShell(isNarrowSettingsDialog() ? 'pick' : null);
+  updateSettingsShellLayoutClasses({ mode: 'pick' });
   document.getElementById('btn-open-settings')?.addEventListener('click', () => openDashboardSettings());
   settingsModal?.querySelector('[data-close-settings]')?.addEventListener('click', closeSettingsModal);
   settingsModal?.querySelector('.modal-close--settings')?.addEventListener('click', closeSettingsModal);
@@ -7132,6 +7575,9 @@ function openServiceDrawer() {
   void fillResumeRaiseRoleSelect();
   api('/api/resume-raise-schedule')
     .then(renderResumeRaiseScheduleStatus)
+    .catch(() => {});
+  api('/api/chat-follow-up-schedule')
+    .then(renderChatFollowUpScheduleStatus)
     .catch(() => {});
   drawer.hidden = false;
   drawer.setAttribute('aria-hidden', 'false');
@@ -7323,6 +7769,22 @@ function initCommandPaletteAndShortcuts() {
       keywords: 'stats funnel график',
       run: () => openFunnelModal(),
     },
+    {
+      id: 'interview-hub',
+      group: 'Следить',
+      label: 'Хаб собеседований',
+      hint: 'Слоты E, офферы, суфлёр',
+      keywords: 'interview собес суфлёр слот приглашение',
+      run: () => openInterviewHubModal(),
+    },
+    {
+      id: 'interview-prompt',
+      group: 'Следить',
+      label: 'Суфлёр — последний',
+      hint: 'Быстрый запуск сохранённых подсказок',
+      keywords: 'teleprompter суфлёр prompt подсказки',
+      run: () => openLastInterviewPrompt({ api, showToast }),
+    },
     ...panelPaletteActions,
     {
       id: 'ui-mode-expert',
@@ -7498,6 +7960,7 @@ document.addEventListener('hh-open-chat-inbox', (e) => {
 });
 initFunnelUi();
 initInterviewHubUi();
+initInterviewPrompt({ api, showToast });
 initJobProgressOpenLog();
 document.getElementById('btn-batch-report')?.addEventListener('click', () => openBatchReportModal());
 initCrmUi();

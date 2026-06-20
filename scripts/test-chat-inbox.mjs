@@ -9,7 +9,7 @@ import {
 } from '../lib/chat-thread.mjs';
 import { summarizeChatThread } from '../lib/chat-message-classify.mjs';
 import { classifyChatFollowUp, defaultInviteNudgeText } from '../lib/chat-follow-up.mjs';
-import { shouldRunChatFollowUpSchedule } from '../lib/chat-follow-up-schedule.mjs';
+import { shouldRunChatFollowUpSchedule, loadChatFollowUpScheduleConfig } from '../lib/chat-follow-up-schedule.mjs';
 import { buildChatSendPatch } from '../lib/chat-reply-send.mjs';
 import { checkChatSendRateLimit, recordChatSendLaunch, countChatSendLastHour } from '../lib/chat-send-rate.mjs';
 import { parseNegotiationStatusText } from '../lib/hh-negotiations-sync.mjs';
@@ -89,6 +89,8 @@ assert(nudgeText.includes('SRE'), 'nudge text has title');
 
 const sched = shouldRunChatFollowUpSchedule(new Date('2020-01-01T07:30:00Z'));
 assert(typeof sched.run === 'boolean', 'schedule returns run flag');
+
+assert(loadChatFollowUpScheduleConfig().enabled === false, 'follow-up disabled by default');
 
 const patch = buildChatSendPatch(
   { id: 'x', hhApply: { chatMessages: [], chatSummary: { needsReply: true } } },

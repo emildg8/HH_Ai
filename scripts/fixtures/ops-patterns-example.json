@@ -1,0 +1,15 @@
+{
+  "week": "2026-W25",
+  "wins": [
+    "короткое письмо с конкретным стеком K8s",
+    "ответ в чат менее 2 часов"
+  ],
+  "losses": [
+    "зарплата выше вилки",
+    "generic DevOps без метрик"
+  ],
+  "actions": [
+    "обновить salary в hr-screening-answers",
+    "добавить winning_pattern для employer X"
+  ]
+}

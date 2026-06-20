@@ -7,6 +7,9 @@
 - **Ingest / harvest / очередь:** skill `hh-ru-apply-workflow`, `lib/vacancy-ingest.mjs`, `docs/SOURCE-EXPERTISE.md`.
 - **Дашборд:** `design-tokens.css`, `dashboard-unify.css`, `docs/DASHBOARD-DESIGN-TOKENS.md`.
 - **Профиль кандидата:** DevOps junior+/middle, удалёнка, очередь multi-source.
+- **Handoff / релиз:** `docs/PUBLIC-RELEASE.md`, `npm run test:handoff`, `npm run release:public`.
+- **Стандарты / гигиена:** `docs/PRODUCT-STANDARDS.md`, `npm run test:hygiene`, `npm run hygiene:audit`.
+- **OPS / baseline:** `docs/OPS-RHYTHM.md`, `npm run test:ops-readiness`, `npm run devops:ops-readiness`, `npm run devops:intelligence-baseline`.
 
 ## Доменные линзы (дополнительно к универсальным)
 

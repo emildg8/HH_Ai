@@ -4,26 +4,41 @@
 
 /** @type {Record<string, string>} */
 export const SETTINGS_NAV_LABELS = {
-  system: 'Профиль',
-  targeting: 'Отбор вакансий',
+  system: 'Система',
+  harvest: 'Сбор',
+  targeting: 'Отбор',
   apply: 'Отклики',
+  letters: 'Письма',
+  teleprompter: 'Суфлёр',
   appearance: 'Интерфейс',
+  services: 'Сервисы',
+  expert: 'Для опытных',
 };
 
 /** @type {Record<string, string>} */
 export const SETTINGS_SECTION_LEADS = {
-  system: 'Профиль поиска, готовность и браузер автоматизации',
-  targeting: 'Формат работы, зарплата и что отсекается из очереди',
-  apply: 'Порог «Авто», лимиты hh.ru и проверка писем перед серией',
-  appearance: 'Режим интерфейса, список вакансий и боковые панели',
+  system: 'Профиль поиска, готовность и окно браузера при автоматизации',
+  harvest: 'Сбор вакансий, лимиты нейросети и очередь',
+  targeting: 'Формат работы, зарплата и исключения по ролям',
+  apply: 'Порог «Авто», размер серии и лимиты hh.ru',
+  letters: 'Качество писем, автоподготовка и ложные отказы',
+  teleprompter: 'Звук, подсказки на собеседовании и готовность суфлёра',
+  appearance: 'Режим интерфейса, тема, список и боковые панели',
+  services: 'Бот Telegram, расписания и утренний цикл',
+  expert: 'Паттерны отбора, веса нейросети и полный экспорт',
 };
 
 /** @type {Record<string, string>} */
 export const SETTINGS_FOOTER_NOTES = {
-  system: 'Профиль и готовность системы',
-  targeting: 'Правила отбора вакансий',
-  apply: 'Серия откликов и письма',
-  appearance: 'Внешний вид дашборда',
+  system: 'Профиль и готовность',
+  harvest: 'Сбор и оценка вакансий',
+  targeting: 'Правила отбора',
+  apply: 'Серия откликов',
+  letters: 'Письма и качество',
+  teleprompter: 'Суфлёр на собеседовании',
+  appearance: 'Внешний вид',
+  services: 'Фоновые сервисы',
+  expert: 'Расширенные настройки',
 };
 
 /** @type {Record<string, string>} */

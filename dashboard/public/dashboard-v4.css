@@ -1201,7 +1201,26 @@ html[data-card-layout='tile-medium'] .workspace-shell--v4 #list.vacancy-grid--ti
 .batch-precheck-actions {
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.batch-precheck-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: min(90vh, 720px);
+  overflow: hidden;
+}
+
+.batch-precheck-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.batch-precheck-body .modal-hint {
+  padding-bottom: var(--space-3);
 }
 
 .workspace-shell--v4 .card-size-toolbar .seg-btn {
@@ -1781,7 +1800,7 @@ html[data-card-layout='expanded'] #list .card .card-foot__reason:focus {
     display: none;
   }
 
-  .workspace-shell--v4 .settings-layout-bar {
+  .workspace-shell--v4 .settings-toolbar .settings-layout-bar {
     display: none;
   }
 }
@@ -3253,5 +3272,409 @@ html[data-card-layout='expanded'] #list .card .card-foot__reason:focus {
 }
 
 .market-skills__hint {
+  margin-top: 0.5rem;
+}
+
+.interview-prompt-modal__dialog {
+  max-height: min(92vh, 52rem);
+  display: flex;
+  flex-direction: column;
+}
+
+.interview-prompt-modal__head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'title close'
+    'meta meta';
+  align-items: start;
+  gap: 0.35rem;
+  flex-wrap: nowrap;
+}
+
+.interview-prompt-modal__head .modal-title {
+  grid-area: title;
+  margin: 0;
+}
+
+.interview-prompt-modal__head .modal-close {
+  grid-area: close;
+  justify-self: end;
+  align-self: start;
+}
+
+.interview-prompt-modal__head .interview-prompt-modal__meta {
+  grid-area: meta;
+}
+
+.interview-prompt-modal__meta {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--hh-muted, var(--text-muted));
+}
+
+.interview-prompt-modal__toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0 0 0.5rem;
+}
+
+.interview-prompt-modal__modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.25rem;
+}
+
+.interview-prompt-modal__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.interview-copilot-panel__modes,
+.interview-copilot-panel__replay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
+}
+
+.interview-copilot-panel__video {
+  width: 100%;
+  max-height: 200px;
+  margin-top: 0.5rem;
+  border-radius: var(--radius-sm, 8px);
+}
+
+.interview-copilot-panel__select {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.35rem;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--bg-secondary);
+  color: inherit;
+  border: 1px solid var(--border);
+}
+
+.interview-copilot-panel__status {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.interview-copilot-panel__steps {
+  margin: 0.35rem 0 0.75rem;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+
+.interview-copilot-panel__transcript-opt {
+  margin-top: 0.75rem;
+}
+
+.interview-copilot-panel__local-opt {
+  margin-top: 0.75rem;
+}
+
+.interview-copilot-panel__local-hint {
+  margin: 0.25rem 0 0.35rem;
+  font-size: 0.75rem;
+}
+
+.interview-copilot-panel__local-opt .btn {
+  margin-top: 0.35rem;
+}
+
+.interview-copilot-panel__transcript-opt summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.copilot-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.copilot-tabs__btn {
+  font: inherit;
+  font-size: var(--text-sm, 0.85rem);
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.copilot-tabs__btn.active {
+  background: var(--ds-accent, rgba(10, 132, 255, 0.2));
+  border-color: var(--ds-accent, #0a84ff);
+}
+
+.copilot-tab-panel[hidden] {
+  display: none !important;
+}
+
+.copilot-wizard {
+  margin: 0.5rem 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+}
+
+.copilot-wizard__state {
+  font-style: normal;
+  margin-left: 0.35rem;
+}
+
+.copilot-wizard__state--ok {
+  color: var(--ds-good, #30d158);
+}
+
+.copilot-wizard__state--warn {
+  color: var(--ds-warn, #ff9f0a);
+}
+
+.copilot-compat-table {
+  width: 100%;
+  font-size: 0.75rem;
+  border-collapse: collapse;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.copilot-compat-table th,
+.copilot-compat-table td {
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  padding: 0.25rem 0.35rem;
+  text-align: left;
+}
+
+.copilot-live-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.35rem 0 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.copilot-live-bar__badge {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.copilot-live-bar__badge--active {
+  background: rgba(10, 132, 255, 0.35);
+}
+
+.copilot-capture-log,
+.copilot-simulate-debug {
+  font-size: 0.72rem;
+  max-height: 6rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  margin-top: 0.35rem;
+}
+
+.copilot-context-dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  padding: 0.75rem;
+  max-width: 32rem;
+  background: var(--bg-secondary, #1a1d24);
+  color: inherit;
+}
+
+.copilot-context-dialog__body {
+  max-height: 14rem;
+  overflow: auto;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+}
+
+.copilot-hotkeys-hint kbd {
+  font-size: 0.7rem;
+}
+
+.copilot-stage-label {
+  display: block;
+  margin: 0.35rem 0;
+  font-size: 0.85rem;
+}
+
+.copilot-ethics {
+  margin-bottom: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.interview-prompt-modal__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.interview-prompt-modal__slider {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--hh-muted, var(--text-muted));
+}
+
+.interview-prompt-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.interview-prompt-modal__scroll {
+  flex: 1 1 auto;
+  min-height: 14rem;
+  max-height: 28rem;
+  overflow: auto;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+.interview-prompt-modal:fullscreen .interview-prompt-modal__scroll {
+  max-height: none;
+  min-height: 60vh;
+  background: rgba(0, 0, 0, 0.82);
+}
+
+.interview-prompt-modal__text {
+  margin: 0;
+  padding: 1rem 1.25rem 2rem;
+  white-space: pre-wrap;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  line-height: 1.5;
+  color: var(--text, #f2f2f2);
+}
+
+.interview-prompt-modal__hint {
+  margin-top: 0.5rem;
+}
+
+/* Хаб собеседований — адаптивная высота и скролл тела */
+.interview-hub-modal .interview-hub-modal__dialog {
+  width: min(52rem, calc(100vw - 1.25rem));
+  height: min(94vh, 56rem);
+  min-width: min(20rem, calc(100vw - 2rem));
+  min-height: min(16rem, calc(100vh - 2rem));
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100vh - 1rem);
+  resize: both;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0.85rem 1rem 0.65rem;
+}
+
+.interview-hub-modal .modal-head {
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.interview-hub-modal .modal-body,
+.interview-hub-modal #interview-hub-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0.35rem 0.15rem 0.5rem;
+  scrollbar-gutter: stable;
+}
+
+.interview-hub {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.interview-hub__funnel-buckets {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-bottom: 0;
+}
+
+@media (min-width: 520px) {
+  .interview-hub__funnel-buckets {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+.interview-hub__funnel-bucket span {
+  display: block;
+  line-height: 1.25;
+}
+
+.interview-hub__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.interview-hub__item {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-sm, 8px);
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.04));
+}
+
+.interview-hub__item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  margin-bottom: 0.55rem;
+}
+
+.interview-hub__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.interview-hub__output {
+  margin-top: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.25));
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.interview-hub__output--loading {
+  color: var(--text-secondary, #a0a0a8);
+  font-style: italic;
+}
+
+.interview-hub__answers {
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+  font-size: 0.78rem;
+}
+
+.interview-hub__tips {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.interview-hub__prompt-from-output {
   margin-top: 0.5rem;
 }

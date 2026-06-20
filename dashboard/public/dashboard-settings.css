@@ -2,19 +2,40 @@
  * Модалка «Настройки» v5 — боковая навигация, компактные группы.
  */
 
+#settings-modal .modal-backdrop {
+  z-index: 0;
+  /* Живой blur пересчитывается при каждом poll job-status — даёт «слой» на фоне */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: color-mix(in srgb, #000 72%, transparent);
+}
+
+#app-shell.hh-settings-modal-open {
+  contain: paint;
+  pointer-events: none;
+}
+
+#settings-modal .settings-dialog--v5 {
+  z-index: 1;
+  flex: 0 0 auto;
+  margin: 0 auto;
+}
+
 .settings-dialog--v5 {
   position: relative;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   box-sizing: border-box;
-  width: min(960px, calc(100vw - 1.5rem));
+  width: min(72rem, calc(100vw - 2rem));
   height: min(92vh, 52.5rem);
-  min-width: min(720px, calc(100vw - 1.5rem));
+  min-width: min(72rem, calc(100vw - 2rem));
+  max-width: min(72rem, calc(100vw - 2rem)) !important;
   min-height: min(36rem, calc(100vh - 2rem));
-  max-width: calc(100vw - 1rem);
   max-height: calc(100vh - 1rem);
   padding: 0;
   overflow: hidden;
+  isolation: isolate;
   resize: both;
   font-family: var(--font-ui);
   font-size: var(--text-sm);
@@ -30,6 +51,9 @@
 }
 
 .settings-dialog--v5.settings-dialog--user-sized {
+  width: min(var(--hh-settings-dialog-w, 72rem), min(72rem, calc(100vw - 2rem))) !important;
+  height: var(--hh-settings-dialog-h, min(92vh, 52.5rem));
+  max-width: min(72rem, calc(100vw - 2rem)) !important;
   resize: both;
 }
 
@@ -63,6 +87,21 @@
   background: linear-gradient(135deg, transparent 50%, var(--hh-muted, var(--text-secondary)) 50%);
 }
 
+html.hh-settings-modal-open,
+body.hh-settings-modal-open {
+  overflow: hidden;
+}
+
+#settings-modal:not([hidden]) {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#settings-conversion-preset-hint,
+#settings-modal .settings-apply-preview {
+  min-height: 2.75em;
+}
+
 .settings-dialog--v5 .settings-head {
   display: flex;
   align-items: flex-start;
@@ -71,6 +110,7 @@
   padding: 0.65rem 0.85rem 0.55rem;
   border-bottom: 1px solid var(--hh-border, var(--border-subtle));
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .settings-dialog--v5 .settings-head .modal-head-actions {
@@ -134,23 +174,29 @@
   color: var(--hh-muted, var(--text-secondary));
 }
 
-.settings-dialog--v5 .settings-shell {
-  display: grid;
-  grid-template-columns: 10.5rem minmax(0, 1fr);
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-}
+/* shell/grid — layout v9 ниже в конце файла */
 
 .settings-dialog--v5 .settings-nav {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 0.15rem;
   padding: 0.5rem 0.45rem;
   border-right: 1px solid var(--hh-border, var(--border-subtle));
   background: color-mix(in srgb, var(--hh-elevated, var(--surface-elevated)) 60%, transparent);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.settings-dialog--v5 .settings-nav__sep {
+  height: 1px;
+  margin: 0.35rem 0.25rem;
+  background: var(--hh-border, var(--border-subtle));
+  flex-shrink: 0;
+}
+
+.settings-dialog--v5 .settings-nav__btn--search-hidden {
+  display: none !important;
 }
 
 .settings-dialog--v5 .settings-nav__btn {
@@ -188,12 +234,20 @@
 }
 
 .settings-dialog--v5 .settings-content {
+  width: 100%;
   min-width: 0;
   min-height: 0;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: scroll;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 0.65rem 0.85rem 0.75rem;
+}
+
+.settings-dialog--v5 .settings-content__back {
+  display: none;
+  align-self: flex-start;
+  margin-bottom: 0.35rem;
 }
 
 .settings-dialog--v5 .settings-section {
@@ -610,7 +664,6 @@
 }
 
 .settings-dialog--v5 .settings-seg--mode {
-  max-width: 20rem;
   padding: 0 0.55rem 0.5rem;
 }
 
@@ -751,13 +804,29 @@
 
 .settings-dialog--v5 .settings-footer--v5 {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.35rem;
   padding: 0.45rem 0.85rem;
   border-top: 1px solid var(--hh-border, var(--border-subtle));
   flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--bg-elevated, var(--hh-elevated, var(--surface-elevated)));
+}
+
+.settings-dialog--v5 .settings-footer__status {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.settings-dialog--v5 .settings-footer__autosave {
+  min-height: 1.35rem;
 }
 
 .settings-dialog--v5 .settings-footer__note {
@@ -769,7 +838,12 @@
 .settings-dialog--v5 .settings-footer__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
   gap: 0.35rem;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
 }
 
 /* Наследие: карточки и инсайты внутри v5 */
@@ -826,17 +900,6 @@
   }
 }
 
-@media (min-width: 720px) {
-  .settings-dialog--v5 .settings-grid-pair {
-    grid-template-columns: 1fr 1fr;
-    align-items: stretch;
-  }
-
-  .settings-dialog--v5 .settings-grid-pair > .settings-group {
-    height: 100%;
-  }
-}
-
 @media (max-width: 640px) {
   .settings-dialog--v5 {
     width: calc(100vw - 1rem);
@@ -844,29 +907,6 @@
     min-width: 0;
     min-height: 0;
     resize: none;
-  }
-
-  .settings-dialog--v5 .settings-shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .settings-dialog--v5 .settings-nav {
-    flex-direction: row;
-    overflow-x: auto;
-    border-right: none;
-    border-bottom: 1px solid var(--hh-border, var(--border-subtle));
-  }
-
-  .settings-dialog--v5 .settings-nav__btn {
-    flex: 0 0 auto;
-    border-left: none;
-    border-bottom: 2px solid transparent;
-  }
-
-  .settings-dialog--v5 .settings-nav__btn.active {
-    border-left: none;
-    border-bottom-color: var(--hh-accent, var(--accent));
   }
 }
 
@@ -1182,4 +1222,243 @@
 .settings-dialog--v5 #settings-apply-queue .settings-field {
   align-items: stretch;
   justify-content: flex-start;
+}
+
+.settings-dialog--v5 .settings-head__intro {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-dialog--v5 .settings-search__input {
+  max-width: 16rem;
+  font-size: var(--text-sm);
+}
+
+.settings-dialog--v5 .settings-nav--zones .settings-nav__btn {
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.settings-dialog--v5 .settings-group--search-hidden {
+  display: none !important;
+}
+
+.settings-dialog--v5 .settings-storage-badge {
+  font-size: var(--text-xs);
+  color: var(--hh-muted, var(--text-secondary));
+  margin: 0 0 0.35rem;
+}
+
+.settings-dialog--v5 .settings-field__label,
+.settings-dialog--v5 .settings-subblock__label {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.settings-dialog--v5 .settings-field--device-fallback[hidden] {
+  display: none !important;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Layout v9: shell/grid/segmented (единственный владелец pick/drill) ── */
+
+#settings-modal .settings-content {
+  container-type: inline-size;
+  container-name: settingsContent;
+}
+
+#settings-modal .settings-dialog--v5 .settings-shell {
+  display: grid;
+  width: 100%;
+  align-self: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (min-width: 641px) {
+  #settings-modal .settings-dialog--v5 .settings-shell,
+  #settings-modal .settings-shell--sidebar,
+  #settings-modal .settings-shell--solo {
+    grid-template-columns: 14rem minmax(0, 1fr);
+  }
+
+  #settings-modal .settings-shell .settings-nav {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  #settings-modal .settings-shell .settings-content {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  #settings-modal .settings-shell--pick .settings-content,
+  #settings-modal .settings-shell--drill .settings-content {
+    display: block;
+  }
+
+  #settings-modal .settings-shell--drill .settings-nav {
+    display: flex;
+  }
+
+  #settings-modal .settings-content__back {
+    display: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  #settings-modal .settings-dialog--v5 .settings-shell,
+  #settings-modal .settings-shell--sidebar,
+  #settings-modal .settings-shell--solo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #settings-modal .settings-shell .settings-content {
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
+  }
+
+  #settings-modal .settings-shell--pick.settings-shell--sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #settings-modal .settings-shell--pick .settings-content {
+    display: none !important;
+  }
+
+  #settings-modal .settings-shell--drill .settings-nav {
+    display: none !important;
+  }
+
+  #settings-modal .settings-shell--drill .settings-content {
+    display: block !important;
+  }
+
+  #settings-modal .settings-shell--drill .settings-content__back {
+    display: inline-flex;
+  }
+}
+
+#settings-modal .settings-section,
+#settings-modal .settings-section.active,
+#settings-modal .settings-grid-pair,
+#settings-modal .settings-group,
+#settings-modal .settings-group--span-full,
+#settings-modal .settings-scenario-banner {
+  width: 100%;
+  max-width: none;
+  align-self: stretch;
+  box-sizing: border-box;
+}
+
+#settings-modal .settings-grid-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.65rem;
+}
+
+@container settingsContent (min-width: 36rem) {
+  #settings-modal .settings-grid-pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container settingsContent (min-width: 52rem) {
+  #settings-modal .settings-grid-pair--triple {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+#settings-modal .settings-grid-pair > .settings-group {
+  min-width: 0;
+  width: 100%;
+}
+
+#settings-modal .settings-seg.segmented,
+#settings-modal .segmented.settings-seg {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  width: 100%;
+  max-width: none !important;
+  gap: 0.15rem;
+  box-sizing: border-box;
+}
+
+#settings-modal .settings-seg--mode,
+#settings-modal .scale-presets,
+#settings-modal .theme-presets,
+#settings-modal .card-size-presets {
+  max-width: none !important;
+  width: 100%;
+}
+
+#settings-modal .settings-seg .seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#settings-modal .settings-nav__btn {
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+#settings-modal .settings-group .settings-seg.segmented {
+  flex-direction: row;
+}
+
+/* Широкая модалка — после @media viewport (перебивает drill при узком viewport) */
+#settings-modal .settings-shell--wide {
+  grid-template-columns: 14rem minmax(0, 1fr) !important;
+}
+
+#settings-modal .settings-shell--wide .settings-nav {
+  display: flex !important;
+}
+
+#settings-modal .settings-shell--wide .settings-content {
+  grid-column: 2 !important;
+  grid-row: 1;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  display: block !important;
+}
+
+#settings-modal .settings-shell--wide .settings-content__back {
+  display: none !important;
+}
+
+#settings-modal .settings-shell--wide.settings-shell--drill .settings-nav {
+  display: flex !important;
+}
+
+#settings-modal .settings-shell--wide.settings-shell--pick .settings-content {
+  display: block !important;
 }

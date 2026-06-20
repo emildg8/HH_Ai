@@ -105,17 +105,29 @@
   "hhApplyChatMaxPerHour": 25,
   "hhApplyChatMaxPerDay": 30,
   "hhApplyChatMaxPerMonth": 5000,
-  "dashboardMinScoreFilter": 50,
+  "dashboardMinScoreFilter": 55,
   "dashboardBatchSize": 100,
   "batchAutoPrepareLetters": true,
   "batchAutoApproveBestLetter": true,
   "batchLetterRequireMetric": true,
-  "batchLetterMinScore10": 7,
+  "batchLetterMinScore10": 8,
   "batchLetterMaxAiScore": 35,
   "letterHumanizeTwoPass": true,
   "ingestMaxTierCPerDay": 80,
+  "conversionGlueEnabled": true,
+  "observability": {
+    "enabled": true
+  },
+  "applyIntelligence": {
+    "enabled": true,
+    "minGateScore": 70,
+    "minGateScoreDream": 55,
+    "dreamEmployers": [],
+    "useEmployerScore": true,
+    "knowledgeStoreEnabled": true
+  },
   "learningAutoApplyPatterns": false,
-  "minKeywordGapScore": 40,
+  "minKeywordGapScore": 50,
   "marketSkillsEnabled": false,
   "resumeEditMaxPerDay": 15,
   "dashboardUiMode": "expert",
@@ -125,19 +137,20 @@
     "onboard": true,
     "status": true,
     "actionsPrimary": true,
-    "sources": true,
+    "sources": false,
     "harvestPeriod": true,
     "nav": true,
     "filters": true,
     "falsePositives": true,
     "resumeRaise": true,
     "syncExtended": true,
-    "serviceResume": false,
-    "serviceRoutine": false,
+    "serviceResume": true,
+    "serviceRoutine": true,
     "kpi": true,
     "jobFooter": true
   },
   "dashboardSidebarPanelOrder": [
+    "brand",
     "onboard",
     "status",
     "actionsPrimary",
@@ -149,10 +162,9 @@
     "falsePositives",
     "resumeRaise",
     "syncExtended",
-    "jobFooter",
-    "brand",
     "serviceResume",
-    "serviceRoutine"
+    "serviceRoutine",
+    "jobFooter"
   ],
   "dashboardSidebarPanelSides": {
     "brand": "left",
@@ -174,5 +186,21 @@
   "batchRequireRemote": false,
   "batchFalsePositiveMax": 15,
   "learningAutoApplyMinCount": 3,
-  "dashboardPlaywrightDisplayMode": "hidden-captcha"
+  "dashboardPlaywrightDisplayMode": "hidden-captcha",
+  "interviewCopilot": {
+    "eyeContact": "on",
+    "eyeContactRemind": true,
+    "dockPreset": "above-meeting",
+    "liveBarMaxLines": 2,
+    "liveFontSize": 26,
+    "scriptOnlyOverlay": true,
+    "listenMic": true,
+    "learnFromSpoken": true,
+    "interviewStage": "tech",
+    "wasapiDevice": "",
+    "micDevice": "",
+    "answerFormat": "scaffold"
+  },
+  "hideSideJobConsole": true,
+  "sideJobsHeadless": true
 }

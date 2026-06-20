@@ -195,6 +195,10 @@ async function main() {
 
   await page.locator('[data-ui-scale-preset="1"]').click();
 
+  await page.locator('details:has(#card-text-range)').evaluate((el) => {
+    if (el instanceof HTMLDetailsElement) el.open = true;
+  });
+
   const setTextAmount = async (n) => {
     await page.locator('#card-text-range').fill(String(n));
     await page.locator('#card-text-range').dispatchEvent('input', { bubbles: true });

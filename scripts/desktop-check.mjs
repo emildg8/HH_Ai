@@ -52,7 +52,40 @@ if (fs.existsSync(mainRs)) {
   if (/install_chromium|check_chromium|desktop-chromium/.test(src)) {
     pass('desktop/phase3-chromium');
   } else fail('desktop/phase3-chromium', 'нет install chromium в main.rs');
+  if (/show_teleprompter|toggle_teleprompter|teleprompter/.test(src)) {
+    pass('desktop/teleprompter-overlay');
+  } else fail('desktop/teleprompter-overlay', 'нет teleprompter в main.rs');
+  if (/dock_teleprompter|meeting-window-rect/.test(src)) {
+    pass('desktop/dock-above-meeting');
+  } else fail('desktop/dock-above-meeting', 'нет dock_teleprompter в main.rs');
+  if (/global_shortcut|tauri_plugin_global_shortcut/.test(src)) {
+    pass('desktop/panic-shortcut');
+  } else fail('desktop/panic-shortcut', 'нет Ctrl+Shift+H в main.rs');
+  if (/start_copilot|stop_copilot|copilot-loopback/.test(src)) {
+    pass('desktop/copilot-capture');
+    if (/COPILOT_SCRIPT_ONLY|COPILOT_PREP_CONTEXT|COPILOT_WASAPI_DEVICE/.test(src)) {
+      pass('desktop/copilot-env');
+    } else fail('desktop/copilot-env', 'нет env passthrough в start_copilot');
+  } else fail('desktop/copilot-capture', 'нет start_copilot в main.rs');
 } else fail('desktop/phase1-healthcheck', 'нет main.rs');
+
+const copilotScript = path.join(ROOT, 'scripts', 'copilot-loopback-capture.mjs');
+if (fs.existsSync(copilotScript)) pass('desktop/copilot-script');
+else fail('desktop/copilot-script');
+
+for (const f of [
+  'lib/interview-copilot-qa.mjs',
+  'lib/candidate-context-bundle.mjs',
+  'lib/interview-copilot-post.mjs',
+  'scripts/copilot-simulate.mjs',
+  'lib/interview-copilot-simulate-run.mjs',
+  'scripts/fixtures/interview-transcript-mini.json',
+  'scripts/meeting-window-rect.mjs',
+  'dashboard/public/teleprompter-prep.html',
+]) {
+  if (fs.existsSync(path.join(ROOT, f))) pass(`copilot/${path.basename(f)}`);
+  else fail(`copilot/${path.basename(f)}`, `нет ${f}`);
+}
 
 const chromiumScript = path.join(ROOT, 'scripts', 'desktop-chromium.mjs');
 if (fs.existsSync(chromiumScript)) pass('desktop/chromium-script');

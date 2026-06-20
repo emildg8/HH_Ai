@@ -5,8 +5,8 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
 import { spawnBackground } from '../lib/spawn-background.mjs';
+import { hideSideJobConsole, sideJobHeadlessEnv } from '../lib/side-job-spawn.mjs';
 import { fileURLToPath } from 'url';
 import { loadEnv } from '../lib/load-env.mjs';
 import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
@@ -72,6 +72,15 @@ import {
   runIntelligenceLoop,
   INTELLIGENCE_DIGEST_FILE,
 } from '../lib/intelligence-loop.mjs';
+import { readConversionEvents } from '../lib/observability.mjs';
+import { previewApplyGate, GATE_SKIP_REASON } from '../lib/apply-gate.mjs';
+import {
+  buildEmployerDossierIndex,
+  employerIntelForCompany,
+  getEmployerDossier,
+  listEmployerDossiers,
+} from '../lib/employer-dossier.mjs';
+import { mapGateVerdictToPrecheckKey } from '../lib/batch-gate-skip.mjs';
 import { listTopTierRecords } from '../lib/source-quality.mjs';
 import { ingestUrl, ingestUrlsFromText } from '../lib/vacancy-ingest.mjs';
 import { parseUrlMetadata } from '../lib/vacancy-id.mjs';
@@ -81,7 +90,50 @@ import { importInterviewNotesFromDir } from '../lib/interview-notes.mjs';
 import { buildInterviewPrepPack } from '../lib/interview-prep.mjs';
 import { buildTechnicalMockInterview } from '../lib/interview-mock.mjs';
 import { buildHrScreeningMock } from '../lib/interview-mock-hr.mjs';
+import { buildPromptState } from '../lib/interview-prompt.mjs';
+import {
+  pushPromptState,
+  pushPrepPromptState,
+  getPromptState,
+  getPrepPromptState,
+  clearPromptState,
+} from '../lib/interview-prompt-bridge.mjs';
+import {
+  buildDebriefSummary,
+  mergeSpokenToNotes,
+  mergeSpokenToVoiceProfile,
+  buildFollowUpDraft,
+  detectVideoCapabilities,
+} from '../lib/interview-copilot-post.mjs';
+import { buildCandidateContext } from '../lib/candidate-context-bundle.mjs';
+import { injectQuestion, getLiveSessionId } from '../lib/interview-copilot-session.mjs';
+import { recordSpokenAnswer, getSpokenTurns } from '../lib/interview-copilot-spoken.mjs';
+import { enrichPackWithScripts, buildAnswerScript, formatScriptPromptText } from '../lib/interview-copilot-answers.mjs';
+import { startLiveCopilot, ingestLiveCopilotChunk, stopLiveCopilot } from '../lib/interview-copilot-live.mjs';
+import {
+  startReplaySession,
+  tickReplaySession,
+  listReplayTranscripts,
+  updatePlanTimelineOffset,
+} from '../lib/interview-copilot-replay.mjs';
+import {
+  loadReplayPlan,
+  ensureReplayPlan,
+  validateReplayPlan,
+  enrichPlanWithLlm,
+  findPlanByTranscriptBase,
+} from '../lib/interview-replay-plan.mjs';
+import { ingestFromSegments } from '../lib/interview-ingest.mjs';
+import {
+  prepareReplayFromStream,
+  prepareReplayFromLocalVideo,
+  listInterviewVideosForReplay,
+  resolveReplayVideoPath,
+  resolveInterviewDirVideo,
+} from '../lib/interview-copilot-transcribe.mjs';
+import { getCopilotSessionSnapshot } from '../lib/interview-copilot-session.mjs';
 import { buildOffersTrackerSnapshot, setOfferDecision } from '../lib/offer-tracker.mjs';
+import { resolveVacancyRecord } from '../lib/vacancy-record-resolve.mjs';
 import { draftChatReply } from '../lib/chat-reply-draft.mjs';
 import { buildChatInbox, getChatThreadDetail } from '../lib/chat-inbox.mjs';
 import { classifyChatFollowUp, defaultInviteNudgeText, listChatFollowUps } from '../lib/chat-follow-up.mjs';
@@ -117,10 +169,14 @@ import { pruneRespondedFromActiveQueue, QUEUE_STATUS_RESPONDED } from '../lib/qu
 import { recordNeedsQuestionnaireWork } from '../lib/questionnaire-labels.mjs';
 import { normalizeBatchScope, batchScopeUiLabel } from '../lib/batch-scope.mjs';
 import { countBatchCandidates, listBatchCandidates } from '../lib/batch-candidates.mjs';
+import { bootstrapKnowledgeStoreIfEnabled } from '../lib/knowledge-bootstrap.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
 import { getSystemSetupStatus } from '../lib/system-setup-status.mjs';
 import { computeTargetingRejectStats } from '../lib/targeting-reject-stats.mjs';
 import { computeApplyThresholdPreview, computeTargetingRolePreview } from '../lib/settings-apply-preview.mjs';
+import { getRegistryMetaForClient } from '../lib/settings-registry.mjs';
+import { getSettingsSnapshot, patchSettings, normalizeSettingsPatchInput } from '../lib/settings-store.mjs';
+import { listCopilotAudioDevices } from '../lib/copilot-audio-devices.mjs';
 import { getQueueMeta, loadDemoIntoActiveQueue } from '../lib/demo-queue.mjs';
 import {
   pickDashboardPrefsExport,
@@ -178,6 +234,7 @@ import {
 } from '../lib/questionnaire-labels.mjs';
 import { resolveResumeForVacancy, classifyVacancyResumeRole } from '../lib/resume-routing.mjs';
 import { assessVacancyForApply } from '../lib/vacancy-targeting.mjs';
+import { resolveApplyIntelligence } from '../lib/apply-intelligence-prefs.mjs';
 import { assessLetterQuality } from '../lib/letter-quality.mjs';
 import { prepareCoverLetterForSend } from '../lib/cover-letter-prepare.mjs';
 import {
@@ -204,6 +261,7 @@ import { readLetterQualityReport } from '../lib/batch-letter-quality-report.mjs'
 import { buildCoverLetterQualityHub } from '../lib/cover-letter-quality-hub.mjs';
 import { filterSafeAutoApplyItems } from '../lib/learning-auto-apply.mjs';
 import { pickBestPreparedVariant } from '../lib/cover-letter-prepare.mjs';
+import { passesAutoApproveLetterScore } from '../lib/letter-batch-gate.mjs';
 import {
   letterQualityToScore10,
   enrichLetterQualityForApi,
@@ -268,10 +326,11 @@ async function runQuestionnaireProbeRecords(records) {
   const errors = [];
   for (const rec of records) {
     const exitCode = await new Promise((resolve) => {
-      const child = spawn(process.execPath, [scriptPath, `--id=${rec.id}`], {
+      const child = spawnBackground(process.execPath, [scriptPath, `--id=${rec.id}`], {
         cwd: ROOT,
-        env: { ...process.env },
+        env: sideJobHeadlessEnv(),
         stdio: ['ignore', 'pipe', 'pipe'],
+        hideConsole: hideSideJobConsole(),
       });
       let errText = '';
       child.stderr?.on('data', (d) => {
@@ -495,6 +554,20 @@ function readBody(req) {
   });
 }
 
+function readBodyBuffer(req, maxBytes = 600_000_000) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let len = 0;
+    req.on('data', (c) => {
+      len += c.length;
+      if (len > maxBytes) reject(new Error('Файл слишком большой (лимит ~600 МБ)'));
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
 /** pause | resume | stop — для /api/batch-control и /api/hh-launch-apply-batch */
 function handleBatchControlAction(action) {
   const st = getJobStatus();
@@ -628,6 +701,7 @@ const server = http.createServer(async (req, res) => {
       negotiationsCache,
       routingHealth: getResumeRoutingHealth(),
       resumeRaiseSchedule: getResumeRaiseScheduleStatus(),
+      chatFollowUpSchedule: getChatFollowUpScheduleStatus(),
       browserBusy: getBrowserBusyState(),
       harvestTick,
       queuePath,
@@ -692,6 +766,75 @@ const server = http.createServer(async (req, res) => {
       }
     }
     return sendJson(res, 200, runIntelligenceLoop({ label: 'api' }));
+  }
+
+  if (req.method === 'GET' && pathname === '/api/conversion-events') {
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 50));
+    const correlationId = url.searchParams.get('correlationId') || undefined;
+    const batchRunId = url.searchParams.get('batchRunId') || undefined;
+    const typePrefix = url.searchParams.get('typePrefix') || undefined;
+    const { events, total, file } = readConversionEvents({
+      limit,
+      correlationId,
+      batchRunId,
+      typePrefix,
+    });
+    return sendJson(res, 200, { ok: true, file, total, events });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/apply-gate/preview') {
+    const ref = String(
+      url.searchParams.get('recordId') || url.searchParams.get('vacancyId') || ''
+    ).trim();
+    if (!ref) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: 'recordId или vacancyId обязателен',
+        hint: 'recordId — id карточки в очереди; vacancyId — число из hh.ru/vacancy/131926667',
+      });
+    }
+    const rec = resolveVacancyRecord(ref);
+    if (!rec) {
+      return sendJson(res, 404, {
+        ok: false,
+        error: 'record not found',
+        ref,
+        hint: 'Перезапустите дашборд после обновления; id с hh.ru — параметр vacancyId',
+      });
+    }
+    let prefs = {};
+    try {
+      prefs = loadPreferences();
+    } catch {
+      prefs = {};
+    }
+    const verdict = await previewApplyGate(rec, {
+      prefs,
+      allRecords: loadQueue(),
+      requireLetter: url.searchParams.get('requireLetter') !== '0',
+    });
+    return sendJson(res, 200, { ok: true, ...verdict });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/employers') {
+    const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 25) || 25));
+    const employers = listEmployerDossiers({ limit });
+    return sendJson(res, 200, { ok: true, total: employers.length, employers });
+  }
+
+  const employerMatch = pathname.match(/^\/api\/employers\/([^/]+)$/);
+  if (req.method === 'GET' && employerMatch) {
+    const ref = decodeURIComponent(employerMatch[1]);
+    const dossier = getEmployerDossier(ref);
+    if (!dossier) {
+      return sendJson(res, 404, {
+        ok: false,
+        error: 'employer not found',
+        ref,
+        hint: 'Используйте slug (komitas) или имя компании из карточки',
+      });
+    }
+    return sendJson(res, 200, { ok: true, dossier });
   }
 
   if (req.method === 'GET' && pathname === '/api/market-skills') {
@@ -1051,11 +1194,15 @@ const server = http.createServer(async (req, res) => {
       };
     }
 
+    const employerIndex = buildEmployerDossierIndex({ limit: 200 });
+
     const itemsOut = q.map((x) => {
       const row = { ...x };
       if (applyView === 'hidden') {
         row.hiddenRoleReasons = recordHiddenRoleReasons(x, prefs);
       }
+      const employerIntel = employerIntelForCompany(x.company, employerIndex);
+      if (employerIntel) row.employerIntel = employerIntel;
       try {
         const pick = resolveResumeForVacancy(x);
         row.resumeRouting = {
@@ -1203,6 +1350,40 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === 'GET' && pathname === '/api/settings') {
+    try {
+      return sendJson(res, 200, { ok: true, ...getSettingsSnapshot() });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'PATCH' && pathname === '/api/settings') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const patch = normalizeSettingsPatchInput(body);
+    if (!patch || Object.keys(patch).length === 0) {
+      return sendJson(res, 400, { error: 'Пустой patch' });
+    }
+    try {
+      const { preferences, updated, ui } = patchSettings(patch);
+      bumpLetterQualityHubCache();
+      return sendJson(res, 200, {
+        ok: true,
+        preferences,
+        updated,
+        ui: ui || getDashboardUiConfig(preferences),
+        applyRates: applyRateLimitsSnapshot(),
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
   if (req.method === 'GET' && pathname === '/api/settings/apply-preview') {
     try {
       const threshold = Number(url.searchParams.get('threshold'));
@@ -1250,7 +1431,7 @@ const server = http.createServer(async (req, res) => {
     }
     try {
       const backupPath = backupPreferencesFile();
-      const { preferences, updated, ui } = patchDashboardPreferences(patch);
+      const { preferences, updated, ui } = patchSettings(patch);
       bumpLetterQualityHubCache();
       return sendJson(res, 200, {
         ok: true,
@@ -1316,7 +1497,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 400, { error: 'Нужен объект настроек (patch)' });
     }
     try {
-      const { preferences, updated, ui } = patchDashboardPreferences(patch);
+      const { preferences, updated, ui } = patchSettings(patch);
       bumpLetterQualityHubCache();
       return sendJson(res, 200, {
         ok: true,
@@ -1346,7 +1527,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 400, { error: 'Нужен объект настроек (patch)' });
     }
     try {
-      const { preferences, updated, ui } = patchDashboardPreferences(patch);
+      const { preferences, updated, ui } = patchSettings(patch);
       bumpLetterQualityHubCache();
       return sendJson(res, 200, {
         ok: true,
@@ -1650,7 +1831,10 @@ const server = http.createServer(async (req, res) => {
     });
     const bestText = pickBestPreparedVariant(result.variants || [], rec, role, prefs);
     const bestEv = bestText ? evaluateLetterQuality(rec, bestText, role, prefs) : null;
-    const autoApprove = prefs.batchAutoApproveBestLetter === true && bestEv?.pass;
+    const autoApprove =
+      prefs.batchAutoApproveBestLetter === true &&
+      bestEv?.pass &&
+      passesAutoApproveLetterScore(bestEv, prefs);
 
     const coverLetter = {
       status: autoApprove ? 'approved' : 'pending',
@@ -2001,10 +2185,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     const exitCode = await new Promise((resolve) => {
-      const child = spawn(process.execPath, [scriptPath, `--id=${id}`], {
+      const child = spawnBackground(process.execPath, [scriptPath, `--id=${id}`], {
         cwd: ROOT,
-        env: { ...process.env },
+        env: sideJobHeadlessEnv(),
         stdio: ['ignore', 'pipe', 'pipe'],
+        hideConsole: hideSideJobConsole(),
       });
       let errText = '';
       child.stderr?.on('data', (d) => {
@@ -2355,6 +2540,7 @@ const server = http.createServer(async (req, res) => {
       cwd: ROOT,
       detached: true,
       stdio: 'ignore',
+      hideConsole: hideSideJobConsole(),
       env: { ...process.env },
     });
     child.unref();
@@ -2499,6 +2685,7 @@ const server = http.createServer(async (req, res) => {
       child = spawnBackground(process.execPath, childArgs, {
         cwd: ROOT,
         detached: true,
+        hideConsole: hideSideJobConsole(),
         // Лог только через appendApplyChatLog в скрипте — иначе каждая строка дублируется.
         stdio: ['ignore', 'ignore', 'ignore'],
         env: {
@@ -2580,6 +2767,7 @@ const server = http.createServer(async (req, res) => {
     const child = spawnBackground(process.execPath, [harvestScript], {
       cwd: ROOT,
       detached: true,
+      hideConsole: hideSideJobConsole(),
       stdio: ['ignore', logFd, logFd],
       env: {
         ...process.env,
@@ -2709,6 +2897,7 @@ const server = http.createServer(async (req, res) => {
     const child = spawnBackground(process.execPath, args, {
       cwd: ROOT,
       detached: true,
+      hideConsole: hideSideJobConsole(),
       stdio: ['ignore', 'ignore', 'ignore'],
       env: {
         ...process.env,
@@ -2754,51 +2943,37 @@ const server = http.createServer(async (req, res) => {
     const blockedSamples = {};
     let ready = 0;
     let fixableLetterQuality = 0;
+    let gateScoreSum = 0;
+    let gateScored = 0;
     const strictRemoteWork = prefs.batchRequireRemote !== undefined
       ? prefs.batchRequireRemote !== false
       : prefs.requireRemote !== false;
     for (const rec of candidates) {
-      const targeting = assessVacancyForApply(rec, {
+      const gate = await previewApplyGate(rec, {
+        prefs,
+        allRecords: loadQueue(),
         userApproved: queueStatus === 'approved',
         strictRemoteWork,
-        prefs,
+        requireLetter: true,
       });
-      if (!targeting.eligible) {
-        const key = targeting.category || 'off-target';
+      gateScored++;
+      gateScoreSum += gate.gateScore;
+      if (!gate.pass) {
+        const key = mapGateVerdictToPrecheckKey(gate) || 'gate';
         blocked[key] = (blocked[key] || 0) + 1;
         if (!blockedSamples[key]) blockedSamples[key] = [];
         if (blockedSamples[key].length < 3) {
           blockedSamples[key].push({
             id: rec.id,
             title: String(rec.title || rec.id || '').slice(0, 90),
-            reason: targeting.skipReason || '',
+            reason: gate.reasons?.[0] || gate.skipReason || '',
+            gateScore: gate.gateScore,
+            pInvitePct: gate.pInvitePct,
           });
         }
         continue;
       }
-      const letter = String(rec.coverLetter?.approvedText || '').trim();
-      const role = targeting.resumeRole || 'devops';
-      const ev = letter
-        ? evaluateLetterQuality(rec, letter, role, prefs)
-        : {
-            pass: false,
-            reason: 'письмо не утверждено',
-            fixable: false,
-            rawPass: false,
-          };
-      if (!ev.pass) {
-        blocked.letterQuality = (blocked.letterQuality || 0) + 1;
-        if (!blockedSamples.letterQuality) blockedSamples.letterQuality = [];
-        if (blockedSamples.letterQuality.length < 3) {
-          blockedSamples.letterQuality.push({
-            id: rec.id,
-            title: String(rec.title || rec.id || '').slice(0, 90),
-            reason: ev.reason || '',
-          });
-        }
-        continue;
-      }
-      if (ev.fixable) fixableLetterQuality++;
+      if (gate.letter?.fixable) fixableLetterQuality++;
       ready++;
     }
 
@@ -2813,6 +2988,8 @@ const server = http.createServer(async (req, res) => {
     const letterBlocked = Number(blocked.letterQuality || 0);
     const letterReadyPercent =
       candidates.length > 0 ? Math.round((ready / candidates.length) * 100) : null;
+    const gateAi = resolveApplyIntelligence(prefs);
+    const gateAvgScore = gateScored > 0 ? Math.round(gateScoreSum / gateScored) : null;
 
     const currentPrefsSnap = pickBatchPrefsSnapshot(prefs);
     const lastReport = readBatchRunReport();
@@ -2847,6 +3024,10 @@ const server = http.createServer(async (req, res) => {
       falsePositiveRate: fpSummary.falsePositiveRate,
       falsePositiveMax,
       falsePositiveGuardrail,
+      gateEnabled: gateAi.gateEnabled,
+      effectiveMinGate: gateAi.effectiveMinGate,
+      gateAvgScore,
+      gateScored,
       prefsDiff,
       prefsDiffHint,
       lastBatchFinishedAt,
@@ -3104,11 +3285,13 @@ const server = http.createServer(async (req, res) => {
     } catch {
       return sendJson(res, 400, { error: 'Invalid JSON' });
     }
-    const rec = getVacancyRecord(body.id);
+    const rec = resolveVacancyRecord(body.id);
     if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
     try {
       const pack = await buildInterviewPrepPack(rec);
-      updateVacancyRecord(rec.id, { interviewPrep: pack });
+      if (getVacancyRecord(rec.id)) {
+        updateVacancyRecord(rec.id, { interviewPrep: pack });
+      }
       return sendJson(res, 200, { ok: true, interviewPrep: pack });
     } catch (e) {
       return sendJson(res, 500, { error: e.message || String(e) });
@@ -3138,7 +3321,7 @@ const server = http.createServer(async (req, res) => {
     } catch {
       return sendJson(res, 400, { error: 'Invalid JSON' });
     }
-    const rec = getVacancyRecord(body.id);
+    const rec = resolveVacancyRecord(body.id);
     if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
     try {
       const mock = await buildTechnicalMockInterview(rec);
@@ -3155,8 +3338,595 @@ const server = http.createServer(async (req, res) => {
     } catch {
       return sendJson(res, 400, { error: 'Invalid JSON' });
     }
-    const rec = body.id ? getVacancyRecord(body.id) : null;
+    const rec = body.id ? resolveVacancyRecord(body.id) : null;
     return sendJson(res, 200, { ok: true, hrMock: buildHrScreeningMock(rec || {}) });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-prompt/format') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const pack = body.pack;
+    const preset = String(body.preset || 'thesis');
+    if (!pack || typeof pack !== 'object') {
+      return sendJson(res, 400, { error: 'pack обязателен' });
+    }
+    try {
+      let enriched = pack;
+      if (preset === 'script' && !pack.answerScripts?.length) {
+        enriched = await enrichPackWithScripts(pack);
+      }
+      const state = buildPromptState(enriched, preset);
+      return sendJson(res, 200, { ok: true, state, pack: enriched });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-prompt/push') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const state = pushPromptState(body);
+    return sendJson(res, 200, { ok: true, state });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/interview-prompt/state') {
+    const url = new URL(req.url || '', 'http://localhost');
+    const channel = url.searchParams.get('channel') || 'live';
+    const state = channel === 'prep' ? getPrepPromptState() : getPromptState(channel);
+    return sendJson(res, 200, { ok: true, state });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/interview-prompt/prep-state') {
+    return sendJson(res, 200, { ok: true, state: getPrepPromptState() });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-prompt/prep-push') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const state = pushPrepPromptState(body);
+    return sendJson(res, 200, { ok: true, state });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/copilot/video-capabilities') {
+    return sendJson(res, 200, { ok: true, capabilities: detectVideoCapabilities() });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/copilot/audio-devices') {
+    try {
+      const devices = listCopilotAudioDevices();
+      return sendJson(res, 200, { ok: true, ...devices });
+    } catch (e) {
+      return sendJson(res, 200, {
+        ok: true,
+        ffmpeg: false,
+        wasapi: [{ id: 'default', label: 'По умолчанию (системный звук)' }],
+        mic: [],
+        error: e.message || String(e),
+      });
+    }
+  }
+
+  if (req.method === 'GET' && pathname === '/api/copilot/capture-log') {
+    const url = new URL(req.url || '', 'http://localhost');
+    const maxLines = Math.min(80, Math.max(1, Number(url.searchParams.get('lines')) || 20));
+    const logPath = path.join(DATA_DIR, 'copilot-capture.log');
+    let lines = [];
+    if (fs.existsSync(logPath)) {
+      const raw = fs.readFileSync(logPath, 'utf8');
+      lines = raw
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .slice(-maxLines);
+    }
+    return sendJson(res, 200, { ok: true, lines, tail: lines[lines.length - 1] || '' });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/interview-prep/cached') {
+    const url = new URL(req.url || '', 'http://localhost');
+    const id = url.searchParams.get('id');
+    const rec = resolveVacancyRecord(id);
+    if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+    return sendJson(res, 200, {
+      ok: true,
+      hasPrep: Boolean(rec.interviewPrep),
+      interviewPrep: rec.interviewPrep || null,
+      title: rec.title,
+      company: rec.company,
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/answer') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const question = String(body.question || '').trim();
+    if (!question) return sendJson(res, 400, { error: 'question обязателен' });
+    try {
+      const answer = await buildAnswerScript(question, {
+        title: body.title,
+        company: body.company,
+        focus: body.focus,
+      });
+      return sendJson(res, 200, { ok: true, answer });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/script-pack') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const pack = body.pack;
+    if (!pack) return sendJson(res, 400, { error: 'pack обязателен' });
+    try {
+      const enriched = await enrichPackWithScripts(pack, { maxQuestions: body.maxQuestions || 6 });
+      const text = formatScriptPromptText(enriched);
+      const state = buildPromptState(enriched, 'script');
+      return sendJson(res, 200, { ok: true, pack: enriched, text, state });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/context/preview') {
+    let body = {};
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    try {
+      const bundle = await buildCandidateContext({
+        title: body.title,
+        company: body.company,
+        vacancyId: body.vacancyId,
+        recordId: body.recordId,
+        prepContext: body.prepContext,
+        vacancyText: body.description || body.vacancyText,
+        interviewStage: body.interviewStage,
+        transcriptBase: body.transcriptBase,
+        force: true,
+      });
+      return sendJson(res, 200, {
+        ok: true,
+        hash: bundle.hash,
+        title: bundle.title,
+        company: bundle.company,
+        focus: bundle.focus,
+        chunkCount: bundle.chunks?.length || 0,
+        prepSummaryLen: bundle.prepSummary?.length || 0,
+        cvLen: bundle.cvText?.length || 0,
+      });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/live/start') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    try {
+      const session = await startLiveCopilot({
+        title: body.title,
+        company: body.company,
+        vacancyId: body.vacancyId,
+        recordId: body.recordId,
+        prepContext: body.prepContext,
+        vacancyText: body.description || body.vacancyText,
+        interviewStage: body.interviewStage,
+        scriptOnlyOverlay: body.scriptOnlyOverlay !== false,
+        prepPack: body.prepPack,
+        focus: body.focus,
+        forceContext: Boolean(body.forceContext),
+      });
+      return sendJson(res, 200, { ok: true, session: getCopilotSessionSnapshot(session.id) });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/live/inject-question') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const question = String(body.question || '').trim();
+    if (!question) return sendJson(res, 400, { error: 'question обязателен' });
+    try {
+      const result = await injectQuestion(body.sessionId || getLiveSessionId(), question);
+      return sendJson(res, 200, { ok: true, ...result, session: getCopilotSessionSnapshot(result.session?.id) });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/spoken-chunk') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const { getCopilotSession } = await import('../lib/interview-copilot-session.mjs');
+    const s = getCopilotSession(body.sessionId, { strict: true });
+    if (!s) return sendJson(res, 404, { error: 'session_not_found' });
+    recordSpokenAnswer(s, {
+      questionText: body.questionText,
+      spokenText: body.text,
+      source: body.source || 'mic',
+    });
+    return sendJson(res, 200, { ok: true, count: getSpokenTurns(s).length });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/spoken/mark') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const { getCopilotSession } = await import('../lib/interview-copilot-session.mjs');
+    const s = getCopilotSession(body.sessionId, { strict: true });
+    if (!s) return sendJson(res, 404, { error: 'session_not_found' });
+    recordSpokenAnswer(s, {
+      questionText: body.questionText,
+      spokenText: body.text || '',
+      source: 'manual',
+      usedScript: body.usedScript || 'none',
+    });
+    return sendJson(res, 200, { ok: true, count: getSpokenTurns(s).length });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/interview-copilot/spoken/snapshot') {
+    const url = new URL(req.url || '', 'http://localhost');
+    const sessionId = url.searchParams.get('sessionId');
+    const { getCopilotSession } = await import('../lib/interview-copilot-session.mjs');
+    const s = getCopilotSession(sessionId, { strict: Boolean(sessionId) });
+    if (!s) return sendJson(res, 404, { error: 'session_not_found' });
+    return sendJson(res, 200, { ok: true, turns: getSpokenTurns(s) });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/spoken/merge-notes') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const result = mergeSpokenToNotes(body.items, { title: body.title });
+    if (body.learnProfile && body.debrief) {
+      mergeSpokenToVoiceProfile(body.debrief);
+    }
+    return sendJson(res, 200, { ok: true, ...result });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/post/debrief') {
+    let body = {};
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const { getCopilotSession } = await import('../lib/interview-copilot-session.mjs');
+    const s = getCopilotSession(body.sessionId, { strict: true });
+    if (!s) return sendJson(res, 404, { error: 'session_not_found' });
+    const recordId = body.recordId || s.recordId || s.vacancyId;
+    const debrief = buildDebriefSummary(s, {
+      recordId,
+      vacancyId: s.vacancyId,
+      selfRating: body.selfRating,
+      unexpectedQuestion: body.unexpectedQuestion,
+    });
+    const followUpDraft = buildFollowUpDraft(debrief);
+    const tracker = buildOffersTrackerSnapshot();
+    const slot = tracker.offers?.find((o) => o.id === recordId || o.vacancyId === String(s.vacancyId));
+    return sendJson(res, 200, {
+      ok: true,
+      debrief,
+      followUpDraft,
+      offerTracker: slot
+        ? {
+            id: slot.id,
+            bucket: slot.bucket,
+            decision: slot.decision?.status || 'pending',
+            reminder: 'Обновите статус слота в трекере оферов (следующий раунд / жду / отказ).',
+          }
+        : null,
+    });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/post/save-followup') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const text = String(body.text || '').trim();
+    if (!text) return sendJson(res, 400, { error: 'text обязателен' });
+    const rec = resolveVacancyRecord(body.recordId || body.id);
+    if (!rec || !getVacancyRecord(rec.id)) {
+      return sendJson(res, 404, { error: 'Запись не найдена' });
+    }
+    updateVacancyRecord(rec.id, {
+      hhApply: {
+        ...(rec.hhApply || {}),
+        chatReplyDraft: {
+          reply: text,
+          source: 'interview-debrief',
+          at: new Date().toISOString(),
+        },
+      },
+    });
+    return sendJson(res, 200, { ok: true, id: rec.id });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/simulate/run') {
+    let body = {};
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    try {
+      const { runCopilotSimulate } = await import('../lib/interview-copilot-simulate-run.mjs');
+      const result = await runCopilotSimulate({
+        transcriptBase: body.transcriptBase,
+        file: body.file,
+        title: body.title,
+        company: body.company,
+        vacancyId: body.vacancyId,
+        recordId: body.recordId,
+        prepContext: body.prepContext,
+        interviewStage: body.interviewStage,
+        speed: body.speed || 80,
+        keepSession: Boolean(body.keepSession),
+      });
+      return sendJson(res, 200, result);
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/live/stop') {
+    let body = {};
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      /* empty */
+    }
+    stopLiveCopilot(body.sessionId);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/stt-chunk') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    try {
+      const result = await ingestLiveCopilotChunk(body);
+      return sendJson(res, 200, result);
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'GET' && pathname === '/api/interview-copilot/session') {
+    const url = new URL(req.url || '/', 'http://localhost');
+    const id = url.searchParams.get('id');
+    const mode = url.searchParams.get('mode');
+    const sessionId = id || (mode === 'live' ? getLiveSessionId() : null);
+    const session = getCopilotSessionSnapshot(sessionId);
+    return sendJson(res, 200, { ok: true, session });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/interview-copilot/replay/transcripts') {
+    return sendJson(res, 200, { ok: true, items: listReplayTranscripts() });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/interview-copilot/replay/video') {
+    const url = new URL(req.url || '/', 'http://localhost');
+    const file = url.searchParams.get('file');
+    const fp = resolveReplayVideoPath(file);
+    if (!fp) {
+      return sendJson(res, 404, { error: 'Видео не найдено' });
+    }
+    const ext = path.extname(fp).toLowerCase();
+    const mime =
+      ext === '.webm'
+        ? 'video/webm'
+        : ext === '.mov'
+          ? 'video/quicktime'
+          : ext === '.wav'
+            ? 'audio/wav'
+            : ext === '.m4a'
+              ? 'audio/mp4'
+              : 'video/mp4';
+    res.writeHead(200, { 'Content-Type': mime, 'Accept-Ranges': 'bytes' });
+    fs.createReadStream(fp).pipe(res);
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/interview-copilot/replay/local-videos') {
+    const listing = listInterviewVideosForReplay();
+    return sendJson(res, 200, { ok: true, ...listing });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/interview-copilot/replay/interview-video') {
+    const url = new URL(req.url || '/', 'http://localhost');
+    const id = url.searchParams.get('id');
+    const fp = resolveInterviewDirVideo(id);
+    if (!fp) {
+      return sendJson(res, 404, { error: 'Видео не найдено' });
+    }
+    const ext = path.extname(fp).toLowerCase();
+    const mime =
+      ext === '.webm'
+        ? 'video/webm'
+        : ext === '.mov'
+          ? 'video/quicktime'
+          : ext === '.wav'
+            ? 'audio/wav'
+            : ext === '.m4a'
+              ? 'audio/mp4'
+              : 'video/mp4';
+    res.writeHead(200, { 'Content-Type': mime, 'Accept-Ranges': 'bytes' });
+    fs.createReadStream(fp).pipe(res);
+    return;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/replay/prepare-local') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    try {
+      const prepared = await prepareReplayFromLocalVideo(body.videoId);
+      return sendJson(res, 200, { ok: true, ...prepared });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/replay/prepare-video') {
+    const fileName = decodeURIComponent(String(req.headers['x-file-name'] || 'replay.mp4'));
+    try {
+      const prepared = await prepareReplayFromStream(req, fileName);
+      return sendJson(res, 200, { ok: true, ...prepared });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/replay/start') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    try {
+      const session = await startReplaySession({
+        transcriptPath: body.transcriptPath,
+        transcriptBase: body.transcriptBase,
+        sourceId: body.sourceId,
+        title: body.title,
+        company: body.company,
+        vacancyId: body.vacancyId,
+        prepContext: body.prepContext,
+        focus: body.focus,
+        videoPath: body.videoPath,
+      });
+      await tickReplaySession(session.id, 0);
+      return sendJson(res, 200, { ok: true, session: getCopilotSessionSnapshot(session.id) });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'GET' && pathname === '/api/interview-copilot/replay/plan') {
+    const sourceId = String(url.searchParams.get('sourceId') || '').trim();
+    const transcriptBase = String(url.searchParams.get('transcriptBase') || '').trim();
+    let plan = sourceId ? loadReplayPlan(sourceId) : null;
+    if (!plan && transcriptBase) {
+      plan = findPlanByTranscriptBase(transcriptBase);
+    }
+    if (!plan) return sendJson(res, 404, { error: 'План репетиции не найден' });
+    const validation = validateReplayPlan(plan);
+    return sendJson(res, 200, { ok: true, plan, validation });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/replay/build-plan') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    try {
+      const transcriptBase = body.transcriptBase;
+      if (!transcriptBase) return sendJson(res, 400, { error: 'transcriptBase обязателен' });
+      const jsonPath = path.join(DATA_DIR, 'interview-transcripts', `${transcriptBase}.json`);
+      const txtPath = path.join(DATA_DIR, 'interview-transcripts', `${transcriptBase}.txt`);
+      const fp = fs.existsSync(jsonPath) ? jsonPath : fs.existsSync(txtPath) ? txtPath : null;
+      if (!fp) return sendJson(res, 404, { error: 'Транскрипт не найден' });
+      const { loadTranscriptSegments } = await import('../lib/interview-copilot-replay.mjs');
+      const segments = loadTranscriptSegments(fp);
+      const normalized = ingestFromSegments(
+        { segments, transcriptBase },
+        {
+          prepContext: body.prepContext || '',
+          title: body.title || '',
+          company: body.company || '',
+          force: body.force,
+        }
+      );
+      normalized.meta = { title: body.title || '', company: body.company || '' };
+      const plan = await ensureReplayPlan(normalized, { force: body.force });
+      if (body.llm) void enrichPlanWithLlm(plan).catch(() => {});
+      const validation = validateReplayPlan(plan);
+      return sendJson(res, 200, { ok: true, plan, validation });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/replay/offset') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    const plan = updatePlanTimelineOffset(body.sourceId, body.offsetSec);
+    if (!plan) return sendJson(res, 404, { error: 'План не найден' });
+    return sendJson(res, 200, { ok: true, timelineOffsetSec: plan.timelineOffsetSec });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/interview-copilot/replay/tick') {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid JSON' });
+    }
+    try {
+      const result = await tickReplaySession(body.sessionId, Number(body.currentTimeSec) || 0);
+      return sendJson(res, 200, { ok: true, ...result });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message || String(e) });
+    }
   }
 
   if (req.method === 'POST' && pathname === '/api/offer-decision') {
@@ -3175,7 +3945,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && pathname === '/api/import-interview-notes') {
     try {
-      const dir = process.env.HH_INTERVIEW_DIR || 'D:\\Dev\\HH\\hh\\Интервью';
+      const dir = process.env.HH_INTERVIEW_DIR || path.join(ROOT, 'my');
       const r = importInterviewNotesFromDir(dir);
       return sendJson(res, r.ok ? 200 : 400, r);
     } catch (e) {
@@ -3218,6 +3988,7 @@ const server = http.createServer(async (req, res) => {
       cwd: ROOT,
       detached: true,
       stdio: 'ignore',
+      hideConsole: hideSideJobConsole(),
       env: { ...process.env },
     });
     child.unref();
@@ -3324,6 +4095,7 @@ const server = http.createServer(async (req, res) => {
       cwd: ROOT,
       detached: true,
       stdio: 'ignore',
+      hideConsole: hideSideJobConsole(),
       env: process.env,
     });
     child.unref();
@@ -3371,6 +4143,7 @@ const server = http.createServer(async (req, res) => {
       cwd: ROOT,
       detached: true,
       stdio: 'ignore',
+      hideConsole: hideSideJobConsole(),
     });
     child.unref();
     return sendJson(res, 200, { ok: true, pid: child.pid });
@@ -3669,6 +4442,7 @@ const server = http.createServer(async (req, res) => {
       cwd: ROOT,
       detached: true,
       stdio: 'ignore',
+      hideConsole: hideSideJobConsole(),
       env: { ...process.env },
     });
     child.unref();
@@ -3799,7 +4573,17 @@ const server = http.createServer(async (req, res) => {
       return res.end('Not found');
     }
     const ext = path.extname(filePath);
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
+    const noCache =
+      staticRel === 'index.html' ||
+      staticRel === 'app.js' ||
+      staticRel.startsWith('dashboard-settings') ||
+      staticRel === 'dashboard-v4.css' ||
+      staticRel === 'style.css';
+    if (noCache) {
+      headers['Cache-Control'] = 'no-cache, must-revalidate';
+    }
+    res.writeHead(200, headers);
     fs.createReadStream(filePath).pipe(res);
   });
 });
@@ -3890,4 +4674,8 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(
     `  Follow-up чатов: ${chatCfg.enabled ? 'вкл' : 'выкл'} · ${chatCfg.slots.join(', ')}:00 (${chatCfg.timezone})`
   );
+  const ks = bootstrapKnowledgeStoreIfEnabled();
+  if (ks) {
+    console.log(`  Knowledge Store: schema v${ks.schemaVersion} · ${ks.dbPath || 'memory'}`);
+  }
 });

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "personas": [
+  { "id": "marina", "name": "Марина, 26, junior DevOps", "criteria": ["primary_cta_visible", "wizard_context", "panic_hint"] },
+  { "id": "alexey", "name": "Алексей, 48, career switch", "criteria": ["compat_table", "audio_plain_label"] },
+  { "id": "dmitry", "name": "Дмитрий, 34, senior SRE", "criteria": ["live_tab_minimal", "hotkeys_visible"] },
+  { "id": "sofia", "name": "София, 31, QA", "criteria": ["replay_path_isolated", "simulate_debug"] },
+  { "id": "igor", "name": "Игорь, 22, стажёр", "criteria": ["browser_live_in_advanced", "replay_available"] },
+  { "id": "elena", "name": "Елена, 39, PM/HR", "criteria": ["stage_select", "post_debrief"] },
+  { "id": "kirill", "name": "Кирилл, 29, нейтральный тон", "criteria": ["tabs_aria", "neutral_imperative"] },
+  { "id": "recruiter", "name": "Рекрутер (антисценарий)", "criteria": ["ethics_block", "primary_cta_visible"] }
+  ],
+  "html_assertions": {
+    "primary_cta_visible": "data-copilot-action=\"desktop-live\"",
+    "wizard_context": "wizard-state-context",
+    "panic_hint": "Ctrl+Shift+H",
+    "compat_table": "copilot-compat-table",
+    "audio_plain_label": "Звук с созвона",
+    "live_tab_minimal": "copilot-panel-live",
+    "hotkeys_visible": "Ctrl+Shift+S",
+    "replay_path_isolated": "copilot-panel-replay",
+    "simulate_debug": "interview-copilot-simulate-debug",
+    "browser_live_in_advanced": "data-copilot-action=\"live-start\"",
+    "post_debrief": "copilot-panel-post",
+    "tabs_aria": "role=\"tablist\"",
+    "neutral_imperative": "не зачитывайте",
+    "ethics_block": "copilot-ethics",
+    "stage_select": "interview-copilot-stage"
+  }
+}

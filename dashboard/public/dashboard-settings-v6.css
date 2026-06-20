@@ -1,0 +1,124 @@
+/**
+ * Визуальная система настроек v6 — calm sidebar, карточки, сценарии.
+ */
+
+#settings-modal .settings-dialog--v5 .settings-nav {
+  background: color-mix(in srgb, var(--hh-elevated, var(--surface-elevated)) 55%, transparent);
+}
+
+#settings-modal .settings-nav__btn.active {
+  border-left: 2px solid var(--hh-accent, var(--ds-accent));
+  padding-left: calc(0.45rem - 2px);
+}
+
+#settings-modal .settings-group,
+#settings-modal .settings-expert-fold {
+  border: 1px solid var(--hh-border, var(--border-subtle));
+  border-radius: var(--radius-md, 0.5rem);
+  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.65rem;
+  background: color-mix(in srgb, var(--hh-elevated, var(--surface-elevated)) 40%, transparent);
+}
+
+#settings-modal .settings-group > .settings-group__title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold, 600);
+  padding: 0 0 0.35rem;
+  margin: 0 0 0.35rem;
+  border: none;
+}
+
+#settings-modal .settings-field--row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  padding: 0.35rem 0;
+}
+
+#settings-modal .settings-check-list .settings-check {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  min-height: 0;
+  padding: 0.2rem 0.35rem;
+}
+
+#settings-modal .settings-field--row .settings-field__meta {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#settings-modal .settings-field--row .field-input,
+#settings-modal .settings-field--row select {
+  flex: 0 0 auto;
+  min-width: 8rem;
+  max-width: 14rem;
+}
+
+#settings-modal .settings-section-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0 0 0.65rem;
+}
+
+#settings-modal .settings-scenario-banner {
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 0.65rem;
+  border-radius: var(--radius-md, 0.5rem);
+  border: 1px solid color-mix(in srgb, var(--hh-accent, var(--ds-accent)) 35%, var(--hh-border));
+  background: color-mix(in srgb, var(--hh-accent, var(--ds-accent)) 8%, transparent);
+}
+
+#settings-modal .settings-scenario-banner__lead {
+  margin: 0 0 0.45rem;
+  font-size: var(--text-sm);
+  color: var(--hh-text, var(--text-primary));
+}
+
+#settings-modal .settings-preset-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+#settings-modal .settings-preset-card {
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-sm, 0.35rem);
+  border: 1px solid var(--hh-border, var(--border-subtle));
+  background: var(--hh-elevated, var(--surface-elevated));
+  cursor: pointer;
+}
+
+#settings-modal .settings-preset-card:hover {
+  border-color: var(--hh-accent, var(--ds-accent));
+}
+
+#settings-modal .settings-preset-card.active {
+  border-color: var(--hh-accent, var(--ds-accent));
+  background: color-mix(in srgb, var(--hh-accent, var(--ds-accent)) 12%, transparent);
+}
+
+#settings-modal .settings-danger-zone {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--ds-warn, #e6a700) 45%, var(--hh-border));
+}
+
+#settings-modal .settings-search-empty {
+  padding: 0.5rem 0.65rem;
+  font-size: var(--text-sm);
+  color: var(--hh-muted, var(--text-secondary));
+}
+
+#settings-modal .settings-dialog--v5:not(.settings-dialog--user-sized) {
+  resize: none;
+}
+

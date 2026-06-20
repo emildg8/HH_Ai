@@ -17,6 +17,8 @@ config/resume-routing.local.json
 config/resume-variants.json
 config/cover-letter.txt
 config/cover-letter-style-examples.txt
+config/hr-screening-answers.json
+config/hr-screening-answers.local.json
 config/targeting-golden-set.candidates.json
 config/letter-quality-golden-set.candidates.json
 config/market-skills.json
@@ -60,6 +62,13 @@ data/interview-transcripts/
 data/hh-resume-probe.json
 config/resume-variants.json
 data/.settings-backup-pull/
+data/hh-ai-knowledge*.db
+data/hh-ai-knowledge*.db-wal
+data/hh-ai-knowledge*.db-shm
+data/knowledge/artifacts/
+data/knowledge/exports/
+data/logs/apply-intelligence.jsonl
+data/knowledge-rebuild.lock
 
 # Локальные пресеты UI дашборда
 dashboard/public/local-dashboard-defaults.mjs
@@ -92,6 +101,21 @@ config/resume-raise-schedule.json
 data/harvest-control.json
 data/cover-letter-regen-state.json
 data/resume-sync-report.json
+data/intelligence-*.json
+!data/intelligence-baseline.example.json
+data/plan-snapshots/
+data/plan-rollback/
+data/chat-follow-up-state.json
+data/daily-digest-last.json
+data/letter-quality-report.json
+data/interview-replay-plans/
+data/candidate-profiles/
+data/hh-negotiations-cache.json.bak*
+data/telegram-bot.pid
+data/hygiene-report.json
+data/beta-feedback.jsonl
+
+scripts/__pycache__/
 
 # Локальные архивы в корне
 Шахваладов*.pdf

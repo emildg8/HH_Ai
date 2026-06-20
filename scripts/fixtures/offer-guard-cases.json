@@ -1,0 +1,12 @@
+[
+  { "id": "ok_tech", "script": "Работал с Kubernetes и CI/CD в банке.", "ctx": { "cvText": "Kubernetes CI/CD банк", "kind": "technical" }, "expectFlags": [] },
+  { "id": "red_flag", "script": "Ненавижу прошлого работодателя, но всё умею.", "ctx": { "cvText": "DevOps", "kind": "hr" }, "expectFlags": ["red_flag_tone"], "expectRegen": true },
+  { "id": "empty", "script": "", "ctx": {}, "expectFlags": ["empty"] },
+  { "id": "years_mismatch", "script": "У меня 15 лет в DevOps.", "ctx": { "cvText": "3 года опыт", "kind": "technical" }, "expectFlags": ["years_mismatch:15"] },
+  { "id": "star_weak", "script": "Я коммуникабельный и ответственный человек с хорошими soft skills для любой роли.", "ctx": { "kind": "hr", "interviewStage": "hr", "cvText": "DevOps" }, "expectFlags": ["star_weak"] },
+  { "id": "spoken_years", "script": "Около пяти лет в поддержке.", "ctx": { "cvText": "2 года", "spokenSnippet": "около двух лет в банке", "kind": "hr" }, "expectFlags": ["spoken_years_mismatch"], "expectRegen": true },
+  { "id": "ok_hr_star", "script": "В прошлом году настроил CI/CD для команды из 8 человек, сократили время релиза.", "ctx": { "kind": "hr", "interviewStage": "hr", "cvText": "CI/CD" }, "expectFlags": [] },
+  { "id": "ok_short", "script": "Да, удобно.", "ctx": { "kind": "small_talk" }, "expectFlags": [] },
+  { "id": "years_ok", "script": "Три года в банке.", "ctx": { "cvText": "3 года банк", "kind": "technical" }, "expectFlags": [] },
+  { "id": "multi_red", "script": "Я лучший в мире архитектор всего.", "ctx": { "cvText": "junior", "kind": "hr" }, "expectFlags": ["red_flag_tone"], "expectRegen": true }
+]

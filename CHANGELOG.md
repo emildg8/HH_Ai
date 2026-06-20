@@ -6,10 +6,49 @@
 
 ### Добавлено
 
-- **Рынок навыков (2R):** advisory-слой `lib/market-skills.mjs`, `config/market-skills.example.json`, панель в service drawer, `GET /api/market-skills`, `npm run devops:aggregate-market-skills`, флаг `marketSkillsEnabled`.
-- **Настройки дашборда:** дефолт модалки 960×840, иконки шапки (close/expand), полировка вкладок «Отклики» и «Интерфейс», seg-btn и чекбокс удалёнки.
-- **3.3 prep:** onboarding 4 шага (login → demo → approve → batch), `POST /api/chat-save-draft`, Alt+Shift+L «Письмо &lt;6», `npm run friction:capture`, [ROADMAP-MAP-2026-Q3.md](docs/ROADMAP-MAP-2026-Q3.md).
-- **UX:** KPI «Чаты» и «Письмо &lt;6» кликабельны; digest чатов в service drawer (CH-05); сброс wizard из Ctrl+K; `test:chat-save-draft`.
+- **Handoff / docs:** `PUBLIC-RELEASE.md`, `QUICKSTART.md`, `FIRST-RUN.md`, `BETA-TESTER-GUIDE.md`, `CONFIG-GUIDE.md`, `docs/README.md`.
+- **Стандарты:** `PRODUCT-STANDARDS.md`, `PRODUCT-ANATOMY.md`, `HYGIENE-BACKLOG.md`, `docs-manifest.json`.
+- **Демо:** `docs/demo/vacancies-demo.json` (5 вакансий + inbox), `data/vacancies-queue.example.json`.
+- **Гигиена:** `npm run hygiene:audit`, `npm run test:hygiene`, `npm run test:handoff`; расширен `.gitignore` для runtime `data/`.
+- **Этап 0 + ORG-0:** `batchLetterMinScore10` в батче и auto-approve; `OPS-RHYTHM.md`, `test:ops-readiness`, `devops:ops-readiness`, baseline example.
+- **Glue-0 + OBS-0:** `conversion-glue.mjs`, `observability.mjs`, registry, `conversion-events.jsonl`, emit в ingest/batch, `GET /api/conversion-events`, `docs/CONVERSION-GLUE.md`, `docs/OBSERVABILITY.md`, `test:conversion`, `test:observability`.
+- **Этап 1 (gate):** `apply-gate.mjs`, `applyIntelligence` в preferences, `GET /api/apply-gate/preview`, gate в batch-precheck, `test:apply-gate`.
+- **Этап 1.6 (настройки конверсии):** ключи `applyIntelligence.*` в settings-registry, пресеты `conversion-presets.mjs`, UI gate в Настройках → Отклики, `test:conversion-presets`.
+- **Модуль настроек v5/v6:** реестр ключей (`settings-registry`), `GET/PATCH /api/settings`, import с sanitize, copilot-пресеты этапа собеса, mobile pick/drill, focus trap, поиск по registry.
+- **Инфра Knowledge Store (фаза A):** `lib/data-root.mjs`, `lib/knowledge-store.mjs`, миграции `migrations/knowledge/`, `npm run devops:knowledge-init`, `test:knowledge-store`, `docs/INFRA-KNOWLEDGE.md`.
+- **Gate + dual-write (срез):** единый `decideApplyGate` в батче, `lib/knowledge-apply-record.mjs`, precheck parity, baseline с gate-параметрами.
+- **UI:** кнопка «Запустить поиск» в блоке «Период поиска»; sticky footer модалки precheck батча.
+- **Документация:** `docs/SETTINGS-MODULE.md`.
+
+### Изменено
+
+- Единая очередь автосохранения (layout + prefs), загрузка через `/api/settings`, событие `hh:prefs-updated`.
+- **Батч / precheck:** один проход `previewApplyGate` с `requireLetter` и `batchLetterMinScore10`; baseline snapshot включает gate-параметры.
+
+### Исправлено
+
+- **Настройки:** лишний `</div>` в секции «Письма» — футер модалки рендерился вне диалога на фоне.
+- **Layout настроек v7:** grid solo/sidebar — контент не сжимается при скрытом nav; segmented в модалке; container queries для `settings-grid-pair`.
+- **Layout настроек v8:** явный `grid-column: 2` для content на desktop; пресеты окна 1120/1152px; schema v3; Cache-Control для CSS/JS.
+- **Layout настроек v9:** layout влит в `dashboard-settings.css`; `settings-shell--wide` вне viewport `@media`; drill/narrow по ширине диалога; self-heal; удалён отдельный v7-layout.css.
+- **Автопроцессы:** follow-up чатов выкл по умолчанию; UI в сайдбаре и Настройки → Сервисы; `hideSideJobConsole` / `sideJobsHeadless` в preferences; `npm run dashboard:hidden`.
+- Mobile: кнопка «← Разделы», `min-width` диалога на узких экранах.
+- Integration-тест deep link `settings=letters&focus=fp`.
+
+## [3.3.0] — 2026-06-17
+
+### Добавлено
+
+- **Живой суфлёр (copilot):** единый Q→A (`interview-copilot-qa.mjs`), loopback + mic, двухуровневые ответы, offer-guard, spoken-memory.
+- **Desktop overlay:** `teleprompter.html` (live, 2 строки), `teleprompter-prep.html` (сценарий), dock над Zoom, Ctrl+Shift+H, `contentProtected`.
+- **Пост-собес:** debrief (рейтинг 1–5), merge в заметки, follow-up в черновик чата, напоминание offer-tracker.
+- **API:** `context/preview`, `simulate/run`, `post/debrief`, `spoken/*`, `video-capabilities`, `prep-push`.
+- **Тесты:** `test:interview-copilot-*`, `test:interview-copilot-spoken`, `npm run test:copilot`, fixture `interview-transcript-mini.json`.
+
+### Изменено
+
+- Слот E подтягивает кэшированный `interviewPrep` в context bundle при `live/start`.
+- Панель «Перед собесом», «Прогон на записи», «Ответил сам», блок «Камера и взгляд».
 
 ## [3.2.0] — 2026-06-03
 

@@ -1,0 +1,17 @@
+{
+  "title": "Mini simulate",
+  "company": "TestCo",
+  "prepContext": "Стек: Kubernetes, CI/CD, мониторинг",
+  "segments": [
+    { "startSec": 0, "endSec": 3, "text": "На ты нормально, удобно?", "role": "interviewer" },
+    { "startSec": 3, "endSec": 6, "text": "Да, конечно, удобно.", "role": "candidate" },
+    { "startSec": 6, "endSec": 14, "text": "Расскажите про ваш опыт с мониторингом?", "role": "interviewer" },
+    {
+      "startSec": 14,
+      "endSec": 28,
+      "text": "В банке настраивал Zabbix и Grafana, алерты в Telegram, около трёх лет.",
+      "role": "candidate"
+    },
+    { "startSec": 28, "endSec": 34, "text": "Есть вопросы к нам?", "role": "interviewer" }
+  ]
+}

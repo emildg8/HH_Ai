@@ -1,0 +1,71 @@
+/**
+ * Слой v5 поверх unify/v4/style — единственный источник overrides layout настроек.
+ */
+
+#settings-modal .settings-dialog--v5.modal-dialog--wide {
+  width: min(72rem, calc(100vw - 2rem));
+  max-width: min(72rem, calc(100vw - 2rem));
+}
+
+#settings-modal .settings-dialog--v5 .settings-field {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+#settings-modal .settings-dialog--v5 .settings-field__meta {
+  min-height: 0;
+  justify-content: flex-start;
+}
+
+#settings-modal .settings-footer--v5 {
+  text-align: left;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+#settings-modal .settings-footer__actions {
+  justify-content: flex-start;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+}
+
+#settings-modal .settings-shell {
+  width: 100%;
+}
+
+#settings-modal .settings-field__label,
+#settings-modal .settings-subblock__label {
+  text-transform: none;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+@media (max-width: 640px) {
+  #settings-modal .settings-dialog--v5 {
+    min-width: 0;
+    width: calc(100vw - 0.5rem);
+    height: calc(100dvh - 0.5rem);
+    max-height: 100dvh;
+    resize: none;
+  }
+
+  #settings-modal .settings-fields--duo,
+  #settings-modal .settings-fields--trio {
+    grid-template-columns: 1fr;
+  }
+
+  #settings-modal .settings-nav__btn {
+    min-height: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #settings-modal .settings-group.settings-focus-pulse {
+    animation: none;
+  }
+}

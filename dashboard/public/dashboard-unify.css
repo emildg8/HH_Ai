@@ -98,7 +98,6 @@
 /* ═══ Поверхности: tile (карточки, плитки, метрики) ═══ */
 .workspace-shell--v4 :is(
   .settings-dialog--v4 .settings-card,
-  .settings-dialog--v5 .settings-group,
   .workflow-nav__step,
   .batch-report-metric,
   .settings-health-item,
@@ -467,34 +466,22 @@
 /* ── Настройки ── */
 .workspace-shell--v4 .settings-dialog--v4 .settings-fields,
 .workspace-shell--v4 .settings-dialog--v4 .settings-fields--duo,
-.workspace-shell--v4 .settings-dialog--v4 .settings-fields--trio,
-.workspace-shell--v4 .settings-dialog--v5 .settings-fields,
-.workspace-shell--v4 .settings-dialog--v5 .settings-fields--duo,
-.workspace-shell--v4 .settings-dialog--v5 .settings-fields--trio {
+.workspace-shell--v4 .settings-dialog--v4 .settings-fields--trio {
   align-items: end;
   gap: var(--ui-gap-md);
 }
 
-.workspace-shell--v4 .settings-dialog--v4 .settings-field,
-.workspace-shell--v4 .settings-dialog--v5 .settings-field {
+.workspace-shell--v4 .settings-dialog--v4 .settings-field {
   justify-content: flex-end;
 }
 
-.workspace-shell--v4 .settings-dialog--v4 .settings-field__meta,
-.workspace-shell--v4 .settings-dialog--v5 .settings-field__meta {
+.workspace-shell--v4 .settings-dialog--v4 .settings-field__meta {
   min-height: 2.35rem;
   justify-content: flex-end;
 }
 
-.workspace-shell--v4 .settings-dialog--v5 #settings-apply-queue .settings-field__meta,
-.workspace-shell--v4 .settings-dialog--v5 #settings-apply-queue .settings-field--threshold-block {
-  min-height: 0;
-}
-
 .workspace-shell--v4 .settings-dialog--v4 .settings-field__label,
-.workspace-shell--v4 .settings-dialog--v4 .settings-subblock__label,
-.workspace-shell--v4 .settings-dialog--v5 .settings-field__label,
-.workspace-shell--v4 .settings-dialog--v5 .settings-subblock__label {
+.workspace-shell--v4 .settings-dialog--v4 .settings-subblock__label {
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--hh-text);

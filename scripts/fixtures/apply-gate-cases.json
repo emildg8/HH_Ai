@@ -1,0 +1,37 @@
+[
+  {
+    "id": "devops-strong",
+    "title": "DevOps engineer",
+    "company": "Acme Cloud",
+    "source": "hh",
+    "applyMode": "hh_auto",
+    "status": "pending",
+    "scoreOverall": 78,
+    "description": "Kubernetes Docker Linux CI/CD мониторинг Grafana Ansible Terraform удалённая работа",
+    "coverLetter": { "approvedText": "Здравствуйте! Интересует позиция DevOps: опыт Docker, Kubernetes, CI/CD и мониторинга в проде." },
+    "publishedAt": "2026-06-18T10:00:00.000Z",
+    "expect": { "pass": true, "minGateScore": 55 }
+  },
+  {
+    "id": "qa-off-target",
+    "title": "QA engineer manual",
+    "company": "Test Ltd",
+    "source": "hh",
+    "applyMode": "hh_auto",
+    "status": "pending",
+    "scoreOverall": 70,
+    "description": "Ручное тестирование test cases",
+    "expect": { "pass": false, "skipReason": "off_target" }
+  },
+  {
+    "id": "low-score",
+    "title": "DevOps",
+    "company": "Low Co",
+    "source": "hh",
+    "applyMode": "hh_auto",
+    "status": "pending",
+    "scoreOverall": 35,
+    "description": "Kubernetes Docker",
+    "expect": { "pass": false, "skipReason": "gate_score", "requireLetter": false }
+  }
+]

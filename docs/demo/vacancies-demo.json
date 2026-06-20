@@ -1,0 +1,159 @@
+[
+  {
+    "id": "demo-vac-001",
+    "source": "hh",
+    "externalKey": "hh:demo-001",
+    "vacancyId": "demo-001",
+    "url": "https://hh.ru/vacancy/demo-001",
+    "applyMode": "hh_auto",
+    "title": "DevOps инженер",
+    "company": "ДемоОблако",
+    "salaryRaw": "150 000 – 220 000 ₽",
+    "remoteNote": "удалённо",
+    "workFormat": "remote",
+    "status": "pending",
+    "scoreOverall": 8.2,
+    "scoreVacancy": 8.5,
+    "scoreCvMatch": 7.8,
+    "geminiSummary": "Демо-вакансия: Kubernetes, CI/CD, мониторинг. Подходит для знакомства с дашбордом.",
+    "geminiRisks": "Демо-данные — реальный отклик не отправляется.",
+    "descriptionPreview": "Ищем DevOps для сопровождения облачной инфраструктуры. Стек: Kubernetes, Terraform, GitLab CI, Prometheus.",
+    "createdAt": "2026-05-01T09:00:00.000Z"
+  },
+  {
+    "id": "demo-vac-002",
+    "source": "hh",
+    "externalKey": "hh:demo-002",
+    "vacancyId": "demo-002",
+    "url": "https://hh.ru/vacancy/demo-002",
+    "applyMode": "hh_auto",
+    "title": "SRE / Platform Engineer",
+    "company": "ДемоФинТех",
+    "salaryRaw": "180 000 – 250 000 ₽",
+    "workFormat": "hybrid",
+    "status": "pending",
+    "scoreOverall": 7.6,
+    "scoreVacancy": 7.8,
+    "scoreCvMatch": 7.2,
+    "geminiSummary": "Платформенная команда, on-call, надёжность сервисов.",
+    "descriptionPreview": "SRE в продуктовой команде: SLI/SLO, инциденты, автоматизация рутины.",
+    "createdAt": "2026-05-02T10:00:00.000Z",
+    "hhApply": {
+      "chatUrl": "https://hh.ru/applicant/chat/demo-thread-invite",
+      "chatSyncedAt": "2026-06-10T14:00:00.000Z",
+      "negotiationStatus": "invited",
+      "hhSiteState": "invited",
+      "chatMessages": [
+        {
+          "text": "Здравствуйте! Приглашаем на техническое собеседование в четверг.",
+          "isMine": false,
+          "kind": "invite",
+          "at": "2026-06-10T13:00:00.000Z"
+        },
+        {
+          "text": "Спасибо, интересно. Уточните, пожалуйста, формат — онлайн или офис?",
+          "isMine": true,
+          "kind": "other",
+          "at": "2026-06-10T14:00:00.000Z"
+        }
+      ],
+      "chatSummary": {
+        "lastKind": "invite",
+        "needsReply": false,
+        "inviteNudge": false
+      }
+    }
+  },
+  {
+    "id": "demo-vac-003",
+    "source": "hh",
+    "externalKey": "hh:demo-003",
+    "vacancyId": "demo-003",
+    "url": "https://hh.ru/vacancy/demo-003",
+    "applyMode": "hh_auto",
+    "title": "Инженер эксплуатации Linux",
+    "company": "ДемоТелеком",
+    "salaryRaw": "130 000 – 170 000 ₽",
+    "workFormat": "office",
+    "status": "pending",
+    "scoreOverall": 6.4,
+    "scoreVacancy": 6.0,
+    "scoreCvMatch": 6.8,
+    "geminiSummary": "Классический админ + автоматизация Ansible.",
+    "descriptionPreview": "Сопровождение серверов Linux, сеть, резервное копирование.",
+    "createdAt": "2026-05-03T11:00:00.000Z"
+  },
+  {
+    "id": "demo-vac-004",
+    "source": "hh",
+    "externalKey": "hh:demo-004",
+    "vacancyId": "demo-004",
+    "url": "https://hh.ru/vacancy/demo-004",
+    "applyMode": "hh_auto",
+    "title": "Cloud Engineer (Junior+)",
+    "company": "ДемоСтарт",
+    "salaryRaw": "100 000 – 140 000 ₽",
+    "workFormat": "remote",
+    "status": "pending",
+    "scoreOverall": 5.8,
+    "scoreVacancy": 5.5,
+    "scoreCvMatch": 6.2,
+    "geminiSummary": "Стартап, широкий стек, быстрый рост.",
+    "descriptionPreview": "Облака AWS/Yandex Cloud, Docker, базовый Kubernetes.",
+    "createdAt": "2026-05-04T12:00:00.000Z",
+    "hhApply": {
+      "chatUrl": "https://hh.ru/applicant/chat/demo-thread-question",
+      "chatSyncedAt": "2026-06-12T09:30:00.000Z",
+      "chatMessages": [
+        {
+          "text": "Добрый день! Расскажите, пожалуйста, какой у вас опыт с Terraform?",
+          "isMine": false,
+          "kind": "question",
+          "at": "2026-06-12T09:00:00.000Z"
+        }
+      ],
+      "chatSummary": {
+        "lastKind": "question",
+        "needsReply": true,
+        "questionNeedsReply": true
+      }
+    }
+  },
+  {
+    "id": "demo-vac-005",
+    "source": "hh",
+    "externalKey": "hh:demo-005",
+    "vacancyId": "demo-005",
+    "url": "https://hh.ru/vacancy/demo-005",
+    "applyMode": "hh_auto",
+    "title": "Системный администратор",
+    "company": "ДемоРитейл",
+    "salaryRaw": "90 000 – 120 000 ₽",
+    "workFormat": "office",
+    "status": "rejected",
+    "scoreOverall": 4.2,
+    "scoreVacancy": 4.0,
+    "scoreCvMatch": 4.5,
+    "geminiSummary": "Офисная инфраструктура, Windows + Linux.",
+    "descriptionPreview": "Поддержка рабочих мест, Active Directory, VPN.",
+    "createdAt": "2026-05-05T08:00:00.000Z",
+    "hhApply": {
+      "chatUrl": "https://hh.ru/applicant/chat/demo-thread-decline",
+      "chatSyncedAt": "2026-06-08T16:00:00.000Z",
+      "hhSiteState": "declined",
+      "negotiationStatus": "declined",
+      "chatMessages": [
+        {
+          "text": "К сожалению, на данный момент мы не готовы продолжить диалог.",
+          "isMine": false,
+          "kind": "decline",
+          "at": "2026-06-08T16:00:00.000Z"
+        }
+      ],
+      "chatSummary": {
+        "lastKind": "decline",
+        "needsReply": false
+      }
+    }
+  }
+]

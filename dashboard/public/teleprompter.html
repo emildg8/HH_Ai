@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>HH Ai — суфлёр</title>
+    <link rel="stylesheet" href="/teleprompter-shared.css" />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="tp-shell" id="tp-shell">
+      <div class="tp-toolbar">
+        <button type="button" id="tp-play" title="Пауза / плей">⏸</button>
+        <button type="button" id="tp-hide" title="Скрыть текст (H)">Скрыть</button>
+        <button type="button" id="tp-top" title="В начало">↑</button>
+        <label style="font-size:0.7rem;color:#ccc;display:flex;align-items:center;gap:0.25rem">
+          α <input type="range" id="tp-opacity" min="40" max="100" value="88" title="Прозрачность" />
+        </label>
+        <span class="tp-meta" id="tp-meta">ожидание…</span>
+      </div>
+      <div class="tp-scroll" id="tp-scroll" aria-live="polite" aria-atomic="true">
+        <div id="tp-text">Загрузка суфлёра…</div>
+      </div>
+    </div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const isOverlay = params.get('overlay') === '1';
+      if (isOverlay) document.body.classList.add('overlay');
+
+      const shellEl = document.getElementById('tp-shell');
+      const scrollEl = document.getElementById('tp-scroll');
+      const textEl = document.getElementById('tp-text');
+      const metaEl = document.getElementById('tp-meta');
+      const opacityEl = document.getElementById('tp-opacity');
+      let timer = null;
+      let paused = false;
+      let lastRevision = 0;
+      let lastText = '';
+      let speed = 28;
+      let connected = false;
+
+      function formatTpTime(sec) {
+        const s = Math.max(0, Math.floor(sec));
+        const m = Math.floor(s / 60);
+        const r = s % 60;
+        return `${m}:${String(r).padStart(2, '0')}`;
+      }
+
+      function applyOpacity(pct) {
+        const v = pct / 100;
+        shellEl.style.opacity = String(v);
+      }
+
+      function updateMeta(st) {
+        if (st.replayMeta) {
+          const rm = st.replayMeta;
+          const parts = [];
+          if (rm.timeSec != null) parts.push(formatTpTime(rm.timeSec));
+          if (rm.promptIndex >= 0 && rm.promptTotal) {
+            parts.push(`ответ ${rm.promptIndex + 1}/${rm.promptTotal}`);
+          }
+          if (parts.length) {
+            metaEl.textContent = parts.join(' · ');
+            return;
+          }
+        }
+        metaEl.textContent = [st.title, st.presetLabel || st.preset, st.sourceLabel || st.source]
+          .filter(Boolean)
+          .join(' · ') || 'суфлёр';
+      }
+
+      function applyState(st) {
+        if (!st) return;
+        if (st.revision && st.revision === lastRevision) return;
+        lastRevision = st.revision || Date.now();
+        connected = true;
+
+        const nextText = (st.text || '').trim();
+        const textChanged = nextText !== lastText;
+        lastText = nextText;
+
+        if (nextText) {
+          textEl.textContent = nextText;
+          textEl.classList.remove('tp-empty');
+        } else if (st.mode === 'replay' || st.preset === 'replay') {
+          textEl.textContent = '…';
+          textEl.classList.add('tp-empty');
+        } else {
+          textEl.textContent = '';
+          textEl.classList.remove('tp-empty');
+        }
+
+        if (textChanged) {
+          textEl.classList.remove('tp-flash');
+          void textEl.offsetWidth;
+          textEl.classList.add('tp-flash');
+        }
+
+        textEl.style.fontSize = (st.fontSize || st.liveFontSize || 22) + 'px';
+        const liveMode = st.mode === 'live' || st.preset === 'live' || st.autoScroll === false;
+        const replayMode = st.mode === 'replay' || st.preset === 'replay';
+        const maxLines = st.liveBarMaxLines ?? (liveMode || replayMode ? 2 : 0);
+        const compact = st.compact || maxLines > 0;
+        if (compact && maxLines > 0) {
+          scrollEl.classList.add('compact');
+          textEl.classList.add('compact');
+          textEl.style.webkitLineClamp = String(maxLines);
+        } else {
+          scrollEl.classList.remove('compact');
+          textEl.classList.remove('compact');
+          textEl.style.webkitLineClamp = '';
+        }
+        speed = st.scrollSpeed || 28;
+        opacityEl.value = Math.round((st.opacity ?? 0.88) * 100);
+        applyOpacity(opacityEl.value);
+        updateMeta(st);
+
+        paused = !!st.paused;
+        document.getElementById('tp-play').textContent = paused ? '▶' : '⏸';
+        if (liveMode || replayMode) {
+          stopScroll();
+          if (textChanged) scrollEl.scrollTop = 0;
+        } else if (!paused) {
+          startScroll();
+        }
+      }
+
+      async function poll() {
+        try {
+          const r = await fetch('/api/interview-prompt/state?channel=live', { cache: 'no-store' });
+          if (r.ok) {
+            const data = await r.json();
+            applyState(data.state);
+          } else if (!connected) {
+            metaEl.textContent = 'нет связи с дашбордом';
+          }
+        } catch {
+          if (!connected) metaEl.textContent = 'нет связи с дашбордом';
+        }
+      }
+
+      function startScroll() {
+        stopScroll();
+        if (paused) return;
+        timer = setInterval(() => {
+          scrollEl.scrollTop += 1;
+          if (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 2) scrollEl.scrollTop = 0;
+        }, Math.max(12, 120 - speed));
+      }
+
+      function stopScroll() {
+        if (timer) clearInterval(timer);
+        timer = null;
+      }
+
+      document.getElementById('tp-play').addEventListener('click', () => {
+        paused = !paused;
+        document.getElementById('tp-play').textContent = paused ? '▶' : '⏸';
+        if (paused) stopScroll();
+        else startScroll();
+      });
+      document.getElementById('tp-hide').addEventListener('click', () => {
+        scrollEl.classList.toggle('hidden');
+      });
+      document.getElementById('tp-top').addEventListener('click', () => {
+        scrollEl.scrollTop = 0;
+      });
+      opacityEl.addEventListener('input', () => {
+        applyOpacity(opacityEl.value);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === ' ') {
+          e.preventDefault();
+          document.getElementById('tp-play').click();
+        }
+        if (e.key === 'h' || e.key === 'H') document.getElementById('tp-hide').click();
+      });
+
+      poll();
+      setInterval(poll, 400);
+      startScroll();
+    </script>
+  </body>
+</html>

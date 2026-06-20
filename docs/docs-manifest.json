@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "documents": [
+    { "path": "docs/README.md", "status": "canonical", "audience": "all" },
+    { "path": "docs/QUICKSTART.md", "status": "canonical", "audience": "all" },
+    { "path": "docs/FIRST-RUN.md", "status": "canonical", "audience": "all" },
+    { "path": "docs/PUBLIC-RELEASE.md", "status": "canonical", "audience": "recipient" },
+    { "path": "docs/BETA-TESTER-GUIDE.md", "status": "canonical", "audience": "beta" },
+    { "path": "docs/CONFIG-GUIDE.md", "status": "canonical", "audience": "all" },
+    { "path": "docs/OPS-RHYTHM.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/CONVERSION-GLUE.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/APPLY-GATE.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/OBSERVABILITY.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/HANDOFF-TEMPLATE.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/PRODUCT-STANDARDS.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/PRODUCT-ANATOMY.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/HYGIENE-BACKLOG.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/SETTINGS-MODULE.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/DASHBOARD-DESIGN-TOKENS.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/HIRING-OPERATIONS.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/HIRING-HR-PLAYBOOK.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/MARKET-RU-HR-QA.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/SOURCE-EXPERTISE.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/INGEST-IMPROVEMENTS.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/HANDOFF-RESUME-CRUD.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/HANDOFF-2026-06-19.md", "status": "canonical", "audience": "maintainer" },
+    { "path": "docs/HANDOFF-2026-06-18.md", "status": "archive", "audience": "maintainer" },
+    { "path": "docs/DASHBOARD-UX-PLAN.md", "status": "archive", "audience": "maintainer" },
+    { "path": "docs/DEMO-COPILOT-5MIN.md", "status": "canonical", "audience": "maintainer" }
+  ]
+}

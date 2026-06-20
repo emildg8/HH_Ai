@@ -39,6 +39,7 @@ const GET_APIS = [
   '/api/cover-letter/stats?batchScope=noQuestionnaire&queueStatus=pending&minScore=0',
   '/api/batch-precheck?batchScope=noQuestionnaire&queueStatus=pending&minScore=0&maxScore=0',
   '/api/market-skills',
+  '/api/interview-prompt/state',
 ];
 
 const REQUIRED_IDS = [
@@ -50,11 +51,18 @@ const REQUIRED_IDS = [
   'intelligence-digest-modal',
   'market-skills-panel-root',
   'btn-market-skills-refresh',
+  'btn-open-interview-hub',
+  'interview-prompt-modal',
+  'interview-prompt-text',
   'sources-top-tier-list',
   'btn-batch-auto',
   'btn-batch-manual',
   'btn-open-settings',
   'btn-open-service',
+  'resume-raise-auto-enabled',
+  'chat-follow-up-auto-enabled',
+  'settings-chat-follow-up-auto',
+  'settings-side-jobs-card',
   'filter-search',
   'filter-reset',
   'score-threshold-input',
@@ -138,6 +146,15 @@ async function main() {
   });
 
   await gotoDashboardReady(page, BASE);
+
+  const followUpDefaultOff = await page.evaluate(async () => {
+    const r = await fetch('/api/chat-follow-up-schedule');
+    const j = await r.json();
+    return j.enabled === false;
+  });
+  if (!followUpDefaultOff) {
+    errors.push('GET /api/chat-follow-up-schedule: enabled должен быть false по умолчанию');
+  }
 
   const dockSectionsOk = await page.evaluate(() => {
     const routine = document.getElementById('btn-daily-routine');
@@ -313,6 +330,11 @@ async function main() {
     await page.waitForTimeout(120);
   }
 
+  await page.locator('#sidebar-panel-toggles-wrap').evaluate((el) => {
+    if (el instanceof HTMLDetailsElement) el.open = true;
+  });
+
+  await page.locator('#btn-reset-panel-order').scrollIntoViewIfNeeded();
   await page.locator('#btn-reset-panel-order').click();
   await page.waitForTimeout(150);
 
@@ -486,12 +508,12 @@ async function main() {
   await page.goto(`${BASE}/?settings=letters&focus=fp`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.waitForSelector('#settings-modal:not([hidden])', { timeout: 12_000 });
   const deepLinkOk = await page.evaluate(() => {
-    const panel = document.getElementById('settings-panel-apply');
+    const panel = document.getElementById('settings-panel-letters');
     const fp = document.getElementById('batch-false-positive-max');
     const url = new URL(location.href);
     return Boolean(panel && !panel.hidden && fp && !url.searchParams.has('settings'));
   });
-  if (!deepLinkOk) errors.push('settings deep link: apply+fp или очистка URL');
+  if (!deepLinkOk) errors.push('settings deep link: letters+fp или очистка URL');
   await page.locator('#settings-modal .modal-close--settings').click();
   await waitModalHidden(page, 'settings-modal');
 

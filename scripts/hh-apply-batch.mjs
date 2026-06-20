@@ -57,17 +57,19 @@ import {
   formatApplySkipReasonFromText,
 } from '../lib/batch-skip-reason.mjs';
 import { pruneRespondedFromActiveQueue, pruneVacancyFromActiveQueue } from '../lib/queue-prune.mjs';
-import { assessVacancyForApply } from '../lib/vacancy-targeting.mjs';
-import { assessApplyRedFlags } from '../lib/apply-red-flags.mjs';
+import { decideApplyGate } from '../lib/apply-gate.mjs';
+import { mapGateVerdictToBatchSkip } from '../lib/batch-gate-skip.mjs';
+import { recordKnowledgeApplyAttempt } from '../lib/knowledge-apply-record.mjs';
 import { runBatchPreflight, repairProfileIfNeeded } from '../lib/batch-preflight.mjs';
 import { writeBatchRunReport } from '../lib/batch-run-report.mjs';
 import { pickBatchPrefsSnapshot } from '../lib/batch-prefs-diff.mjs';
 import { logBatchSkipReason } from '../lib/batch-skip-reason.mjs';
-import { assessLetterQuality } from '../lib/letter-quality.mjs';
 import { prepareCoverLetterForSend } from '../lib/cover-letter-prepare.mjs';
 import { autoPrepareLettersForBatch } from '../lib/batch-auto-prepare-letters.mjs';
 import { appendLetterMetric } from '../lib/letter-metrics.mjs';
 import { writeLetterQualityReport } from '../lib/batch-letter-quality-report.mjs';
+import { emitConversionEvent } from '../lib/conversion-glue.mjs';
+import { newCorrelationId } from '../lib/observability.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BATCH_LOCK_FILE = path.join(DATA_DIR, 'apply-batch.lock');
@@ -108,6 +110,7 @@ function parseArgs() {
   let status = 'pending';
   let resume = false;
   let batchScope = 'noQuestionnaire';
+  let strictOps = false;
   for (const a of process.argv.slice(2)) {
     if (a.startsWith('--min-score=')) minScore = Math.max(0, Number(a.slice(12)) || 0);
     if (a.startsWith('--max-score=')) maxScore = Math.max(0, Number(a.slice(12)) || 0);
@@ -118,8 +121,9 @@ function parseArgs() {
     if (a.startsWith('--status=')) status = a.slice(9).trim() || 'pending';
     if (a === '--resume') resume = true;
     if (a.startsWith('--batch-scope=')) batchScope = normalizeBatchScope(a.slice(14));
+    if (a === '--strict-ops') strictOps = true;
   }
-  return { minScore, maxScore, limit, dryRun, usePoolLetters, tailorResume, status, resume, batchScope };
+  return { minScore, maxScore, limit, dryRun, usePoolLetters, tailorResume, status, resume, batchScope, strictOps };
 }
 
 function scoreOf(rec) {
@@ -235,10 +239,23 @@ function startApplyProgressSync(batchProgress, stepIndex, planned, rec, baseStat
 
 async function main() {
   tryAcquireBatchLock();
-  let { minScore, maxScore, limit, dryRun, usePoolLetters, tailorResume, status, resume, batchScope } =
+  let { minScore, maxScore, limit, dryRun, usePoolLetters, tailorResume, status, resume, batchScope, strictOps } =
     parseArgs();
   const batchSizeCap = getDashboardBatchSizeCap();
   limit = Math.min(batchSizeCap, Math.max(1, limit));
+
+  if (strictOps && !dryRun) {
+    const { spawnSync } = await import('child_process');
+    const check = spawnSync(process.execPath, ['scripts/ops-readiness-check.mjs'], {
+      cwd: ROOT,
+      stdio: 'inherit',
+    });
+    if (check.status !== 0) {
+      console.error('[batch] --strict-ops: операционная готовность не пройдена');
+      releaseBatchLock();
+      process.exit(check.status || 1);
+    }
+  }
 
   if (!resume) clearBatchResumeState();
 
@@ -358,6 +375,18 @@ async function main() {
   let stopReason = null;
   let offTargetSkipped = 0;
   const startedAt = new Date().toISOString();
+  const batchRunId = `batch-${startedAt.replace(/[-:T.Z]/g, '').slice(0, 14)}`;
+  emitConversionEvent(
+    'apply.batch.started',
+    {
+      planned: limit,
+      candidates: candidates.length,
+      batchScope,
+      dryRun,
+      resume,
+    },
+    { batchRunId, correlationId: batchRunId, phase: 'apply.started' }
+  );
   const resumeUsage = {};
   const skipReasons = {};
   /** @type {Array<{ title?: string, status: string, resumeRole?: string, reason?: string }>} */
@@ -367,6 +396,23 @@ async function main() {
     skipReasons[key] = (skipReasons[key] || 0) + 1;
   };
   const skipOffTarget = String(process.env.HH_BATCH_SKIP_OFF_TARGET ?? '1').trim() !== '0';
+
+  const recordKnowledgeAttempt = (attemptId, rec, outcome, error, gate, letterText) => {
+    try {
+      recordKnowledgeApplyAttempt({
+        prefs,
+        attemptId,
+        rec,
+        gateVerdict: gate,
+        outcome,
+        batchRunId,
+        letterText,
+        error,
+      });
+    } catch (e) {
+      logBatch(`[knowledge] запись пропущена: ${e?.message || e}`);
+    }
+  };
 
   try {
     for (const rec of candidates) {
@@ -398,88 +444,6 @@ async function main() {
       const stepNum = done + failed + skipped + 1;
       const stepTitle = (rec.title || rec.id || '').slice(0, 60);
 
-      if (skipOffTarget && !dryRun) {
-        const assessment = assessVacancyForApply(rec, {
-          userApproved: status === 'approved',
-          strictRemoteWork,
-          prefs,
-        });
-        if (!assessment.eligible) {
-          skipped++;
-          offTargetSkipped++;
-          processedIds.add(rec.id);
-          const skipKey =
-            assessment.category === 'work-format'
-              ? 'формат работы'
-              : assessment.category === 'off-target-blue-collar'
-                ? 'рабочие специальности'
-                : assessment.category === 'off-target-sales'
-                  ? 'продажи/presale'
-                  : assessment.category === 'off-target-network'
-                    ? 'сетевые/телеком'
-                    : assessment.category === 'off-target-industrial'
-                      ? 'промышленные/полевые'
-                      : assessment.category === 'off-target-l1'
-                        ? 'L1 поддержка'
-                        : assessment.category === 'off-target-no-it-profile'
-                          ? 'нет IT-профиля'
-                  : assessment.category === 'off-target-promo'
-                    ? 'промо/служебные'
-                          : 'нецелевая';
-          bumpSkip(skipKey);
-          logBatchSkipReason(assessment.skipReason || 'нецелевая вакансия');
-          const skipTag =
-            skipKey === 'формат работы'
-              ? 'FORMAT'
-              : skipKey === 'рабочие специальности'
-                ? 'BLUE-COLLAR'
-                : skipKey === 'продажи/presale'
-                  ? 'SALES'
-                  : skipKey === 'сетевые/телеком'
-                    ? 'NETWORK'
-                    : skipKey === 'промышленные/полевые'
-                      ? 'INDUSTRIAL'
-                      : skipKey === 'L1 поддержка'
-                        ? 'L1'
-                        : skipKey === 'нет IT-профиля'
-                          ? 'NO-IT'
-                          : skipKey === 'промо/служебные'
-                            ? 'PROMO'
-                : 'OFF-TARGET';
-          logBatch(`${skipTag} ${stepNum}/${planned}: ${stepTitle}`);
-          reportItems.push({
-            title: stepTitle,
-            status:
-              assessment.category === 'work-format'
-                ? 'work-format'
-                : assessment.category === 'off-target-blue-collar'
-                  ? 'off-target-blue-collar'
-                  : 'off-target',
-            resumeRole: assessment.resumeRole,
-            reason: assessment.skipReason,
-          });
-          syncBatchCounters({ done, failed, skipped, letterIdx, processedIds: [...processedIds] });
-          batchProgress.step(done, `Пропуск (не IT) ${stepNum}/${planned}`, { done, failed, skipped });
-          continue;
-        }
-      }
-
-      if (!dryRun && String(process.env.HH_BATCH_RED_FLAGS ?? '1').trim() !== '0') {
-        const red = await assessApplyRedFlags(rec, { allRecords: candidates, prefs });
-        if (red.blocked) {
-          skipped++;
-          processedIds.add(rec.id);
-          const msg = red.flags.map((f) => f.message).join('; ');
-          bumpSkip('стоп-сигнал');
-          logBatchSkipReason(msg);
-          logBatch(`RED-FLAG ${stepNum}/${planned}: ${stepTitle}`);
-          reportItems.push({ title: stepTitle, status: 'red-flag', reason: msg });
-          syncBatchCounters({ done, failed, skipped, letterIdx, processedIds: [...processedIds] });
-          batchProgress.step(done, `Пропуск (стоп) ${stepNum}/${planned}`, { done, failed, skipped });
-          continue;
-        }
-      }
-
       let letter = String(rec.coverLetter?.approvedText || '').trim();
       if (!letter && usePoolLetters) {
         letter = pickCoverLetterForVacancy(rec, letterIdx++);
@@ -510,6 +474,8 @@ async function main() {
         continue;
       }
 
+      /** @type {Awaited<ReturnType<typeof decideApplyGate>> | null} */
+      let gateVerdict = null;
       if (!dryRun) {
         const plannedRole = assessmentResumeRole(rec, status);
         const preparedLetter = prepareCoverLetterForSend(rec, letter, plannedRole, prefs);
@@ -525,24 +491,45 @@ async function main() {
         } else {
           letter = preparedLetter;
         }
-        const letterCheck = assessLetterQuality(rec, letter, plannedRole, prefs);
-        if (!letterCheck.pass) {
+
+        const skipRedFlags = String(process.env.HH_BATCH_RED_FLAGS ?? '1').trim() === '0';
+        const recForGate = {
+          ...rec,
+          coverLetter: { ...(rec.coverLetter || {}), approvedText: letter },
+        };
+        gateVerdict = await decideApplyGate(recForGate, {
+          prefs,
+          allRecords: candidates,
+          userApproved: status === 'approved',
+          strictRemoteWork,
+          requireLetter: true,
+          relaxedTargeting: !skipOffTarget,
+          skipRedFlags,
+        });
+        if (!gateVerdict.pass) {
+          const mapped = mapGateVerdictToBatchSkip(gateVerdict);
           skipped++;
+          if (mapped?.key === 'нецелевая' || mapped?.status?.startsWith('off-target') || mapped?.status === 'work-format') {
+            offTargetSkipped++;
+          }
           processedIds.add(rec.id);
-          bumpSkip('качество письма');
-          logBatchSkipReason(letterCheck.reason || 'некачественное письмо');
-          appendLetterMetric('batch_skip_letter', {
-            vacancyId: rec.id,
-            title: stepTitle,
-            reason: letterCheck.reason,
-          });
-          logBatch(`LETTER ${stepNum}/${planned}: ${stepTitle}`);
+          bumpSkip(mapped?.key || 'gate');
+          logBatchSkipReason(mapped?.reason || gateVerdict.reasons?.[0] || gateVerdict.skipReason || '');
+          if (mapped?.status === 'letter-quality') {
+            appendLetterMetric('batch_skip_letter', {
+              vacancyId: rec.id,
+              title: stepTitle,
+              reason: mapped.reason,
+            });
+          }
+          logBatch(`${mapped?.tag || 'GATE'} ${stepNum}/${planned}: ${stepTitle}`);
           reportItems.push({
             id: rec.id,
             title: stepTitle,
-            status: 'letter-quality',
-            resumeRole: plannedRole,
-            reason: letterCheck.reason,
+            status: mapped?.status || 'gate-score',
+            resumeRole: gateVerdict.resumeRole,
+            reason: mapped?.reason,
+            gateScore: gateVerdict.gateScore,
           });
           syncBatchCounters({
             done,
@@ -551,7 +538,7 @@ async function main() {
             letterIdx,
             processedIds: [...processedIds],
           });
-          batchProgress.step(done, `Пропуск (письмо) ${stepNum}/${planned}`, { done, failed, skipped });
+          batchProgress.step(done, `Пропуск (gate) ${stepNum}/${planned}`, { done, failed, skipped });
           continue;
         }
       }
@@ -564,6 +551,20 @@ async function main() {
       });
       logBatch(`—— ${stepNum}/${planned} · ${scoreOf(rec)} б. · ${rec.title || rec.url}`);
 
+      const attemptId = newCorrelationId('attempt');
+      emitConversionEvent(
+        'apply.started',
+        { recordId: rec.id, title: stepTitle, stepNum, planned },
+        {
+          batchRunId,
+          attemptId,
+          correlationId: attemptId,
+          recordId: rec.id,
+          vacancyId: rec.vacancyId || rec.id,
+          phase: 'apply.started',
+        }
+      );
+
       let stopSync = null;
       try {
         stopSync = startApplyProgressSync(batchProgress, stepNum, planned, rec, {
@@ -573,6 +574,19 @@ async function main() {
         });
         const { exitCode, skipReason } = await runApplyForId(rec.id, { tailorResume, dryRun });
         if (exitCode === HH_APPLY_EXIT_ALREADY_RESPONDED) {
+          emitConversionEvent(
+            'apply.finished',
+            { recordId: rec.id, outcome: 'skipped', reason: skipReason || 'already_responded' },
+            { batchRunId, attemptId, correlationId: attemptId, recordId: rec.id, phase: 'apply.finished' }
+          );
+          recordKnowledgeAttempt(
+            attemptId,
+            rec,
+            'already_responded',
+            skipReason,
+            gateVerdict,
+            letter
+          );
           skipped++;
           pruneVacancyFromActiveQueue(rec.id);
           logBatch(
@@ -583,6 +597,12 @@ async function main() {
           continue;
         }
         if (exitCode === HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED) {
+          emitConversionEvent(
+            'apply.finished',
+            { recordId: rec.id, outcome: 'questionnaire_deferred' },
+            { batchRunId, attemptId, correlationId: attemptId, recordId: rec.id, phase: 'apply.finished' }
+          );
+          recordKnowledgeAttempt(attemptId, rec, 'questionnaire_deferred', null, gateVerdict, letter);
           skipped++;
           logBatch(
             `Анкета ${stepNum}/${planned}: «${stepTitle}» — отклик не отправлен, карточка в разделе «Анкета»`
@@ -597,6 +617,12 @@ async function main() {
         recordApplyLaunch();
         done++;
         processedIds.add(rec.id);
+        emitConversionEvent(
+          'apply.finished',
+          { recordId: rec.id, outcome: 'ok' },
+          { batchRunId, attemptId, correlationId: attemptId, recordId: rec.id, phase: 'apply.finished' }
+        );
+        recordKnowledgeAttempt(attemptId, rec, 'ok', null, gateVerdict, letter);
         const plannedRole = assessmentResumeRole(rec, status);
         resumeUsage[plannedRole] = (resumeUsage[plannedRole] || 0) + 1;
         const afterRec = getVacancyRecord(rec.id);
@@ -615,6 +641,23 @@ async function main() {
         batchProgress.step(done, `Готово ${done}/${planned}`, { done, failed, skipped });
       } catch (e) {
         processedIds.add(rec.id);
+        emitConversionEvent(
+          'apply.finished',
+          {
+            recordId: rec.id,
+            outcome: isBatchRecoverableApplyError(e.message) ? 'skipped' : 'failed',
+            error: String(e.message || e).slice(0, 500),
+          },
+          { batchRunId, attemptId, correlationId: attemptId, recordId: rec.id, phase: 'apply.finished' }
+        );
+        recordKnowledgeAttempt(
+          attemptId,
+          rec,
+          isBatchRecoverableApplyError(e.message) ? 'skipped' : 'failed',
+          e?.message || e,
+          gateVerdict,
+          letter
+        );
         if (e.message === 'BATCH_STOPPED' || shouldStopBatch()) {
           stopReason = 'stop';
           logBatch('Прервано пользователем во время отклика');
@@ -707,6 +750,18 @@ async function main() {
     };
     writeBatchRunReport(batchReportPayload);
     writeLetterQualityReport(batchReportPayload);
+    emitConversionEvent(
+      'apply.batch.finished',
+      {
+        planned,
+        done,
+        failed,
+        skipped,
+        stopReason,
+        offTargetSkipped,
+      },
+      { batchRunId, correlationId: batchRunId, phase: 'apply.finished' }
+    );
     try {
       const { notifyBatchComplete } = await import('../lib/batch-notify.mjs');
       await notifyBatchComplete({
