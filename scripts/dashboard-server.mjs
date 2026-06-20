@@ -220,6 +220,7 @@ import {
   generateCoverLetterVariants,
   normalizeVariants,
 } from '../lib/cover-letter-openrouter.mjs';
+import { loadEmployerRagBlockForRecord } from '../lib/employer-rag.mjs';
 import { appendCoverLetterUserEditSnippet } from '../lib/cover-letter-user-edits.mjs';
 import { computeLetterEditMetrics } from '../lib/cover-letter-metrics.mjs';
 import { fetchVacancyTextFromHh } from '../lib/refresh-vacancy-from-hh.mjs';
@@ -2552,6 +2553,28 @@ const server = http.createServer(async (req, res) => {
         mode === 'fixable'
           ? `Перегенерация fixable-писем (до ${limit}) запущена — см. data/cover-letter-regen.log`
           : `Перегенерация слабых писем (до ${limit}) запущена — см. data/cover-letter-regen.log`,
+    });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/cover-letter/employer-context') {
+    const id = url.searchParams.get('id');
+    if (!id) return sendJson(res, 400, { error: 'Нужен id' });
+    const rec = getVacancyRecord(id);
+    if (!rec) return sendJson(res, 404, { error: 'Запись не найдена' });
+    let prefs = {};
+    try {
+      prefs = loadPreferences();
+    } catch {
+      prefs = {};
+    }
+    const ai = prefs?.applyIntelligence || {};
+    const enabled = ai.employerRagEnabled !== false && ai.knowledgeStoreEnabled !== false;
+    const block = enabled ? String(loadEmployerRagBlockForRecord(rec, { prefs }) || '').trim() : '';
+    return sendJson(res, 200, {
+      ok: true,
+      enabled,
+      company: rec.company || '',
+      block,
     });
   }
 

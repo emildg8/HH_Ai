@@ -323,6 +323,36 @@ kbd.ds-kbd {
   color: var(--text-muted);
 }
 
+.employer-rag-mount:empty {
+  display: none;
+}
+
+.employer-rag-preview {
+  margin: 0 0 0.65rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--accent, #58a6ff) 22%, transparent);
+  border-radius: var(--radius-sm, 6px);
+  background: color-mix(in srgb, var(--accent, #58a6ff) 6%, transparent);
+}
+
+.employer-rag-preview summary {
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent, #58a6ff);
+  user-select: none;
+}
+
+.employer-rag-preview__text {
+  margin: 0.45rem 0 0;
+  padding: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 .btn-hh-invited:not([hidden]) {
   color: var(--ds-good);
   border-color: color-mix(in srgb, var(--ds-good) 35%, transparent);

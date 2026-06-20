@@ -1547,6 +1547,54 @@ async function requestCoverLetterEvaluate(id, text) {
   });
 }
 
+/**
+ * Read-only превью employer-rag в модалке письма.
+ * @param {HTMLElement} mount
+ * @param {object} item
+ */
+async function mountEmployerRagPreview(mount, item) {
+  if (!mount || !item?.id) return;
+  mount.innerHTML = '';
+  if (!item.company && !item.employerIntel) return;
+
+  const details = document.createElement('details');
+  details.className = 'employer-rag-preview';
+  details.hidden = true;
+
+  const summary = document.createElement('summary');
+  summary.textContent = 'Контекст работодателя для LLM';
+  details.appendChild(summary);
+
+  const pre = document.createElement('pre');
+  pre.className = 'employer-rag-preview__text';
+  pre.textContent = 'Загрузка…';
+  details.appendChild(pre);
+  mount.appendChild(details);
+
+  try {
+    const res = await api(
+      `/api/cover-letter/employer-context?id=${encodeURIComponent(item.id)}`
+    );
+    if (!res.enabled || !res.block) {
+      mount.innerHTML = '';
+      return;
+    }
+    pre.textContent = res.block;
+    details.hidden = false;
+  } catch {
+    const intel = item.employerIntel;
+    if (!intel?.applied) {
+      mount.innerHTML = '';
+      return;
+    }
+    pre.textContent = [
+      `РАБОТОДАТЕЛЬ «${intel.company || item.company}» (HR score ${intel.score}/100):`,
+      `История: откликов ${intel.applied}, invite ${intel.inviteRatePct}%, ghost ${intel.ghost}.`,
+    ].join('\n');
+    details.hidden = false;
+  }
+}
+
 async function requestCoverLetterRegenerateWeak(opts = {}) {
   return api('/api/cover-letter/regenerate-weak', {
     method: 'POST',
@@ -2926,6 +2974,11 @@ function openDraftModal(item) {
   if (titleEl) titleEl.textContent = COPY.draftTitle || 'Черновик письма';
   vacEl.textContent = item.title || item.url || '';
   body.innerHTML = '';
+
+  const ragMount = document.createElement('div');
+  ragMount.className = 'employer-rag-mount';
+  body.appendChild(ragMount);
+  void mountEmployerRagPreview(ragMount, item);
 
   const raw = item.coverLetter?.variants || [];
   const variants = raw.length ? raw.map((s) => String(s)) : [];
