@@ -12,7 +12,8 @@
 | 02.07.2026 | I-track/hr-clips | **`HH_INTERVIEW_DIR=my`** при видео в `my/emil/Интервью` — fallback в `resolveInterviewDir()` | interview-hr-separation.mjs, interview-lane-dir.mjs |
 | 03.07.2026 | I-track/live-mock | **copilot-live-mock-infra-lane** pack: 10q devops/l2/tam · batch 10/10 · m3u 30 clips | COPILOT-LIVE-MOCK-INFRA-LANE.md, config/copilot-live-mock-infra-lane.json |
 | 03.07.2026 | apply/unify | **`finishRepeatApply`** на канон probe → `deliverCoverLetterPostApply` → assert (как repair) | hh-apply-chat-letter.mjs, cover-letter-deliver-truth.mjs |
-| 03.07.2026 | HT6.4/honesty | Auto-approve 10/10 **не ловит** ложные GitLab CI / Python SDET claims — ME ручной patch + regen; keyword_gap стоп = TRUE GAP, не false positive | candidate-skills-inventory.json, approve-letters-by-ids.mjs |
+| 03.07.2026 | HT6.4/harvest | **Manual QA Lead IBS** — harvest +1 qa-lead; precheck стоп Playwright (CV-only gap, JD без Playwright) — **не auto point apply**, score 38 | batch-precheck-latest, point-apply-gate |
+| 03.07.2026 | M0/approve | **`scanLetterInventoryHonesty`** в `approveLettersByIds` — блок me-honesty до approve | letter-inventory-honesty.mjs, test:letter-inventory-honesty |
 | 02.07.2026 | MC/GNIVC | После `devops:migrate-my-lanes` **ГНИВЦ-СПОТ** уехал в `my/emil/` — импортёр и migrate: repatriate в `my/anastasia/`; резолвер anastasia→root→emil | import-gnivc-knowledge-staging.mjs, devops-migrate-my-lanes.mjs |
 | 02.07.2026 | HT6.3/E2E | Offline E2E gate: snapshot vs draft qa-lead в `data-anastasia/`; **warn** employer header «Иннотех» на hh при NDA bullets — не fail | test-ht63-e2e-gate.mjs, ht63-e2e-gate-latest.json |
 | 02.07.2026 | MC/QA lane | `AGENT-DOMAIN-TRUTH` + rule: `:3850` → MULTI-PROFILE-INVARIANTS, не DevOps-советы | AGENT-DOMAIN-TRUTH.md, agent-domain-truth.mdc |

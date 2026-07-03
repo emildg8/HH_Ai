@@ -96,7 +96,13 @@
 2. Сверка ЗП на hh с runbook
 3. Обновить skill `hh-ru-apply-workflow` (chatik probe)
 
-### HT6.4 senior-qa (03.07 продолжение)
+### HT7.1 qa-lead harvest (03.07)
+
+- **Harvest +15** в очередь; **+1 qa-lead tier A:** `2c884c04` Manual QA Lead (IBS), vac `134809759`
+- Regen + approve + **ME honesty pass**
+- Precheck: стоп Playwright (CV-only gap; JD без Playwright) — **ME: не auto apply**, score 38
+- `hunt-tracks-qa.json`: qa-lead `auto_with_approval`, senior-qa `manual` (freeze auto)
+- Point apply dry-run: 1 кандидат, **0 ready** — ждёт `userApproved` + снятие стопа или ручной отклик
 
 - **4 письма approved** (letterScore10 10/10 auto-gate)
 - **ME regen + patch** 554b976c, f56b50db — убраны GitLab CI / Python SDET claims

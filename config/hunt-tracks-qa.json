@@ -1,0 +1,137 @@
+{
+  "meta": {
+    "version": 2,
+    "profile": "QA-лента",
+    "defaultActiveTracks": ["qa-lead", "senior-qa", "aqa-ai-assist"],
+    "note": "Одна очередь harvest; v2.1 — AQA с ИИ-инструментами в активной охоте (не SDET/C# в проде без кейса).",
+    "pointApplySequence": {
+      "autoOrder": ["qa-lead"],
+      "note": "HT7.1 qa-lead auto_with_approval; senior-qa manual (freeze auto, TRUE GAP стек)."
+    }
+  },
+  "tracks": {
+    "qa-lead": {
+      "id": "qa-lead",
+      "labelRu": "QA Lead / ведущий",
+      "labelShort": "Lead",
+      "roleTiers": ["R0"],
+      "resumeRoles": ["qa_lead"],
+      "resumeRoutingKey": "qa_lead",
+      "inventoryRoles": ["qa", "leadership", "integration", "api"],
+      "batch": {
+        "defaultIncluded": true,
+        "requiresApproval": false,
+        "sortBoost": 1
+      },
+      "pointApply": {
+        "mode": "auto_with_approval",
+        "phase": "HT7.1",
+        "requiresApproval": true
+      },
+      "classify": {
+        "useRoleTier": true,
+        "useResumeRole": true,
+        "titlePatterns": [
+          "qa\\s*lead",
+          "test\\s*lead",
+          "ведущ\\S*\\s+тестиров",
+          "head\\s+of\\s+qa",
+          "руководитель.*тестирован"
+        ]
+      }
+    },
+    "senior-qa": {
+      "id": "senior-qa",
+      "labelRu": "Senior QA / тестировщик-аналитик",
+      "labelShort": "Senior",
+      "roleTiers": ["R1"],
+      "resumeRoles": ["qa_senior"],
+      "resumeRoutingKey": "qa_senior",
+      "inventoryRoles": ["qa", "integration", "api", "sql"],
+      "batch": {
+        "defaultIncluded": true,
+        "requiresApproval": false,
+        "sortBoost": 0
+      },
+      "pointApply": {
+        "mode": "manual",
+        "phase": "HT6.4",
+        "note": "freeze auto — TRUE GAP SDET/DevOps стек; только ручной отклик с дашборда"
+      },
+      "classify": {
+        "useRoleTier": true,
+        "useResumeRole": false,
+        "titlePatterns": [
+          "senior\\s+qa",
+          "старш\\S*\\s+тестиров",
+          "инженер по качеству",
+          "quality engineer",
+          "тестировщик[-\\s]?аналитик"
+        ]
+      }
+    },
+    "aqa-ai-assist": {
+      "id": "aqa-ai-assist",
+      "labelRu": "AQA / automation с ИИ-инструментами",
+      "labelShort": "AQA+AI",
+      "roleTiers": ["R1"],
+      "resumeRoles": ["qa_aqa"],
+      "resumeRoutingKey": "aqa_ai_assist",
+      "inventoryRoles": ["qa", "automation", "api", "integration"],
+      "batch": {
+        "defaultIncluded": true,
+        "requiresApproval": false,
+        "sortBoost": 0
+      },
+      "classify": {
+        "useRoleTier": true,
+        "useResumeRole": true,
+        "titlePatterns": [
+          "\\baqa\\b",
+          "automation\\s+qa",
+          "автоматизатор.*тестирован",
+          "автоматизированн.*тестирован",
+          "api\\s+test",
+          "engineer in test",
+          "sdet"
+        ]
+      },
+      "framingNote": "Автоматизация через ИИ-инструменты (Cursor/LLM/copilot) где разрешено; без выдуманного C#/Java framework в проде."
+    },
+    "manual-qa": {
+      "id": "manual-qa",
+      "labelRu": "Manual QA / API",
+      "labelShort": "Manual",
+      "roleTiers": ["R2"],
+      "resumeRoles": ["qa_manual"],
+      "resumeRoutingKey": "qa_manual",
+      "inventoryRoles": ["qa", "api", "sql"],
+      "batch": {
+        "defaultIncluded": false,
+        "requiresApproval": true,
+        "prefGate": "batchAllowRoleTierR2",
+        "sortBoost": -2
+      },
+      "classify": {
+        "useRoleTier": true,
+        "useResumeRole": true,
+        "titlePatterns": [
+          "manual\\s+qa",
+          "функциональн\\S*\\s+тестиров",
+          "mobile\\s+qa"
+        ]
+      }
+    }
+  },
+  "resolveOrder": ["qa-lead", "senior-qa", "aqa-ai-assist", "manual-qa"],
+  "resolveRules": {
+    "preferRoleTierOverResumeRole": true,
+    "qaLeadBeforeSeniorWhenBothR0": true
+  },
+  "changelog": [
+    {
+      "date": "2026-06-30",
+      "note": "v2.1: aqa-ai-assist активен; manual-qa approval-only; SDET titles → AQA+AI framing"
+    }
+  ]
+}
