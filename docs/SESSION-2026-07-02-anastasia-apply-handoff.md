@@ -96,9 +96,13 @@
 2. Сверка ЗП на hh с runbook
 3. Обновить skill `hh-ru-apply-workflow` (chatik probe)
 
-### P3 — расширение профиля
+### HT6.4 senior-qa (03.07 продолжение)
 
-Второе резюме qa-track на hh (senior-qa / aqa) — отдельная сессия HT6.x.
+- **4 письма approved** (letterScore10 10/10 auto-gate)
+- **ME regen + patch** 554b976c, f56b50db — убраны GitLab CI / Python SDET claims
+- **Precheck:** 0 ready — TRUE GAP стек (Docker/K8s/GitLab CI) vs inventory; **не auto apply**
+- **qa-lead пул:** пуст (Индид responded, freeze)
+- **Вердикт ME:** senior-qa tier A — ждать harvest или ручной `userApproved` на 48f582c1 (ТАУ) после согласования
 
 ---
 

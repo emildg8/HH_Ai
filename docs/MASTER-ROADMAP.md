@@ -27,7 +27,7 @@
 | **Next step (H)** | **HT.7.3** ✅ (tam/l2l3 auto+approval, Trinity TAM apply+chat fix 02.07) · **harvest infra tier A + regen** · **nudge ЦФТ 04.07** · point apply 2–5/день `--tracks=devops,infra` · [`SESSION-2026-07-02-ht73-tam-trinity-chat.md`](SESSION-2026-07-02-ht73-tam-trinity-chat.md) |
 | **H-TRACKS** | **HT.6** ✅ · **HT.7.1** ✅ · **HT.7.2** ✅ infra pilot · **HT.7.3** ✅ l2l3/tam auto+approval |
 | **Next step (I)** | **I-L3 live re-check** на `hr-only-tech-only` после P0 gate ✅ · чеклист [`DEMO-COPILOT-L3-RECHECK.md`](DEMO-COPILOT-L3-RECHECK.md) · handoff [`SESSION-2026-07-02-I-track-close.md`](SESSION-2026-07-02-I-track-close.md) · `npm run test:copilot` ✅ 02.07 |
-| **Next step (MC QA)** | **HT6.3** verify-ok · **HT7.1** Индид responded (freeze) · **HT6.4** senior-qa regen 4/4 DS Lab 03.07 · precheck 0 ready (стоп стек) · [`SESSION-2026-07-02-anastasia-apply-handoff.md`](SESSION-2026-07-02-anastasia-apply-handoff.md) · `:3850` |
+| **Next step (MC QA)** | **HT6.4** senior-qa 4 approved · ME regen 2 (честность) · precheck 0 ready (TRUE GAP стек) · **Индид freeze** · qa-lead пул пуст · [`SESSION-2026-07-02-anastasia-apply-handoff.md`](SESSION-2026-07-02-anastasia-apply-handoff.md) · `:3850` |
 | **Профиль охоты** | **инфра-лента** — параллельные **маршруты** DevOps/Infra/L2/TAM ([`HUNT-TRACKS-ROADMAP.md`](HUNT-TRACKS-ROADMAP.md)); R-лестница R0–R2; **без отдельного harvest на трек** |
 
 **Фраза агенту (H-track):** Point apply **2–5/день** при ready · `--tracks=devops,infra` · автописьма · nudge ЦФТ **04.07** · [`H-PROFILE-ROADMAP.md`](H-PROFILE-ROADMAP.md). **I-track:** [`COPILOT-ROADMAP.md`](COPILOT-ROADMAP.md).
