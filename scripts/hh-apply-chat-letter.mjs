@@ -33,11 +33,17 @@ import { getVacancyRecord, updateVacancyRecord } from '../lib/store.mjs';
 import { vacancyIdFromUrl } from '../lib/vacancy-parse.mjs';
 import { betweenMajorSteps, isFastMode } from '../lib/hh-human-delay.mjs';
 import {
+  deliverCoverLetterPostApply,
   openEmployerChatAfterResponse,
   sendLetterInChat,
   sendLetterOnVacancyCorrespondence,
   verifyLetterVisibleInChat,
 } from '../lib/hh-chat-selectors.mjs';
+import {
+  probeChatikBeforeLetterRepair,
+  assertLetterDeliveredOnHh,
+  resolveLetterDeliveredTruth,
+} from '../lib/cover-letter-deliver-truth.mjs';
 import { logCoverLetterPrepared, logCoverLetterOutcome } from '../lib/cover-letter-apply-log.mjs';
 import { verifyCoverLetterInForm } from '../lib/hh-response-selectors.mjs';
 import {
@@ -82,6 +88,7 @@ import {
   detectHhVacancySiteState,
   hhSiteStateSkipReason,
 } from '../lib/hh-vacancy-response-state.mjs';
+import { computeModalWallMs, resolveLetterDeliveryOutcome } from '../lib/apply-outcome.mjs';
 import { pruneVacancyFromActiveQueue } from '../lib/queue-prune.mjs';
 import {
   collectBestQuestionnaire,
@@ -90,6 +97,7 @@ import {
 import {
   HH_APPLY_EXIT_ALREADY_RESPONDED,
   HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED,
+  HH_APPLY_EXIT_LETTER_NOT_DELIVERED,
 } from '../lib/hh-apply-exit-codes.mjs';
 import { logBatchSkipReason, formatApplySkipReasonFromText } from '../lib/batch-skip-reason.mjs';
 
@@ -129,25 +137,253 @@ async function syncHhSiteStateFromPage(page, rec) {
   const prev = getVacancyRecord(rec.id)?.hhApply || rec.hhApply || {};
   const hhApply = buildHhApplySiteStatePatch(prev, det);
   updateVacancyRecord(rec.id, { hhApply });
+  const src = det.source ? ` (source=${det.source})` : '';
+  if (det.state && det.state !== 'none') {
+    logLine(`[hh-site-state] ${det.state}${src}${det.label ? ` — ${det.label}` : ''}`);
+  } else {
+    logLine(`[hh-site-state] ok${src} — можно откликаться`);
+  }
   return det;
 }
 
 /**
  * @param {ReturnType<typeof createApplyChatProgressTracker>} progress
  * @param {string} reason
- * @param {{ state?: string }} [det]
+ * @param {{ state?: string, label?: string }} [det]
+ * @param {object | null} [rec]
+ * @param {{ l4Attempted?: boolean }} [opts]
  */
-function finishAlreadyResponded(progress, reason, det = {}, rec = null) {
+function finishAlreadyResponded(progress, reason, det = {}, rec = null, opts = {}) {
   logLine(`[hh-apply-chat] ${reason}`);
+  if (opts.l4Attempted) {
+    logLine('[hh-apply-chat] L4 на hh.ru уже записан в этой сессии');
+  } else {
+    logLine('[hh-apply-chat] L4 на hh.ru не выполнялся (статус hh.ru блокирует отклик)');
+  }
   const skip = det.state ? hhSiteStateSkipReason(det.state) : 'уже отклик или приглашение на hh.ru';
   if (rec?.id) pruneVacancyFromActiveQueue(rec.id);
   if (isBatchApply) {
     logBatchSkipReason(skip);
-    progress.done('Пропуск: статус hh.ru');
+    progress.skipped('Пропуск: статус hh.ru');
     return HH_APPLY_EXIT_ALREADY_RESPONDED;
   }
-  progress.done('Уже отклик');
+  progress.skipped(det.label || reason || 'Уже отклик');
   return 0;
+}
+
+/**
+ * Статус hh.ru блокирует отклик — но если письмо не доставлено, пробуем чат (repeat apply).
+ * @param {ReturnType<typeof createApplyChatProgressTracker>} progress
+ */
+async function routeHhBlockExit(progress, rec, page, ctx, opts) {
+  const {
+    reason,
+    det = {},
+    letter,
+    resumePick,
+    tmpFile,
+    humanTyping,
+    vacancyId,
+    l4Attempted = false,
+    formResult,
+  } = opts;
+  const prevHh = getVacancyRecord(rec.id)?.hhApply || rec.hhApply || {};
+  const letterPending =
+    Boolean(letter) &&
+    (!prevHh.responseSubmitted || prevHh.hhDetectedOnly || !prevHh.letterDelivered);
+  if (letterPending) {
+    logLine(`[hh-apply-chat] ${reason} — пробуем доставить письмо в переписку`);
+    return finishRepeatApply(progress, rec, page, ctx, {
+      letter,
+      formResult,
+      resumePick,
+      tmpFile,
+      humanTyping,
+      vacancyId,
+      det,
+      l4Attempted,
+    });
+  }
+  return finishAlreadyResponded(progress, reason, det, rec, { l4Attempted });
+}
+
+/**
+ * Повторный отклик: письмо может уйти в chatik, но это не новый отклик.
+ * Канон: probeChatikBeforeLetterRepair → deliverCoverLetterPostApply → resolveLetterDeliveredTruth.
+ */
+async function finishRepeatApply(progress, rec, page, ctx, opts) {
+  const {
+    letter,
+    formResult,
+    resumePick,
+    humanTyping,
+    vacancyId,
+    det: detIn,
+    dryRun: dryRunOpt,
+    l4Attempted = false,
+  } = opts;
+  logLine('[hh-apply-chat] Повторный отклик — на hh.ru отклик уже был');
+  if (l4Attempted) {
+    logLine('[hh-apply-chat] L4 на hh.ru уже записан в этой сессии (повторный отклик)');
+  } else {
+    logLine('[hh-apply-chat] L4 на hh.ru не выполнялся (статус hh.ru блокирует отклик)');
+  }
+
+  const det =
+    detIn ||
+    (await syncHhSiteStateFromPage(page, rec));
+
+  let chatChannel = '';
+  let truth = {
+    letterDelivered: false,
+    letterInForm: false,
+    chatSent: false,
+    verifySource: 'none',
+  };
+
+  if (letter && !dryRunOpt) {
+    const vacId = String(vacancyId || rec.vacancyId || '').trim();
+    try {
+      page = (await waitForActivePage(ctx, page, 5000)) || page;
+      if (!page || page.isClosed?.()) {
+        throw new Error('браузер закрыт до доставки письма');
+      }
+
+      truth = await resolveLetterDeliveredTruth(page, letter);
+      if (truth.letterDelivered) {
+        logLine(`[hh-apply-chat] Сопроводительное уже на hh.ru (источник: ${truth.verifySource})`);
+        if (truth.chatSent) chatChannel = 'repeat-chat:verified';
+      } else if (!vacId) {
+        logLine('[hh-apply-chat] Нет vacancyId — доставка в chatik невозможна');
+      } else {
+        const probe = await probeChatikBeforeLetterRepair(page, { vacancyId: vacId, letter, log: logLine });
+
+        if (probe.approvedInChatik) {
+          logLine('[hh-apply-chat] Probe: approved-письмо уже в chatik');
+          truth = await assertLetterDeliveredOnHh(page, letter);
+          chatChannel = 'repeat-chat:already-delivered';
+        } else {
+          if (probe.hasResumeExcerptWithoutApproved) {
+            logLine(
+              '[hh-apply-chat] Probe: в chatik excerpt резюме без approved — только форма «Приложить», не дубль в чат'
+            );
+          }
+
+          const method = await deliverCoverLetterPostApply(page, {
+            text: letter,
+            vacancyId: vacId,
+            vacancyTitle: rec.title,
+            company: rec.company,
+            humanTyping,
+            log: logLine,
+          });
+          logLine(`[hh-apply-chat] Письмо в chatik (${method})`);
+          chatChannel = `repeat-chat:${method}`;
+
+          try {
+            truth = await assertLetterDeliveredOnHh(page, letter);
+            logLine(`[hh-apply-chat] Письмо подтверждено (источник: ${truth.verifySource})`);
+          } catch (verifyErr) {
+            truth = await resolveLetterDeliveredTruth(page, letter);
+            if (!truth.letterDelivered) {
+              logLine(
+                `[hh-apply-chat] Письмо не подтверждено: ${String(verifyErr?.message || verifyErr).slice(0, 220)}`
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      const code = String(e?.code || '');
+      if (code === 'CHAT_DUPLICATE_BLOCKED') {
+        logLine(`[hh-apply-chat] Дубль в чат заблокирован: ${String(e?.message || e).slice(0, 220)}`);
+      } else {
+        logLine(`[hh-apply-chat] Письмо в chatik (повтор): ${String(e?.message || e).slice(0, 220)}`);
+      }
+      truth = await resolveLetterDeliveredTruth(page, letter).catch(() => truth);
+    }
+  } else if (letter) {
+    truth = await resolveLetterDeliveredTruth(page, letter).catch(() => truth);
+  } else if (formResult?.letterInForm) {
+    truth = { letterDelivered: false, letterInForm: false, chatSent: false, verifySource: 'no-letter' };
+  }
+
+  const prevHh = getVacancyRecord(rec.id)?.hhApply || rec.hhApply || {};
+  const siteDet =
+    det.state && det.state !== 'none'
+      ? det
+      : { state: 'already_applied', label: det?.label || 'Отклик уже на hh.ru', source: 'repeat-apply' };
+  const hhApply = buildHhApplySiteStatePatch(prevHh, siteDet);
+  const letterDelivered = Boolean(truth.letterDelivered);
+  const letterInFormVerified = Boolean(truth.letterInForm);
+  const chatVerified = Boolean(truth.chatSent);
+
+  updateVacancyRecord(rec.id, {
+    hhApply: {
+      ...hhApply,
+      lastAt: new Date().toISOString(),
+      responseSubmitted: letterDelivered ? true : Boolean(prevHh.responseSubmitted && !prevHh.hhDetectedOnly),
+      hhDetectedOnly: letterDelivered ? false : true,
+      letterInForm: letterInFormVerified,
+      chatSent: chatVerified,
+      letterDelivered,
+      letterPreview: letter ? String(letter).replace(/\s+/g, ' ').trim().slice(0, 120) : undefined,
+      resumeRole: resumePick?.role,
+      resumeTitleSelected: formResult?.profileResume || resumePick?.title,
+    },
+  });
+
+  logCoverLetterOutcome(logLine, {
+    letter,
+    letterFilledInForm: letterInFormVerified,
+    chatSent: chatVerified,
+    channel: chatVerified ? chatChannel || 'repeat-chat' : '',
+  });
+
+  if (rec?.id && letterDelivered) pruneVacancyFromActiveQueue(rec.id);
+  if (isBatchApply) {
+    logBatchSkipReason('уже отклик на hh.ru');
+    progress.skipped('Пропуск: повторный отклик');
+    return HH_APPLY_EXIT_ALREADY_RESPONDED;
+  }
+  progress.skipped(chatVerified ? 'Повтор: письмо в переписке' : det.label || 'Уже отклик на hh.ru');
+  return 0;
+}
+
+/**
+ * First apply: отклик ушёл, сопроводительное не доставлено — не SUCCESS для батча.
+ * @param {ReturnType<typeof createApplyChatProgressTracker>} progress
+ * @param {object} rec
+ * @param {{ letter?: string, letterFilledInForm?: boolean, chatSent?: boolean, verifiedInChat?: boolean, resumePick?: object, formResult?: object }} opts
+ */
+function finishLetterNotDelivered(progress, rec, opts) {
+  const { letter, letterFilledInForm, chatSent, verifiedInChat, resumePick, formResult, resumeMatchOk, prevHh } =
+    opts;
+  logLine('[letter-not-delivered] отклик отправлен, сопроводительное не доставлено (форма и чат)');
+  logCoverLetterOutcome(logLine, {
+    letter,
+    letterFilledInForm,
+    chatSent,
+    verifiedInChat,
+  });
+  updateVacancyRecord(rec.id, {
+    hhApply: buildHhApplyAfterSuccess(prevHh || rec.hhApply || {}, {
+      lastAt: new Date().toISOString(),
+      responseSubmitted: true,
+      letterInForm: Boolean(letterFilledInForm),
+      chatSent: Boolean(chatSent || verifiedInChat),
+      letterDelivered: false,
+      letterPreview: letter ? String(letter).replace(/\s+/g, ' ').trim().slice(0, 120) : undefined,
+      resumeRole: resumePick?.role,
+      resumeTitleSelected: formResult?.profileResume || resumePick?.title,
+      resumeMatchOk: resumeMatchOk !== false,
+    }),
+  });
+  if (isBatchApply) {
+    logBatchSkipReason('сопроводительное не доставлено');
+  }
+  progress.error('Отклик без сопроводительного');
+  return HH_APPLY_EXIT_LETTER_NOT_DELIVERED;
 }
 
 const headless = process.env.HH_HEADLESS === '1';
@@ -442,13 +678,8 @@ async function main() {
   }
   let page = openPages[0] && !openPages[0].isClosed() ? openPages[0] : await ctx.newPage();
 
-  if (tailorResume && resumePick.hash && !dryRun) {
-    page = await assertHhLoggedIn(page, { log: logLine, captchaContext: 'подгонка резюме' });
-    const { applyMicroAboutBeforeApply } = await import('../lib/resume-micro-tailor-apply.mjs');
-    const mt = await applyMicroAboutBeforeApply(page, rec, resumePick.hash, { log: logLine });
-    if (mt.ok) logLine('[hh-apply-chat] Блок «О себе» подогнан под вакансию');
-    else if (!mt.skipped) logLine(`[hh-apply-chat] Подгонка «О себе»: ${mt.reason || 'ошибка'}`);
-  }
+  const { dismissChromiumRestorePopup } = await import('../lib/hh-response-modal.mjs');
+  await dismissChromiumRestorePopup(page);
 
   const ensureActivePage = async (stage) => {
     if (!page.isClosed()) return page;
@@ -499,12 +730,38 @@ async function main() {
     const siteDet = await syncHhSiteStateFromPage(page, rec);
     if (!siteDet.canApply) {
       logLine(`[hh-apply-chat] Статус на hh.ru: ${siteDet.label || siteDet.state}`);
-      return finishAlreadyResponded(
-        progress,
-        siteDet.label || 'Повторный отклик на hh.ru не нужен.',
-        siteDet,
-        rec
-      );
+      return routeHhBlockExit(progress, rec, page, ctx, {
+        reason: siteDet.label || 'Повторный отклик на hh.ru не нужен.',
+        det: siteDet,
+        letter,
+        resumePick,
+        tmpFile,
+        humanTyping,
+        vacancyId,
+        l4Attempted: false,
+      });
+    }
+
+    let l4Attempted = false;
+    if (tailorResume && resumePick.hash && !dryRun) {
+      page = await assertHhLoggedIn(page, { log: logLine, captchaContext: 'подгонка резюме' });
+      await dismissChromiumRestorePopup(page);
+      const { applyMicroAboutBeforeApply } = await import('../lib/resume-micro-tailor-apply.mjs');
+      const mt = await applyMicroAboutBeforeApply(page, rec, resumePick.hash, { log: logLine });
+      if (mt.l4 || mt.ok || mt.partial) l4Attempted = true;
+      if (mt.ok) {
+        logLine(
+          mt.partial
+            ? '[hh-apply-chat] L4+ частично записан на hh.ru (см. журнал manifest)'
+            : mt.l4
+              ? '[hh-apply-chat] L4+ записан на hh.ru перед откликом'
+              : '[hh-apply-chat] Блок «О себе» подогнан под вакансию'
+        );
+      } else if (mt.skipped) {
+        logLine(`[hh-apply-chat] L4 пропущен: ${mt.reason || 'не требуется'}`);
+      } else {
+        logLine(`[hh-apply-chat] Подгонка резюме: ${mt.reason || 'ошибка'}`);
+      }
     }
 
     await ensureActivePage('before_click_response');
@@ -526,12 +783,16 @@ async function main() {
     logLine(`[hh-apply-chat] Отклик: ${btn}`);
     if (btn === 'already-submitted') {
       const det2 = await syncHhSiteStateFromPage(page, rec);
-      return finishAlreadyResponded(
-        progress,
-        det2.label || 'Уже откликнулись или приглашение на hh.ru — повторный отклик не нужен.',
-        det2,
-        rec
-      );
+      return routeHhBlockExit(progress, rec, page, ctx, {
+        reason: det2.label || 'Уже откликнулись или приглашение на hh.ru — повторный отклик не нужен.',
+        det: det2,
+        letter,
+        resumePick,
+        tmpFile,
+        humanTyping,
+        vacancyId,
+        l4Attempted,
+      });
     }
     step('click_response', 'Форма отклика', 32);
     page = await focusVacancyResponsePage(ctx, page, { log: logLine, closeOtherTabs: true });
@@ -541,12 +802,16 @@ async function main() {
     const siteAfterOpen = await syncHhSiteStateFromPage(page, rec);
     if (!siteAfterOpen.canApply) {
       logLine(`[hh-apply-chat] После открытия формы: ${siteAfterOpen.label || siteAfterOpen.state}`);
-      return finishAlreadyResponded(
-        progress,
-        siteAfterOpen.label || 'Уже откликнулись на hh.ru — повторный отклик не нужен.',
-        siteAfterOpen,
-        rec
-      );
+      return routeHhBlockExit(progress, rec, page, ctx, {
+        reason: siteAfterOpen.label || 'Уже откликнулись на hh.ru — повторный отклик не нужен.',
+        det: siteAfterOpen,
+        letter,
+        resumePick,
+        tmpFile,
+        humanTyping,
+        vacancyId,
+        l4Attempted,
+      });
     }
 
     if (noSubmit) {
@@ -558,7 +823,10 @@ async function main() {
     page = await ensureActivePage('before_complete_response');
     step('modal_prepare', 'Мастер отклика', 40);
 
-    const modalWallMs = rec?.hhApply?.questionnaire?.questions?.length ? 180_000 : 120_000;
+    const modalWallMs = computeModalWallMs(rec, { l4Attempted });
+    logLine(
+      `[hh-apply-chat] wall мастера: ${Math.round(modalWallMs / 1000)} с${l4Attempted ? ' (+60 L4)' : ''}`
+    );
     let formResult = await withStepHeartbeat(logLine, 'мастер отклика (резюме, письмо, отправка)', async () => {
       const flow = completeVacancyResponseForm(page, {
         context: ctx,
@@ -675,14 +943,15 @@ async function main() {
               });
               if (retry.submitted) {
                 logLine('[hh-apply-chat] BATCH: отклик с анкетой отправлен');
-                progress.done('Отклик с анкетой');
-                return 0;
+                Object.assign(formResult, retry);
+                delete formResult.questionnaire;
               }
             }
           } catch (e) {
             logLine(`[hh-apply-chat] BATCH: авто-анкета не завершила отклик: ${e.message}`);
           }
         }
+        if (!formResult.submitted && formResult.questionnaire?.detected) {
         step('questionnaire_wait', 'Анкета работодателя — заполните вручную', 75);
         const hadDashboardAnswers = recordHasDashboardQuestionnaireAnswers(getVacancyRecord(rec.id) || rec);
         logLine(
@@ -714,22 +983,27 @@ async function main() {
           );
         }
         return 0;
+        }
       }
     }
 
-    if (formResult.submitted && formResult.label === 'already-submitted') {
+    if (formResult.submitted && (formResult.label === 'already-submitted' || formResult.repeatApply)) {
       const det3 = await syncHhSiteStateFromPage(page, rec);
-      return finishAlreadyResponded(
-        progress,
-        'Отклик на вакансию уже был отправлен ранее.',
-        det3,
-        rec
-      );
+      return finishRepeatApply(progress, rec, page, ctx, {
+        letter,
+        formResult,
+        resumePick,
+        tmpFile,
+        humanTyping,
+        vacancyId,
+        det: det3,
+        dryRun,
+      });
     }
 
     if (!formResult.submitted) {
       const ambiguousForm =
-        /form-still-open|questionnaire/i.test(String(formResult.label || '')) ||
+        /form-still-open|hh-form-error|questionnaire/i.test(String(formResult.label || '')) ||
         Boolean(formResult.questionnaire?.detected);
       if (ambiguousForm && (stayOpen || questionnaireWait)) {
         logLine(
@@ -798,7 +1072,9 @@ async function main() {
         );
       }
       const hint =
-        formResult.resumeMismatch ||
+        formResult.formError
+          ? ` hh.ru: ${formResult.formError}`
+          : formResult.resumeMismatch ||
         (needResume &&
           formResult.profileResume &&
           !(
@@ -808,7 +1084,7 @@ async function main() {
             (resumePick.role === 'support' && /поддержк/i.test(formResult.profileResume))
           ))
           ? ` Не выбрано резюме «${needResume}» (${resumePick.label}) — config/resume-routing.json`
-          : /form-still-open/i.test(String(formResult.label || ''))
+          : /form-still-open|hh-form-error/i.test(String(formResult.label || ''))
             ? ' Форма отклика не закрылась после «Откликнуться».'
             : '';
       throw new Error(
@@ -833,19 +1109,28 @@ async function main() {
 
     if (formResult.resumeAttached) step('attach_tailored_resume', 'PDF резюме в форме', 46);
     else if (resumePdfPath && fs.existsSync(resumePdfPath)) {
-      logLine(
-        '[hh-apply-chat] PDF не загружен (нет поля) — использовано резюме из профиля или выберите вручную.'
-      );
+      if (formResult.resumeAttachReason === 'no-file-input') {
+        logLine(
+          '[hh-apply-chat] L4 пишет в резюме профиля hh; форма отклика не принимает PDF — это норма.'
+        );
+      } else {
+        logLine(
+          '[hh-apply-chat] PDF не загружен — использовано резюме из профиля или выберите вручную.'
+        );
+      }
     }
     if (formResult.profileResume) {
       logLine(`[hh-apply-chat] Резюме в форме: ${formResult.profileResume}`);
     }
 
     let letterFilledInForm = letter ? await verifyCoverLetterInForm(page, letter) : false;
-    if (letter && formResult.letterInForm && !letterFilledInForm) {
+    if (letter && !letterFilledInForm && formResult?.letterInForm) {
+      // Мастер формы подтвердил письмо в textarea сопроводительного — после submit модалка пропадает.
+      letterFilledInForm = true;
       logLine(
-        '[hh-apply-chat] Письмо не в поле сопроводительного (возможно попало в анкету) — отправим в переписку.'
+        '[hh-apply-chat] Сопроводительное было в форме при отправке отклика — переписку не открываем.'
       );
+      step('fill_letter', 'Сопроводительное в форме', 52);
     } else if (letter && !letterFilledInForm) {
       logLine('[hh-apply-chat] Поле письма в форме не найдено — письмо уйдёт в переписку после отклика.');
     } else if (letterFilledInForm) {
@@ -877,12 +1162,11 @@ async function main() {
 
     if (letter && letterFilledInForm) {
       logLine('[hh-apply-chat] Сопроводительное в форме отклика — переписку не открываем.');
-      chatStepOk = true;
       step('send_chat_skipped_form', 'Письмо в форме отклика', 92);
     }
 
     try {
-      if (!chatStepOk && letter && /\/vacancy\/\d+/i.test(page.url())) {
+      if (!chatStepOk && letter && !letterFilledInForm && /\/vacancy\/\d+/i.test(page.url())) {
         const vacMethod = await withStepHeartbeat(logLine, 'переписка на странице вакансии', () =>
           sendLetterOnVacancyCorrespondence(page, {
             text: letter,
@@ -893,14 +1177,19 @@ async function main() {
           })
         );
         if (vacMethod) {
-          chatChannel = `vacancy:${vacMethod}`;
-          logLine(`[hh-apply-chat] Письмо в переписке на странице вакансии (${vacMethod}).`);
-          step('send_vacancy_correspondence', 'Письмо в переписке', 88);
-          chatStepOk = true;
+          const vacVerified = await verifyLetterVisibleInChat(page, letter);
+          if (vacVerified) {
+            chatChannel = `vacancy:${vacMethod}`;
+            logLine(`[hh-apply-chat] Письмо в переписке на странице вакансии (${vacMethod}).`);
+            step('send_vacancy_correspondence', 'Письмо в переписке', 88);
+            chatStepOk = true;
+          } else {
+            logLine(`[hh-apply-chat] Переписка на вакансии: вставка не подтверждена (${vacMethod}).`);
+          }
         }
       }
 
-      if (!chatStepOk && letter) {
+      if (!chatStepOk && letter && !letterFilledInForm) {
         page = await ensureActivePage('before_open_chat');
         await withStepHeartbeat(logLine, 'переход в чат с работодателем', () =>
           openEmployerChatAfterResponse(page, chatCtx)
@@ -918,37 +1207,35 @@ async function main() {
             ...chatCtx,
           })
         );
-        chatChannel = `chat:${chatMethod || 'ok'}`;
-        logLine(`[hh-apply-chat] Готово: письмо в чате (${chatMethod || 'ok'}).`);
-        step('send_chat_done', 'Письмо в чате', 95);
-        chatStepOk = true;
+        if (chatMethod) {
+          const chatVerified = await verifyLetterVisibleInChat(page, letter);
+          if (chatVerified) {
+            chatChannel = `chat:${chatMethod}`;
+            logLine(`[hh-apply-chat] Готово: письмо в чате (${chatMethod}).`);
+            step('send_chat_done', 'Письмо в чате', 95);
+            chatStepOk = true;
+          } else {
+            logLine(`[hh-apply-chat] Чат: вставка не подтверждена (${chatMethod}).`);
+          }
+        }
       }
     } catch (e) {
       const msg = String(e?.message || e);
       if (
-        letter &&
-        !chatStepOk &&
-        (/Не удалось вставить письмо в чат|locator\.waitFor: Timeout/i.test(msg) ||
-          /Не удалось открыть чат/i.test(msg))
-      ) {
-        logLine(
-          '[hh-apply-chat] Чат недоступен. Отклик отправлен — письмо в чат вручную при необходимости.'
-        );
-        logLine(`[hh-apply-chat] Детали: ${msg.slice(0, 400)}`);
-        step('send_chat_manual_required', 'Отклик OK, чат вручную', 90);
-      } else if (
         responseSubmitted &&
         (/has been closed/i.test(msg) || /Страница закрыта/i.test(msg))
       ) {
         logLine('[hh-apply-chat] После отклика вкладка закрылась — чат не открыт автоматически.');
         step('chat_skipped_after_submit', 'Отклик отправлен', 88);
+      } else if (!chatStepOk && letter && !letterFilledInForm) {
+        logLine(`[hh-apply-chat] Письмо в чат не доставлено: ${msg.slice(0, 400)}`);
       } else if (!chatStepOk) {
         throw e;
       }
     }
 
-    let verifiedInChat = false;
-    if (letter && !chatStepOk && !letterFilledInForm) {
+    let verifiedInChat = Boolean(chatStepOk);
+    if (letter && !verifiedInChat && !letterFilledInForm) {
       page = (await waitForActivePage(ctx, page, 4000)) || page;
       verifiedInChat = await verifyLetterVisibleInChat(page, letter);
       if (verifiedInChat) {
@@ -957,16 +1244,36 @@ async function main() {
       }
     }
 
+    const letterDelivery = resolveLetterDeliveryOutcome({
+      letter,
+      letterInForm: letterFilledInForm,
+      chatSent: chatStepOk,
+      verifiedInChat,
+      responseSubmitted,
+    });
+
     if (responseSubmitted) {
       const prevHh = getVacancyRecord(rec.id)?.hhApply || rec.hhApply || {};
       const resumeMatchOk = resumeSelectionMatches(formResult.profileResume, resumePick);
+      if (letterDelivery === 'not_delivered') {
+        return finishLetterNotDelivered(progress, rec, {
+          letter,
+          letterFilledInForm,
+          chatSent: chatStepOk,
+          verifiedInChat,
+          resumePick,
+          formResult,
+          resumeMatchOk,
+          prevHh,
+        });
+      }
       updateVacancyRecord(rec.id, {
         hhApply: buildHhApplyAfterSuccess(prevHh, {
           lastAt: new Date().toISOString(),
           responseSubmitted: true,
           letterInForm: letterFilledInForm,
-          chatSent: chatStepOk,
-          letterDelivered: letterFilledInForm || chatStepOk || verifiedInChat,
+          chatSent: Boolean(chatStepOk && verifiedInChat),
+          letterDelivered: letterDelivery === 'delivered',
           letterPreview: letter ? String(letter).replace(/\s+/g, ' ').trim().slice(0, 120) : undefined,
           resumeRole: resumePick.role,
           resumeRolePlanned: resumePick.role,
@@ -989,9 +1296,6 @@ async function main() {
         verifiedInChat,
         channel: chatChannel,
       });
-      if (letter && !letterFilledInForm && !chatStepOk) {
-        logLine('[hh-apply-chat] ВНИМАНИЕ: отклик без сопроводительного (форма и чат).');
-      }
     }
 
     progress.done('Отклик отправлен');

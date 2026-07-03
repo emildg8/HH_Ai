@@ -27,7 +27,7 @@ description: >-
 | `harvest` | Сбор/обогащение очереди (в т.ч. OpenRouter — см. [.env.example](.env.example)). |
 | `hh-fill-letter` | Вставка сопроводительного в **форму отклика** на странице вакансии; **отправку не нажимает** — пользователь проверяет и жмёт сам. |
 | `hh-apply-chat` | Сценарий **отклик + письмо в чат** (`scripts/hh-apply-chat-letter.mjs`). |
-| `devops:apply-batch` | Массовый отклик; анкета → код выхода `5`, журнал `[batch] Пропуск …: причина`. |
+| `devops:apply-batch` | Серийный инструмент в dashboard (не north star); анкета → код выхода `5`, журнал `[batch] Пропуск …: причина`; запускать после `devops:s1-preflight` по инициативе пользователя. |
 | `release:public` | Zip без секретов для передачи (`releases/hh-ai-public-v*.zip`). |
 | `codegen-hh` | Playwright codegen против живого hh.ru — подбор селекторов. |
 
@@ -53,7 +53,19 @@ description: >-
 ## Селекторы Playwright (где чинить поломки UI)
 
 - **Форма отклика** (кнопка «Откликнуться», поле письма в модалке): [lib/hh-response-selectors.mjs](lib/hh-response-selectors.mjs), скрипт [scripts/hh-fill-response-letter.mjs](scripts/hh-fill-response-letter.mjs).
-- **Отклик + чат**: [lib/hh-chat-selectors.mjs](lib/hh-chat-selectors.mjs), скрипт [scripts/hh-apply-chat-letter.mjs](scripts/hh-apply-chat-letter.mjs).
+- **Отклик + чат**: [lib/hh-chat-selectors.mjs](lib/hh-chat-selectors.mjs), [lib/cover-letter-deliver-truth.mjs](lib/cover-letter-deliver-truth.mjs), скрипт [scripts/hh-apply-chat-letter.mjs](scripts/hh-apply-chat-letter.mjs).
+
+### Apply Truth — письмо в chatik (канон 02.07, кейс Индид)
+
+| Правило | Деталь |
+|---------|--------|
+| Три поверхности hh | Список «Без сопроводительного» ≠ iframe **chatik** ≠ вкладка «Чат» на `/vacancy/{id}` |
+| Repair | `npm run devops:deliver-letter-vacancy:anastasia -- --id=<uuid>` → `probeChatikBeforeLetterRepair` → `deliverCoverLetterPostApply` → `assertLetterDeliveredOnHh` |
+| `letterDelivered` | Только после live verify (`verifyCoverLetterInForm` или `verifyCoverLetterDelivered`); текст в input ≠ доставлено |
+| Дубль | Если excerpt резюме уже в chatik — не второе сообщение (`CHAT_DUPLICATE_BLOCKED`) |
+| Не использовать | `negotiations?vacancyId` для repair (редирект на vacancy) |
+
+Handoff: [docs/SESSION-2026-07-02-anastasia-apply-handoff.md](docs/SESSION-2026-07-02-anastasia-apply-handoff.md) · Runbook: [docs/ANASTASIA-HT63-APPLY-RUNBOOK.md](docs/ANASTASIA-HT63-APPLY-RUNBOOK.md)
 
 При смене вёрстки hh.ru: открыть нужную страницу вручную, `npm run codegen-hh`, обновить селекторы **в этих lib-файлах** (не размазывать по проекту). Дополнительно — паузы/джиттер: [lib/hh-human-delay.mjs](lib/hh-human-delay.mjs), лимиты: [lib/hh-apply-rate.mjs](lib/hh-apply-rate.mjs).
 

@@ -1,0 +1,41 @@
+---
+description: Apply Truth — видео/лог apply на hh.ru, две модели отклика, gate перед «готово»
+globs:
+  - scripts/hh-apply-chat-letter.mjs
+  - lib/hh-vacancy-response-state.mjs
+  - lib/hh-response-modal.mjs
+  - lib/resume-micro-tailor-apply.mjs
+  - lib/apply-outcome.mjs
+  - tests/video/**
+  - dashboard/public/app.js
+alwaysApply: false
+---
+
+# Apply Truth (видео + лог)
+
+## Две модели отклика
+
+| Пользователь | Система |
+|--------------|---------|
+| Отклик = нажал «С письмом» | Отклик = negotiation на hh.ru по vacancyId |
+| L4 preview = запись на hh | L4 на hh только при canApply=true |
+
+Не обвинять пользователя — сначала probe/log: `canApply`, `source`, stored vs live.
+
+## DoD apply-фикса
+
+1. `npm run test:apply-log-golden` + `test:hh-response-repeat-apply` + `test:apply-l4-observability`.
+2. Таблица: код / ожидание лога / видео vacancyId / **unproven on hh**.
+3. **SUCCESS** (`progress.done('Отклик отправлен')`) только при first apply; repeat → `skipped` / `finishRepeatApply`.
+4. **`letterDelivered`** — только при `verifyCoverLetterInForm` (мастер) или `verifyCoverLetterDelivered` (chatik: probe в истории, не в textarea).
+5. **Repair после отклика:** если в chatik уже excerpt резюме — не второе сообщение; только «Приложить сопроводительное» (`CHAT_DUPLICATE_BLOCKED`).
+6. B1B restore DoD: `[micro-tailor/L4+]` в логе + файл в `data/resume-hh-snapshot/`.
+7. Не закрывать B1D.x и не расширять scope batch/series без log-golden green (сам batch-инструмент остаётся без изменений).
+
+## Видео-матрица
+
+См. `tests/video/README.md` — каждый фикс привязать к vacancyId и строке `data/hh-apply-chat.log`.
+
+## Smoke ≠ E2E
+
+`test-resume-hh-apply-manifest` — только shape partial; не доказывает запись на hh.ru.
