@@ -4,7 +4,7 @@
 > **Как читать всю документацию (партнёр):** [`GUIDE-PARTNER.md`](GUIDE-PARTNER.md).  
 > Детали: `HANDOFF-*.md` · код A/B/C → [`MEGA-PLAN-NORTH-STAR.md`](MEGA-PLAN-NORTH-STAR.md) · UI v8 → `ui_north_star_v8` · **LLM** → [`LLM-ROADMAP.md`](LLM-ROADMAP.md) · **мультимодальность** → [`MULTIMODAL-ROADMAP.md`](MULTIMODAL-ROADMAP.md) · **таргетинг** → [`TARGETING-ROADMAP.md`](TARGETING-ROADMAP.md) · **HH API harvest** → [`HH-INGEST-ROADMAP.md`](HH-INGEST-ROADMAP.md)
 
-**Обновлено:** 02.07.2026 · **финализация:** реестр ситуаций №12–72 в [`SCENARIOS-PLAYBOOK.md`](SCENARIOS-PLAYBOOK.md)
+**Обновлено:** 18.07.2026 вечер (добор взамен брака · resume quiz-gate · [`SESSION-2026-07-18-close.md`](SESSION-2026-07-18-close.md)) · 17.07 день · 16.07 вечер+
 
 ---
 
@@ -17,20 +17,36 @@
 | **Треки кода** | A + B + C2 + волны 4/D/E — **done** · UI v8 / волна F — **S6/S7** |
 | **Режим LLM** | **L2-dslab** primary; **L0.1** 17/135 готовых ✅ P0 |
 | **Режим M0** | **M0.1** inventory ✅ · **M0.2** messaging baseline ✅ · **HT.5 devops CV** ✅ · **S2.1** подсказка балла (i) ✅ |
-| **H-TARGET** | **HT.0** ✅ · **HT.UI-1** ✅ · **HT.1a** ✅ · **HT.1b** ✅ (код) · **HT.1** policy ⬜ |
+| **H-TARGET** | **HT.0** ✅ · **HT.UI-1** ✅ · **HT.1a** ✅ · **HT.1b** ✅ (код) · **HT.1** wrapper ✅ · **HT.3** suggest→golden ⬜ · **HT.UI-2** hard/soft/match ▶ |
 | **H-INGEST** | Harvest backend: **playwright** (HI.0 probe ✅ · HI.1 ⬜) | [`HH-INGEST-ROADMAP.md`](HH-INGEST-ROADMAP.md) |
-| **Голос / STT** | Whisper local (8 GB) — copilot live; **I-track:** [`COPILOT-ROADMAP.md`](COPILOT-ROADMAP.md) (отдельная вкладка) |
-| **Блокер среды** | **ожидание HR** · precheck devops **ready=0** (cooldown) · **mass apply не планируем (канон)** · C2 **2 ok / 20** |
-| **Режим охоты** | **North star:** слот E (`real_hr_invite`) — точечные отклики, nudge, HT.5 CV; **не** серия 20 |
-| **Версия UI** | `app.js?v=…` — последний HANDOFF |
-| **Docs ME 29.06** | Канон точечный автоотклик ✅ · архив mass apply · [`SESSION-2026-06-29-docs-me.md`](SESSION-2026-06-29-docs-me.md) |
-| **Next step (H)** | **HT.7.3** ✅ (tam/l2l3 auto+approval, Trinity TAM apply+chat fix 02.07) · **harvest infra tier A + regen** · **nudge ЦФТ 04.07** · point apply 2–5/день `--tracks=devops,infra` · [`SESSION-2026-07-02-ht73-tam-trinity-chat.md`](SESSION-2026-07-02-ht73-tam-trinity-chat.md) |
-| **H-TRACKS** | **HT.6** ✅ · **HT.7.1** ✅ · **HT.7.2** ✅ infra pilot · **HT.7.3** ✅ l2l3/tam auto+approval |
-| **Next step (I)** | **I-L3 live re-check** на `hr-only-tech-only` после P0 gate ✅ · чеклист [`DEMO-COPILOT-L3-RECHECK.md`](DEMO-COPILOT-L3-RECHECK.md) · handoff [`SESSION-2026-07-02-I-track-close.md`](SESSION-2026-07-02-I-track-close.md) · `npm run test:copilot` ✅ 02.07 |
-| **Next step (MC QA)** | **Harvest +1** Manual QA Lead IBS (`2c884c04`) approved+honesty OK · precheck стоп Playwright — **не auto apply** · senior-qa freeze · **Индид freeze** · ME scan в approve ✅ · `:3850` |
-| **Профиль охоты** | **инфра-лента** — параллельные **маршруты** DevOps/Infra/L2/TAM ([`HUNT-TRACKS-ROADMAP.md`](HUNT-TRACKS-ROADMAP.md)); R-лестница R0–R2; **без отдельного harvest на трек** |
+| **B-HUNT-BASKET** | **B0–B6 ✅** + DoD e2e [`APPLY-CHAIN-STABLE`](APPLY-CHAIN-STABLE.md) · exit 9 pre-submit · pack-ship repair×1 · **resume quiz-gate P0+P1** ✅ (`99d3618`) | [`B-HUNT-BASKET-ROADMAP.md`](B-HUNT-BASKET-ROADMAP.md) · [`SESSION-2026-07-18-resume-quiz-gate.md`](SESSION-2026-07-18-resume-quiz-gate.md) |
+| **Harvest stability** | Checkpoint scoring ✅ · watchdog · **Emil harvest через `--instance=emil`** ✅ (17.07) | [`HUNT-ARCHITECTURE.md`](HUNT-ARCHITECTURE.md) |
+| **Голос / STT** | Whisper **small prod** (до A2 L-B v5) · GigaAM 1e A1 ✅ **9/10** · I-track: [`COPILOT-I-TRACK-ROADMAP.md`](COPILOT-I-TRACK-ROADMAP.md) |
+| **Блокер среды** | ПЕТЕР `134973403` недоступен · L2 visibility (Флант) · П2 sticky infra↔devops на quiz ⬜ |
+| **Режим охоты** | **North star:** слот E · курс **~8–10/день** (cap/квоты 4/3/3) · **l2l3 auto** HT.7.4 · tam approval |
+| **Next step (H)** | [`SESSION-2026-07-18-close.md`](SESSION-2026-07-18-close.md) · статус/квоты → `hunt-day status` · при волне: probe до ship · P2 sticky infra — бэклог |
+| **H-TRACKS** | **HT.6** ✅ · **HT.7.1–7.3** ✅ · **HT.7.4 l2l3 auto** ✅ · CV-split [`RESUME-CANON-SPLIT.md`](RESUME-CANON-SPLIT.md) · virt→infra P1 ✅ |
+| **Next step (I)** | Prep Hub срезы 1–3 ✅ · ME approve cards · Zoom · [`ME-VERDICT-INTERVIEW-PREP-ROUTE-2026-07-14.md`](ME-VERDICT-INTERVIEW-PREP-ROUTE-2026-07-14.md) |
+| **Next step (MC QA)** | **4 корзины** · harvest Anastasia прогон 17.07 (+0) · `:3850` |
+| **Профиль охоты** | **инфра-лента** — devops/infra/l2l3/tam · без «узкий/расширенный» |
 
-**Фраза агенту (H-track):** Point apply **2–5/день** при ready · `--tracks=devops,infra` · автописьма · nudge ЦФТ **04.07** · [`H-PROFILE-ROADMAP.md`](H-PROFILE-ROADMAP.md). **I-track:** [`COPILOT-ROADMAP.md`](COPILOT-ROADMAP.md).
+**Фраза агенту (H-track):** Читай [`SESSION-2026-07-18-close.md`](SESSION-2026-07-18-close.md) · live только `hunt-day:emil -- ship --go` · instance=emil · добор брака: Биржа+Авангард ✅ · ПЕТЕР недоступен · quiz-gate `99d3618`.
+
+### I-track — prep: три оси закрыты (13.07)
+
+Сводка сессий **370c3ef3** (external resources + on-call + DevOps228) + **Swfuse Q+A bridge** — не смешивать в bulk-import ([`EXTERNAL-DEVOPS-LEARNING-RESOURCES.md`](EXTERNAL-DEVOPS-LEARNING-RESOURCES.md)).
+
+| Ось | Суть | Артефакт | Gate |
+|-----|------|----------|------|
+| **Q&A (теория)** | 274 synthetic qMatch → live overlay с реальными ответами Swfuse | `swfuse-qna.mjs` · `data/swfuse-knowledge-cards.json` (**273**) · routing confidence badge | `test:swfuse-qna-bridge` · `test-copilot-swfuse-alignment` P0=0 |
+| **Realistic flow** | Behavioral on-call / incident без выдуманного e-com | `on-call-duty` (M0 **bank-sbp-l2**) · `devops228-realistic-bank.mjs` (**6** Q) · intent bucket | `test-devops228-realistic-bank` · `test:interview-knowledge-cards` |
+| **Community / ME** | DevBoxOps · DevOps228 · roadmap — consult и registry, не автозалив | `EXTERNAL-DEVOPS-LEARNING-RESOURCES.md` · `reference-external-learning.md` · `data/refs/external-devops-learning-resources.md` | ME skill consult |
+
+**Не сейчас:** отдельный TTS-пак DevOps228 — только если нужен offline cardHit@Q на realistic behavioral (как miss corpus для snz8zj); seed в RIG достаточен для synthetic/RIG.
+
+### I-track — tech-full CABLE pilot закрыт (13.07)
+
+Overnight soak **2120** tracks · сессия `j1wuiz` · **cardHit@Q 327/333 (98%)** · generic-hint 0. Детали: [`SESSION-2026-07-13-tech-full-pilot-close.md`](SESSION-2026-07-13-tech-full-pilot-close.md). Живой HR (Баусервис) — отдельно: `copilot-hr-stage-guard`, `devops:copilot-live-call-prep`.
 
 ### C2 — серия 24.06 (завершена)
 
@@ -70,6 +86,7 @@ npm run devops:apply-series-gated -- --skip-harvest --skip-batch   # precheck п
 | **MULTIMODAL-ROADMAP.md** | Трек M0: inventory, evidence, pack → потребители | детали DS Lab |
 | **TARGETING-ROADMAP.md** | Трек H-TARGET: minus, policy, HT.UI | детали HT.1–4 |
 | **HH-INGEST-ROADMAP.md** | Трек H-INGEST: API harvest, quota, HI.UI | детали HI.0–HI.5 |
+| **B-HUNT-BASKET-ROADMAP.md** | Трек корзин: единый config, draft shortlist, build→validate→ship | детали B0–B5 |
 | **FEATURE-MAP.md** | Реестр фич × тесты × LLM × мультимодальность | handoff-сессии |
 | **SCENARIOS-PLAYBOOK.md** | Ситуации «если…» №12–65, P0–P3 | полные ветки LLM/M0/HI |
 | **MEGA-PLAN-NORTH-STAR.md** | Статус треков A/B/C в коде | календарь |
@@ -133,7 +150,7 @@ flowchart TB
 |------|-------|--------|-----|----------|--------|
 | S0 | Канон документов, 10/10 план | — | — | — | ✅ |
 | **S1** | Охота: precheck, письма, инфраструктура серий | **L0.1** | — | — | ✅ |
-| **S2** | Микро-CTA, drawer · **S2.1 подсказка балла** ✅ · HT.UI-1 ✅ · HT.1 ▶ | — | M0.2 UI ✅ | HT.0 ✅ | **▶** |
+| **S2** | Микро-CTA, drawer · **S2.1 подсказка балла** ✅ · HT.UI-1 ✅ · HT.UI-2 ▶ · HT.1 wrapper ✅ · HT.3 ⬜ | — | M0.2 UI ✅ | HT.0 ✅ | **▶** |
 | S3 | Плюшки карточки · HT.UI-2 | — | — | queue-tier | ⬜ |
 | S4 | Self-service · HT.UI-3 · HT.3 | L0.4 UI | — | fp merge | ⬜ |
 | S5 | FEATURE-MAP · H-INGEST HI.3–HI.5 | L0.4 | M0.4 | HT.4 KPI | ⬜ |
@@ -236,7 +253,7 @@ flowchart TB
 
 | Категория | Номера | Файл |
 |-----------|--------|------|
-| Охота / hh / batch | 1, 46–55, 15, 51, **61–65** | SCENARIOS § Охота |
+| Охота / hh / batch | 1, 46–55, 15, 51, **61–65**, **73–74** | SCENARIOS § Охота |
 | LLM / провайдеры | 12, 16–25, 21b | SCENARIOS § LLM |
 | M0 / честность | 13, 26–35 | SCENARIOS § M0 |
 | Собес / голос | 14, 36–45 | SCENARIOS § Собес |
@@ -316,7 +333,7 @@ flowchart TB
 | 10 | DoD проверки командой | ✅ § ниже |
 | 11 | Нюансы LLM+M0+ops задокументированы | ✅ SCENARIOS-PLAYBOOK |
 | 12 | Цепочка harvest → tier A: H-TARGET + H-INGEST | ✅ TARGETING HT.0 · HH-INGEST docs |
-| 13 | HT.UI: labels + L3 smoke (5 карточек) | HT.UI-1 ✅ · HT.UI-2 ⬜ |
+| 13 | HT.UI: labels + L3 smoke (5 карточек) | HT.UI-1 ✅ · HT.UI-2 ▶ chips |
 | 14 | H-INGEST канон + UI spec + чеклист prod | ✅ HH-INGEST-ROADMAP |
 
 ---
