@@ -28,6 +28,14 @@ assert.equal(
   ),
   false
 );
+assert.equal(
+  negotiationThreadTextMatches(
+    'Senior DevOps Engineer Intern\nРомашка Technologies',
+    'Senior DevOps Engineer',
+    'Ромашка Tech'
+  ),
+  false
+);
 assert.equal(negotiationThreadTextMatches('DevOps', 'DevOps', ''), false);
 
 class FakeLocator {
