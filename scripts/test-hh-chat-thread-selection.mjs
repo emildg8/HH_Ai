@@ -66,7 +66,7 @@ function fakePage(rows, firstThread) {
   return {
     async waitForTimeout() {},
     locator(selector) {
-      if (selector.includes('a[href*=')) return new FakeLocator();
+      if (selector.startsWith('a[href*="/vacancy/')) return new FakeLocator();
       if (selector.includes('[data-qa="negotiations-list"]')) return firstThread;
       return new FakeLocator({ items: rows });
     },
