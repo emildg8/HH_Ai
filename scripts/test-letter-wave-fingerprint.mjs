@@ -89,13 +89,19 @@ const dayItems = collectPointDayWaveLetterItems(
     {
       id: 'pend',
       status: 'pending',
-      coverLetter: { approvedText: 'Черновик.' },
+      coverLetter: { approvedText: 'Черновик pending не в волне.' },
+    },
+    {
+      id: 'short',
+      status: 'pending',
+      coverLetter: { approvedText: 'В shortlist дня.' },
     },
   ],
-  { now: new Date() }
+  { now: new Date(), shortlistIds: ['short'], focusId: 'focus-x' }
 );
 assert.ok(dayItems.some((x) => x.id === 'today'));
-assert.ok(dayItems.some((x) => x.id === 'pend'));
+assert.ok(dayItems.some((x) => x.id === 'short'));
+assert.ok(!dayItems.some((x) => x.id === 'pend'), 'pending без shortlist не в волне');
 assert.ok(!dayItems.some((x) => x.id === 'old'));
 
 const apology =

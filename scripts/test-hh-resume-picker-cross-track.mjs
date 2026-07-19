@@ -78,6 +78,24 @@ const stickyInfra = questionnaireStepResumeBlocksSubmit({
 assert.equal(stickyInfra.block, true);
 assert.equal(stickyInfra.reason, 'sticky-devops-on-infra-ideal');
 
+// preferred title совпал с DevOps, но ideal=infra — всё равно STOP (не title-ok mask)
+const stickyMasked = questionnaireStepResumeBlocksSubmit({
+  curTitle: 'DevOps-инженер',
+  preferredTitle: 'DevOps-инженер',
+  idealRole: 'infra',
+});
+assert.equal(stickyMasked.block, true);
+assert.equal(stickyMasked.reason, 'sticky-devops-on-infra-ideal');
+
+assert.equal(
+  questionnaireStepResumeBlocksSubmit({
+    curTitle: '',
+    preferredTitle: 'Системный инженер',
+    idealRole: 'infra',
+  }).reason,
+  'empty-resume-title-on-quiz'
+);
+
 const stickyDevops = questionnaireStepResumeBlocksSubmit({
   curTitle: 'Системный инженер',
   preferredTitle: 'DevOps-инженер',

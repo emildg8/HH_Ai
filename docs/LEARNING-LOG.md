@@ -8,7 +8,8 @@
 
 | Дата | Срез | Урок | Закреплено |
 |------|------|------|------------|
-| 19.07.2026 | MC/simplify | Партнёр: Т-Банк снят с антилиста; cap 10 = ёмкость после merge-тестов (не KPI Emil); ГНИВЦ пауза 21д; канон только ROUTE-STATUS; гигиена pending fit&lt;50 | prefs · employer-blacklist · queue-hygiene-low-fit · ANASTASIA-HUNT-ROUTE-STATUS |
+| 19.07.2026 | MC/simplify | Партнёр: Т-Банк снят с антилиста; cap 10 = ёмкость после merge-тестов (не KPI Emil); ГНИВЦ пауза **7–10д** (не 21); канон только ROUTE-STATUS; гигиена pending fit&lt;50 | prefs · employer-blacklist · queue-hygiene-low-fit · ANASTASIA-HUNT-ROUTE-STATUS |
+| 20.07.2026 | H/me-risk-fix | ME FIX: (1) point-ready visibility **abort** + verifyVacancyId; (2) wave = applied-today+shortlist; (3) sticky до title-ok; (4) audit false-invited --reset | point-ready · letter-wave · hh-resume-picker · devops-audit-false-invited · SESSION-2026-07-20-me-risk-fixes |
 | 20.07.2026 | H/visibility-false-ok | Magritte: `showResumeVisibleToHhClients` → `already:true`, но форма отклика всё равно «поменяйте видимость… клиентам HH». Preflight ≠ proof. WE-ON/Флант не ship | hh-resume-visibility · SESSION-2026-07-20-visibility-proof |
 | 20.07.2026 | H/sticky-infra-P2 | На quiz семья devops↔infra давала silent pass sticky DevOps при ideal infra. **Фикс:** `questionnaireInfraFamilyStickyMismatch` → STOP + reload×1; семья только для раннего picker | hh-resume-picker · hh-response-modal · SESSION-2026-07-18-resume-quiz-gate |
 | 20.07.2026 | H/point-wave | Fingerprint −15%/IT_One был только на basket; point ship уезжал каскадом. **Фикс:** `analyzePointDayWaveLetterFingerprints` в point-apply-gate; `HH_POINT_WAVE_FINGERPRINT=0` откат | letter-wave-fingerprint · point-apply-gate · test:letters |

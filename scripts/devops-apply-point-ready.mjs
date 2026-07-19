@@ -391,7 +391,10 @@ async function pickReadyForPointApply(readyItems) {
 
   });
 
-  const waveItems = collectPointDayWaveLetterItems(loadQueue({ force: true }) || []).map((x) => ({
+  const queue = loadQueue({ force: true }) || [];
+  const waveItems = collectPointDayWaveLetterItems(queue, {
+    shortlistIds: eligibleItems.map((x) => x.id),
+  }).map((x) => ({
     id: x.id,
     company: x.company,
     letter: x.letter,
@@ -428,17 +431,26 @@ async function runOneApply(pick, out) {
 
   console.log(`Точечный отклик: ${pick.company} — ${pick.title}`);
 
-  // Preflight видимости резюме (Magritte clients) — без live ship WE-ON; отключается HH_RESUME_VISIBILITY_PREFLIGHT=0
+  // Preflight видимости резюме (Magritte clients) — verify на форме этой вакансии; abort при !ok.
+  // Отключается HH_RESUME_VISIBILITY_PREFLIGHT=0
   if (String(process.env.HH_RESUME_VISIBILITY_PREFLIGHT ?? '1').trim() !== '0' && !dryRun) {
     try {
       const { resolveResumeForVacancy } = await import('../lib/resume-routing.mjs');
       const { launchPersistentContextSafe, closeContextSafe } = await import('../lib/chromium-session.mjs');
       const { sessionProfilePath } = await import('../lib/paths.mjs');
       const { showResumeVisibleToHhClients } = await import('../lib/hh-resume-visibility.mjs');
+      const { vacancyIdFromUrl } = await import('../lib/vacancy-parse.mjs');
       const resumePick = resolveResumeForVacancy(beforeApply);
       const hash = String(resumePick.hash || '').trim();
+      const verifyVacancyId =
+        String(beforeApply.vacancyId || '').trim() ||
+        vacancyIdFromUrl(beforeApply.url || '') ||
+        '';
       if (hash) {
-        console.log(`[point-apply] visibility preflight: ${resumePick.title} [${hash.slice(0, 8)}…]`);
+        console.log(
+          `[point-apply] visibility preflight: ${resumePick.title} [${hash.slice(0, 8)}…]` +
+            (verifyVacancyId ? ` verifyVac=${verifyVacancyId}` : '')
+        );
         const ctx = await launchPersistentContextSafe(
           sessionProfilePath(),
           { headless: true, viewport: { width: 1280, height: 800 }, locale: 'ru-RU' },
@@ -448,14 +460,34 @@ async function runOneApply(pick, out) {
           const page = ctx.pages()[0] || (await ctx.newPage());
           const vis = await showResumeVisibleToHhClients(page, hash, {
             log: (m) => console.log(m),
+            verifyVacancyId: verifyVacancyId || undefined,
           });
           console.log(`[point-apply] visibility: ${vis?.message || vis?.ok || JSON.stringify(vis)}`);
+          if (vis && vis.ok === false) {
+            const reason = vis.reason || 'resume_visibility';
+            console.warn(`[point-apply] visibility STOP: ${reason} — ${vis.message || ''}`);
+            return {
+              ok: false,
+              status: 'skip',
+              reason,
+              message: vis.message || 'resume_visibility',
+              pick,
+              visibility: vis,
+            };
+          }
         } finally {
           await closeContextSafe(ctx, 'point-vis-preflight');
         }
       }
     } catch (e) {
-      console.warn(`[point-apply] visibility preflight skip: ${e?.message || e}`);
+      console.warn(`[point-apply] visibility preflight error (fail-closed): ${e?.message || e}`);
+      return {
+        ok: false,
+        status: 'skip',
+        reason: 'resume_visibility_preflight_error',
+        message: String(e?.message || e),
+        pick,
+      };
     }
   }
 

@@ -581,6 +581,7 @@
     "check:knowledge-infra": "node scripts/check-knowledge-infra.mjs",
     "devops:ops-readiness": "node scripts/ops-readiness-check.mjs",
     "devops:s1-preflight": "node scripts/s1-hunt-preflight.mjs",
+    "devops:audit-false-invited": "node scripts/run-with-instance.mjs --instance=emil -- node scripts/devops-audit-false-invited.mjs",
     "devops:s1-preflight:emil": "node scripts/run-with-instance.mjs --instance=emil -- node scripts/s1-hunt-preflight.mjs",
     "devops:s1-preflight:anastasia": "node scripts/run-with-instance.mjs --instance=anastasia -- node scripts/s1-hunt-preflight.mjs",
     "devops:s1-prepare-letters": "node scripts/s1-prepare-letters.mjs",

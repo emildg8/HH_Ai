@@ -198,4 +198,31 @@ assert.equal(
   true
 );
 
+// Point-wave: 2× IT_One в peers → block focus
+const waveBlock = await assessPointApplyBlocked(
+  {
+    id: 'focus-wave',
+    title: 'DevOps engineer',
+    scoreOverall: 80,
+    descriptionForLlm: 'Linux Grafana банк Docker',
+    coverLetter: {
+      status: 'approved',
+      approvedText:
+        'До июня 2026 в IT_One вёл L2 на контурах СБП: релизы. Grafana/Kibana. Готов.',
+    },
+  },
+  {
+    force: false,
+    waveItems: [
+      {
+        id: 'peer-a',
+        company: 'A',
+        letter: 'В IT_One на контурах СБП сократил инциденты. Логи и SQL.',
+      },
+    ],
+  }
+);
+assert.equal(waveBlock.blocked, true);
+assert.ok(waveBlock.reasons.some((r) => /point-wave|IT_One/i.test(r)));
+
 console.log('OK: test-point-apply-gate.mjs');
