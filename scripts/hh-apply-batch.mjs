@@ -48,10 +48,10 @@ import {
   finishBatchControl,
   getBatchCommand,
 } from '../lib/batch-control.mjs';
-import { HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED } from '../lib/hh-apply-exit-codes.mjs';
 import {
   findBatchSkipReasonInLines,
   formatApplySkipReasonFromText,
+  interpretBatchApplyChildResult,
 } from '../lib/batch-skip-reason.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -363,8 +363,10 @@ async function main() {
           failed,
           skipped,
         });
-        const exitCode = await runApplyForId(rec.id, { tailorResume, dryRun });
-        if (exitCode === HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED) {
+        const childResult = interpretBatchApplyChildResult(
+          await runApplyForId(rec.id, { tailorResume, dryRun })
+        );
+        if (childResult.status === 'questionnaire') {
           skipped++;
           logBatch(
             `Анкета ${stepNum}/${planned}: «${stepTitle}» — отклик не отправлен, карточка в разделе «Анкета»`
@@ -373,8 +375,8 @@ async function main() {
           batchProgress.step(done, `Анкета (пропуск) ${stepNum}/${planned}`, { done, failed, skipped });
           continue;
         }
-        if (exitCode !== 0) {
-          throw new Error(`hh-apply-chat exit ${exitCode}`);
+        if (childResult.status === 'error') {
+          throw new Error(childResult.message);
         }
         recordApplyLaunch();
         done++;
