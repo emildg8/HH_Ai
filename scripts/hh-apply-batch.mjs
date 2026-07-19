@@ -52,6 +52,7 @@ import {
   findBatchSkipReasonInLines,
   formatApplySkipReasonFromText,
   interpretBatchApplyChildResult,
+  isBatchRecoverableApplyError,
 } from '../lib/batch-skip-reason.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -88,21 +89,6 @@ function logBatch(msg) {
   const line = formatLogLine(`[batch] ${msg}`);
   console.log(line);
   appendApplyChatLog(line, { withTime: false });
-}
-
-/** Ошибки отклика, при которых батч переходит к следующей вакансии. */
-function isBatchRecoverableApplyError(message) {
-  const m = String(message || '');
-  if (/редирект на логин|выполните:\s*npm run login/i.test(m)) return false;
-  return (
-    /отклик недоступен|в архиве|снята с публикации/i.test(m) ||
-    /не удалось открыть форму отклика/i.test(m) ||
-    /кнопка «откликнуться»/i.test(m) ||
-    /не найдена кнопка «откликнуться»/i.test(m) ||
-    /мастер не дошёл до кнопки/i.test(m) ||
-    /не выбрано резюме|резюме не переключилось/i.test(m) ||
-    /hh-apply-chat exit 1/i.test(m)
-  );
 }
 
 function runApplyForId(id, { tailorResume, dryRun }) {

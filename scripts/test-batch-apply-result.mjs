@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { interpretBatchApplyChildResult } from '../lib/batch-skip-reason.mjs';
+import {
+  interpretBatchApplyChildResult,
+  isBatchRecoverableApplyError,
+} from '../lib/batch-skip-reason.mjs';
 
 assert.deepEqual(interpretBatchApplyChildResult({ exitCode: 0, skipReason: '' }), {
   status: 'success',
@@ -19,5 +22,14 @@ assert.deepEqual(interpretBatchApplyChildResult({ exitCode: 1, skipReason: 'не
   skipReason: 'не выбрано резюме',
   message: 'hh-apply-chat exit 1: не выбрано резюме',
 });
+
+assert.equal(
+  isBatchRecoverableApplyError('hh-apply-chat exit 1: нужен вход на hh.ru (npm run login)'),
+  false
+);
+assert.equal(
+  isBatchRecoverableApplyError('hh-apply-chat exit 1: вакансия снята с публикации'),
+  true
+);
 
 console.log('test-batch-apply-result: OK');

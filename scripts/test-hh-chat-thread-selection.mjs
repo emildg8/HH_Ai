@@ -20,6 +20,14 @@ assert.equal(
   ),
   false
 );
+assert.equal(
+  negotiationThreadTextMatches(
+    'Senior DevOps Architect\nРомашка Labs',
+    'Senior DevOps Engineer',
+    'Ромашка Tech'
+  ),
+  false
+);
 assert.equal(negotiationThreadTextMatches('DevOps', 'DevOps', ''), false);
 
 class FakeLocator {
@@ -62,11 +70,13 @@ class FakeLocator {
   }
 }
 
-function fakePage(rows, firstThread) {
+function fakePage(rows, firstThread, exactLinks = []) {
   return {
     async waitForTimeout() {},
     locator(selector) {
-      if (selector.startsWith('a[href*="/vacancy/')) return new FakeLocator();
+      if (selector.startsWith('a[href*="/vacancy/')) {
+        return new FakeLocator({ items: exactLinks });
+      }
       if (selector.includes('[data-qa="negotiations-list"]')) return firstThread;
       return new FakeLocator({ items: rows });
     },
@@ -106,5 +116,30 @@ const matched = await selectNegotiationThread(fakePage(rows, unrelatedFirstThrea
 });
 assert.equal(matched, 'thread:identity');
 assert.equal(correctClicks, 1);
+
+let prefixClicks = 0;
+let exactClicks = 0;
+const exactMatched = await selectNegotiationThread(
+  fakePage([], unrelatedFirstThread, [
+    new FakeLocator({
+      visible: true,
+      href: '/vacancy/1234',
+      click: () => prefixClicks++,
+    }),
+    new FakeLocator({
+      visible: true,
+      href: '/applicant/negotiations?vacancyId=123',
+      click: () => exactClicks++,
+    }),
+  ]),
+  {
+    vacancyId: '123',
+    vacancyTitle: 'Senior DevOps Engineer',
+    company: 'ООО Ромашка Tech',
+  }
+);
+assert.equal(exactMatched, 'thread-vacancy-id');
+assert.equal(prefixClicks, 0);
+assert.equal(exactClicks, 1);
 
 console.log('test-hh-chat-thread-selection: OK');
