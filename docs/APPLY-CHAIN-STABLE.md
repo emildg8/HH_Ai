@@ -146,14 +146,15 @@ Cross-track → pre-submit `wrong_resume`, отправка запрещена:
 - **Альтуэра (16.07):** `Рук. поддержки` / L2 при ideal devops\|infra\|tam.
 - **Биржа (18.07):** DevOps (tech CV) при ideal support\|support_lead\|tam — на шаге анкеты симметричный STOP (`questionnaireStepResumeBlocksSubmit`).  
   Док/откат: [`SESSION-2026-07-18-resume-quiz-gate.md`](SESSION-2026-07-18-resume-quiz-gate.md).  
-  virt/VMware → plan infra; devops↔infra на quiz пока совместимы (P2: reload sticky).
+  virt/VMware → plan infra; P2 sticky devops↔infra на quiz: reload×1 + STOP `sticky-devops-on-infra-ideal` (20.07).
 
 ### Анастасия (`:3850`)
 
 ```bash
 npm run devops:anastasia-build-day-baskets
 # QA lead: probe + savedAnswers до ship
-npm run devops:anastasia-pack-ship -- --only=<uuid8>
+npm run devops:hunt-day:anastasia -- ship --mode=basket --go --only=<uuid>
+# dry/отладка движка: devops:anastasia-pack-ship -- --only=<uuid8>
 ```
 
 **1 apply-lane:** не параллелить Emil + Anastasia; не править selectors mid-run.

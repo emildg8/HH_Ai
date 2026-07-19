@@ -23,10 +23,11 @@
 | `docs/APPLY-CHAIN-STABLE.md` | строка про двусторонний gate |
 | `docs/LEARNING-LOG.md` | урок H/resume-quiz-gate |
 
-## Сознательно не делали (P2)
+## Сознательно не делали (P2) — закрыто 20.07
 
-Sticky **DevOps** при ideal **infra** на шаге анкеты **по-прежнему не стоп** (семья devops↔infra).  
-Нужен отдельный шаг: reload+`syncPreferredResume` один раз, если ideal есть в списке hh. Не в этом срезе.
+Sticky **DevOps** при ideal **infra** на шаге анкеты: **STOP** `sticky-devops-on-infra-ideal` (+ симметрия infra при devops).  
+Repair: один `reloadVacancyResponseWithResume` + `syncPreferredResume` (в т.ч. при soft mismatch до hard STOP).  
+Семья devops↔infra остаётся в `resumeRolesCompatible` для **раннего** picker, не для финального submit анкеты.
 
 ## Проверка
 
