@@ -59,7 +59,7 @@ assert.equal(
   true
 );
 
-// Совпадение title / семья devops↔infra → не стоп (P2: sticky infra отдельно)
+// Совпадение title support → не стоп
 assert.equal(
   questionnaireStepResumeBlocksSubmit({
     curTitle: 'Специалист технической поддержки L2, L3',
@@ -68,9 +68,28 @@ assert.equal(
   }).block,
   false
 );
+
+// P2 20.07: sticky DevOps при ideal infra → STOP (семья только для раннего picker)
+const stickyInfra = questionnaireStepResumeBlocksSubmit({
+  curTitle: 'DevOps-инженер',
+  preferredTitle: 'Системный инженер',
+  idealRole: 'infra',
+});
+assert.equal(stickyInfra.block, true);
+assert.equal(stickyInfra.reason, 'sticky-devops-on-infra-ideal');
+
+const stickyDevops = questionnaireStepResumeBlocksSubmit({
+  curTitle: 'Системный инженер',
+  preferredTitle: 'DevOps-инженер',
+  idealRole: 'devops',
+});
+assert.equal(stickyDevops.block, true);
+assert.equal(stickyDevops.reason, 'sticky-infra-on-devops-ideal');
+
+// Точное совпадение infra title → ok
 assert.equal(
   questionnaireStepResumeBlocksSubmit({
-    curTitle: 'DevOps-инженер',
+    curTitle: 'Системный инженер',
     preferredTitle: 'Системный инженер',
     idealRole: 'infra',
   }).block,
