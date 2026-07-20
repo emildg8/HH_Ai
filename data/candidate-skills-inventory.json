@@ -1,0 +1,594 @@
+{
+  "meta": {
+    "version": 1,
+    "updatedAt": "2026-07-19",
+    "narrative": "DevOps junior+/middle: 14+ лет L2/SL2 и банковские контуры (СБП, мониторинг) + собственные стартап-проекты 2026 (HH Ai, Playwright). На hh.ru — факты из CV; в письмах tier A — letterSafe STAR из inventory (коммерция и стартап-практика честно разделены).",
+    "changelog": [
+      "2026-07-20: Softline SLA канон — дуга ~78%→~93% (не «>85%»); в DevOps-письмах SLA Softline не ведущий крючок (лучше IT_One/доступы/Linux); SLA-дуга — l2l3/support/leadership",
+      "2026-07-19: partner skills — ELK пилот (агент/парсеры/метрики) letterSafe осторожно; MSSQL+MySQL E2 letterSafe (бэкап/реплики/инциденты Aplana+Softline); Softline lead: 10 прямых + найм + SLA ~78%→~93%; Proxmox/Zabbix/Veeam с нуля; ИБ только разбор уязвимостей на встречах; EN письменно",
+      "2026-07-19: capability wave1+2 — Jira/Confluence/Kibana/OpenShift/vSphere/Veeam/AD/Oracle letterSafe; Softline Docker внутренних сервисов (несколько, без name-drop); SCCM/MFA/Asterisk/OTRS interviewSafe; запрет Docker/K8s со стендов заказчиков Softline",
+      "2026-07-19: Postman E1 letterSafe (IT_One оба проекта); синхрон data/ ↔ data-emil; в inventory вернули Python + it-one-gpb-prior",
+      "2026-07-18: Мергер снят с публичного CV (publicCv=false); letterSafe false; минимум фактов в ФБД; Softline +переезд в ЦОД",
+      "2026-07-17: Mikrotik letterSafe E2 (ФБД + дом); ban «учиться/освоить» known-стек; не паковать known+unknown в одну фразу",
+      "2026-06-22 M0.1 workshop: начальный inventory из Cursor-проектов",
+      "2026-06-26 M0.2 workshop: коммерческие STAR (банк/СБП, Softline, FBD Linux) + ролевые talkingPoints",
+      "2026-06-26 M0.1: канонический my/cursor-evidence-index.md — навигатор tier E0–E4"
+    ]
+  },
+  "antiPatterns": [
+    "Не писать «готов учиться / освоить / изучить» про known-стек из inventory (Mikrotik, Cisco, Linux, Docker, Zabbix, Proxmox и т.п.) — только факт опыта",
+    "Не паковать known + unknown в одну фразу «учиться A и B» (напр. Mikrotik и Sigur): known — опыт, unknown — отдельно «быстро войду с командой» или молчание",
+    "Не выдавать стартап-проекты за коммерческий опыт в штате",
+    "Не писать в резюме hh навыки без E2+ evidence",
+    "Не упоминать автоматизацию откликов как «бот для обмана HR»",
+    "Не называть в письме другую должность, чем в заголовке вакансии",
+    "Не приписывать Docker/K8s со стендов заказчиков Softline (ФНС/ЦБ/УВЗ и т.п. в инвентаре ВМ) — коммерческий Docker только внутренних сервисов Softline (несколько самописных/внутренних контуров) + pet HH Ai; Kubernetes без E2+ не заявлять; hostname внутренних сервисов в письмах не перечислять",
+    "Не заявлять ELK/Elastic как прод-SIEM/EDR — только пилот (агенты, парсеры, метрики) или Kibana в IT_One",
+    "Не заявлять AppSec/SAST/DAST/WAF/пентест — из ИБ только участие в разборе уязвимостей на командных встречах",
+    "Английский: письменно ок; устный не заявлять как fluent — «быстро набираю при погружении» только на собеседовании, не в письме"
+  ],
+  "multimodalRefs": [
+    {
+      "id": "hh-ai-apply-truth",
+      "kind": "video",
+      "path": "tests/video/README.md",
+      "tier": "E4",
+      "note": "Apply truth B1D — 5 сессий log-golden"
+    },
+    {
+      "id": "hh-ai-repo",
+      "kind": "code",
+      "path": "D:/Dev/apps/hh-ai",
+      "tier": "E3",
+      "note": "Playwright apply, dashboard, gate"
+    },
+    {
+      "id": "nas-softline-scan",
+      "kind": "doc",
+      "path": "data-emil/tmp-nas-full-scan-report.md",
+      "tier": "E1",
+      "note": "NAS Document/Reserve 16.07 — Softline vSAN/RackStore/VM lifecycle; не Docker стендов заказчиков"
+    }
+  ],
+  "skills": [
+    {
+      "name": "Linux",
+      "skill": "Linux",
+      "evidenceTier": "E2",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["devops", "infra", "l2l3"],
+      "aliases": ["администрирование Linux", "bash"]
+    },
+    {
+      "name": "Mikrotik",
+      "skill": "Mikrotik",
+      "evidenceTier": "E2",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["infra"],
+      "aliases": ["MikroTik", "микротик", "RouterOS"]
+    },
+    {
+      "name": "Docker",
+      "skill": "Docker",
+      "evidenceTier": "E2",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": true,
+      "tracks": ["devops", "infra"],
+      "aliases": ["контейнеры"],
+      "note": "E2 pet HH Ai + коммерция Softline: внутренние Docker-сервисы (несколько). Не стенды заказчиков ФНС/ЦБ. Hostname внутренних сервисов в письмах не перечислять."
+    },
+    {
+      "name": "Playwright",
+      "skill": "Playwright",
+      "evidenceTier": "E3",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": true,
+      "tracks": ["devops"],
+      "aliases": ["e2e", "браузерная автоматизация"]
+    },
+    {
+      "name": "CI/CD",
+      "skill": "CI/CD",
+      "evidenceTier": "E2",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": true,
+      "tracks": ["devops"],
+      "aliases": ["GitLab CI", "pipeline"]
+    },
+    {
+      "name": "Node.js",
+      "skill": "Node.js",
+      "evidenceTier": "E3",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["devops"],
+      "aliases": ["JavaScript automation"]
+    },
+    {
+      "name": "Grafana",
+      "skill": "Grafana",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["devops", "l2l3", "tam"],
+      "aliases": ["метрики", "алерты", "observability"]
+    },
+    {
+      "name": "Zabbix",
+      "skill": "Zabbix",
+      "evidenceTier": "E2",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["infra", "devops"],
+      "aliases": ["мониторинг"],
+      "note": "ФБД: админ, поднимал и настраивал с нуля."
+    },
+    {
+      "name": "Python",
+      "skill": "Python",
+      "evidenceTier": "E3",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": true,
+      "tracks": ["devops"],
+      "aliases": ["automation scripts", "pytest", "AI-assisted"],
+      "note": "AI-assisted E3: скрипты автоматизации, pytest, Cursor/LLM в HH Ai и стартап-проектах 2026"
+    },
+    {
+      "name": "PostgreSQL",
+      "skill": "PostgreSQL",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["devops", "l2l3"],
+      "aliases": ["SQL", "диагностика БД"]
+    },
+    {
+      "name": "Postman",
+      "skill": "Postman",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["l2l3", "devops", "tam"],
+      "aliases": ["API checks", "Swagger", "REST проверка", "curl"]
+    },
+    {
+      "name": "Jira",
+      "skill": "Jira",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["l2l3", "tam", "devops", "support_lead"],
+      "aliases": ["Jira SD", "Service Desk"]
+    },
+    {
+      "name": "Confluence",
+      "skill": "Confluence",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["l2l3", "tam", "devops"],
+      "aliases": ["база знаний", "KB"]
+    },
+    {
+      "name": "Kibana",
+      "skill": "Kibana",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["l2l3", "devops"],
+      "aliases": ["логи"],
+      "note": "IT_One: разбор логов/алертов. ELK как стек — см. skill ELK (пилот)."
+    },
+    {
+      "name": "ELK",
+      "skill": "ELK",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["devops", "infra", "l2l3"],
+      "aliases": ["Elasticsearch", "Logstash", "Elastic Stack", "Filebeat"],
+      "note": "Пилот: агенты на серверах, парсеры, метрики. Не заявлять как прод-SIEM/EDR или deep ELK-admin."
+    },
+    {
+      "name": "OpenShift",
+      "skill": "OpenShift",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["devops"],
+      "aliases": ["OCP", "контейнерная платформа"]
+    },
+    {
+      "name": "Camunda",
+      "skill": "Camunda",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["devops", "l2l3"],
+      "aliases": []
+    },
+    {
+      "name": "Keycloak",
+      "skill": "Keycloak",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["devops"],
+      "aliases": ["IAM"]
+    },
+    {
+      "name": "vSphere",
+      "skill": "vSphere",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["infra"],
+      "aliases": ["VMware", "vSAN", "ESXi"]
+    },
+    {
+      "name": "Veeam",
+      "skill": "Veeam",
+      "evidenceTier": "E2",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["infra", "support_lead"],
+      "aliases": ["бэкап", "backup"],
+      "note": "ФБД/Softline: поднимал и настраивал с нуля (не только «пользовался»)."
+    },
+    {
+      "name": "Active Directory",
+      "skill": "Active Directory",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["infra", "l2l3"],
+      "aliases": ["AD", "DNS", "DHCP"]
+    },
+    {
+      "name": "Oracle",
+      "skill": "Oracle",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["l2l3"],
+      "aliases": ["Oracle DB"]
+    },
+    {
+      "name": "MSSQL",
+      "skill": "MSSQL",
+      "evidenceTier": "E2",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["l2l3", "infra", "support_lead"],
+      "aliases": ["SQL Server", "Microsoft SQL Server", "MS SQL"],
+      "note": "Aplana/Softline: бэкапы, реплики, инциденты. Не DBA-архитектор / не рук. отдела развития БД без оговорки."
+    },
+    {
+      "name": "MySQL",
+      "skill": "MySQL",
+      "evidenceTier": "E2",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["l2l3", "infra", "support_lead"],
+      "aliases": ["MariaDB"],
+      "note": "Aplana/Softline: бэкапы, реплики, инциденты — рядом с MSSQL."
+    },
+    {
+      "name": "ITIL",
+      "skill": "ITIL",
+      "evidenceTier": "E1",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["support_lead", "tam"],
+      "aliases": ["ITSM", "управление услугами"],
+      "note": "Softline lead: SLA/OLA / каталог услуг — процессный язык, не сертификация ради тега"
+    },
+    {
+      "name": "Proxmox",
+      "skill": "Proxmox",
+      "evidenceTier": "E2",
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["infra"],
+      "aliases": [],
+      "note": "ФБД: админ, поднимал и настраивал с нуля."
+    },
+    {
+      "name": "SCCM",
+      "skill": "SCCM",
+      "evidenceTier": "E1",
+      "letterSafe": false,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["l2l3"],
+      "aliases": ["ConfigMgr", "MECM"],
+      "note": "Softline L2: jump/RMS — interview; letterSafe только при явном JD"
+    },
+    {
+      "name": "MFA",
+      "skill": "MFA",
+      "evidenceTier": "E1",
+      "letterSafe": false,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["l2l3"],
+      "aliases": ["Microsoft Authenticator", "многофакторная аутентификация"]
+    },
+    {
+      "name": "Asterisk",
+      "skill": "Asterisk",
+      "evidenceTier": "E1",
+      "letterSafe": false,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["infra"],
+      "aliases": ["ВАТС", "телефония"]
+    },
+    {
+      "name": "OTRS",
+      "skill": "OTRS",
+      "evidenceTier": "E1",
+      "letterSafe": false,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "gateBoost": false,
+      "tracks": ["infra", "l2l3"],
+      "aliases": ["тикетная система"]
+    }
+  ],
+  "projects": [
+    {
+      "id": "bank-sbp-l2",
+      "title": "ГПБ-ИТ / IT_One — проект СБП (L2)",
+      "period": "коммерческий опыт 2025–2026 (в IT_One с 2023, переход с другого проекта в ГПБ)",
+      "kind": "commercial",
+      "stack": ["Linux", "Grafana", "Kibana", "PostgreSQL", "Oracle", "Jira", "Confluence", "Postman", "СБП"],
+      "roles": ["linux", "infra", "monitoring", "support", "devops"],
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "star": {
+        "situation": "Высоконагруженные банковские контуры СБП (пром, тест, эмулятор): инциденты 2-й линии, релизы и регламентные работы под SLA.",
+        "action": "Мониторинг и алерты (Grafana, Kibana), диагностика по логам и SQL, проверки API/интеграций в Postman, эскалации смежникам, документация и обучение коллег по сценариям.",
+        "result": "Сократил время реагирования на инциденты более чем на 15% за счёт метрик, алертов и регламентов; ускорил подключение партнёров СБП более чем на 15%; обработал 7000+ обращений и инцидентов."
+      }
+    },
+    {
+      "id": "it-one-gpb-prior",
+      "title": "IT_One — ДПСИТ / кредитный контур ГПБ",
+      "period": "коммерческий опыт июль 2023 — май 2025",
+      "kind": "commercial",
+      "stack": ["OpenShift", "Linux", "Jira", "Confluence", "Camunda", "Keycloak", "Postman", "PostgreSQL"],
+      "roles": ["linux", "infra", "support"],
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "star": {
+        "situation": "Сопровождение банковских платформ в контуре ГПБ (аутстафф IT_One): прикладные сервисы, контейнерные среды.",
+        "action": "Инциденты L2, релизы, OpenShift/Linux, проверки API в Postman/Swagger, документация и эскалации смежникам.",
+        "result": "Стабильное сопровождение платформ до перехода на проект СБП в том же банке."
+      }
+    },
+    {
+      "id": "merger-it",
+      "title": "Мергер — удалённый руководитель IT",
+      "period": "коммерческий опыт декабрь 2019 — апрель 2026 (параллельно с основной работой; с 18.07.2026 не на публичном CV)",
+      "kind": "commercial",
+      "stack": ["Bitrix", "Linux", "ЭЦП", "сеть", "телефония"],
+      "roles": ["infra", "leadership", "support"],
+      "letterSafe": false,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "star": {
+        "situation": "Запуск компании по банковским гарантиям с нуля: офис ~20 сотрудников, параллельно основной работе (выходцы ФБД / связанное направление).",
+        "action": "Закупка и настройка техники, сервер, сеть, телефония, почта, Битрикс; 3 переезда офиса; консультации по ЭЦП.",
+        "result": "Рабочая IT-инфраструктура и поддержка пользователей без выделенного штата ИТ. На hh — не отдельный блок; минимум влито в ФБД."
+      }
+    },
+    {
+      "id": "softline-support-lead",
+      "title": "Softline — руководитель службы техподдержки 1–2 линии",
+      "period": "коммерческий опыт 2021–2023",
+      "kind": "commercial",
+      "stack": [
+        "SLA",
+        "OLA",
+        "Jira",
+        "Confluence",
+        "Atlassian",
+        "vSphere",
+        "vSAN",
+        "Veeam",
+        "Active Directory",
+        "Zabbix",
+        "Docker",
+        "Nexus",
+        "SonarQube",
+        "SCCM",
+        "MFA"
+      ],
+      "roles": ["support", "leadership", "infra"],
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "star": {
+        "situation": "Служба поддержки на площадках RackStore (МСК) и Уфа: vSphere/vSAN, внутренние сервисы и давление по SLA/OLA; в линии ~20+, прямое подчинение ~10.",
+        "action": "SLA/OLA и каталог услуг; найм и RPI/KPI линии; сопровождение инфры (VM lifecycle, Veeam с нуля, AD); Zabbix/Proxmox-контуры; внутренние сервисы на Docker (несколько самописных/внутренних); Atlassian/SCM; без присвоения стендов заказчиков (ФНС/ЦБ).",
+        "result": "Вывел SLA линии с ~78% до ~93% (процессы, KPI/RPI, база знаний); снизил поток типовых обращений клиентов более чем на порядок; выстроил процессы для команды."
+      }
+    },
+    {
+      "id": "fbd-linux-infra",
+      "title": "Финансовый банковский дом — Linux-инфраструктура с нуля",
+      "period": "коммерческий опыт 2016–2021",
+      "kind": "commercial",
+      "stack": ["Linux", "Proxmox", "Zabbix", "Windows Server", "Active Directory", "Veeam", "Mikrotik", "Asterisk", "OTRS"],
+      "roles": ["linux", "infra", "monitoring"],
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "star": {
+        "situation": "Отдел ИТ банка без выстроенной серверной и сетевой инфраструктуры; нужны мониторинг, резервное копирование и сопровождение 1С/Bitrix.",
+        "action": "Развернул Linux (Proxmox) и Windows (AD, DNS, DHCP), Zabbix и Veeam, сеть на Mikrotik, телефонию (Asterisk) и ИБ-контур; тикеты OTRS; руководил командой до 4 человек.",
+        "result": "Стабильная инфраструктура офиса и ЦОД-практик; предсказуемое сопровождение релизов и миграций без простоев критичных сервисов."
+      }
+    },
+    {
+      "id": "hh-ai",
+      "title": "HH Ai — автоматизация откликов и собесов",
+      "period": "стартап-проект 2026",
+      "kind": "pet",
+      "stack": ["Node.js", "Playwright", "Docker", "Chromium", "OpenRouter", "SQLite", "Cursor", "LLM"],
+      "roles": ["devops", "automation"],
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "star": {
+        "situation": "Ручные отклики на hh.ru отнимали часы; нужен контроль gate, писем и L4 без спама.",
+        "action": "Собрал очередь вакансий, precheck серии, apply-gate, восстановление резюме и суфлёр на собес.",
+        "result": "Вертикальный срез: от harvest до live copilot; log-golden на 5 видео-сессиях apply truth."
+      }
+    },
+    {
+      "id": "dev-platform",
+      "title": "Dev platform — каталог проектов и дашборд",
+      "period": "стартап-проект 2026",
+      "kind": "pet",
+      "stack": ["PowerShell", "catalog.json", "dashboard"],
+      "roles": ["devops", "automation"],
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "star": {
+        "situation": "Несколько ботов и apps в D:\\Dev без единой точки запуска.",
+        "action": "Каталог platform, единый UI настроек, ops-rhythm и handoff-доки для агентов.",
+        "result": "Один порт дашборда для farm/bots/apps; меньше ручного поиска скриптов."
+      }
+    },
+    {
+      "id": "playwright-hh-apply",
+      "title": "Playwright: отклик и чат на hh.ru",
+      "period": "стартап-практика 2026",
+      "kind": "pet",
+      "stack": ["Playwright", "persistent context", "selectors"],
+      "roles": ["devops", "automation"],
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "star": {
+        "situation": "hh.ru меняет UI; ложные «успехи» отклика ломали метрики.",
+        "action": "Две модели отклика (форма/чат), repeat-apply probe, видео+log как источник истины B1D.",
+        "result": "Честный skip при already_applied; тесты repeat apply и L4 observability."
+      }
+    }
+  ],
+  "talkingPoints": [
+    {
+      "text": "Коммерческий опыт: контуры СБП в IT_One — 7000+ обращений, инциденты L2, Grafana/Kibana, −15% MTTR.",
+      "useIn": ["letter", "interview"],
+      "roles": ["linux", "infra", "monitoring", "support", "devops"]
+    },
+    {
+      "text": "Коммерческий опыт: Zabbix и Linux-инфраструктура с нуля (Proxmox, AD, резервное копирование) в финансовом секторе.",
+      "useIn": ["letter", "interview"],
+      "roles": ["linux", "infra", "monitoring"]
+    },
+    {
+      "text": "Коммерческий опыт: сеть на Mikrotik (RouterOS) в банковском ИТ и дома — не «зона роста», а рабочий стек.",
+      "useIn": ["letter", "interview"],
+      "roles": ["linux", "infra"]
+    },
+    {
+      "text": "Коммерческий опыт Softline: RackStore/Уфа — vSphere/vSAN, Veeam с нуля, AD; внутренние сервисы на Docker; не стенды заказчиков.",
+      "useIn": ["letter", "interview"],
+      "roles": ["infra", "support", "leadership", "devops"]
+    },
+    {
+      "text": "Коммерческий опыт Softline: прямое подчинение ~10, найм, RPI/KPI; вывел SLA линии с ~78% до ~93%; в контуре команды ~20+. В письмах DevOps — не ведущий крючок; уместно для l2l3/support/leadership.",
+      "useIn": ["letter", "interview"],
+      "roles": ["support", "leadership"]
+    },
+    {
+      "text": "Коммерческий опыт Aplana/Softline: MSSQL и MySQL — бэкапы, реплики, разбор инцидентов (не DBA-архитектор).",
+      "useIn": ["letter", "interview"],
+      "roles": ["support", "infra", "leadership"]
+    },
+    {
+      "text": "Пилот ELK: агенты на серверах, парсеры и метрики — без заявки как прод-SIEM/EDR.",
+      "useIn": ["letter", "interview"],
+      "roles": ["monitoring", "devops", "infra"]
+    },
+    {
+      "text": "Стартап-проект HH Ai: очередь вакансий, gate перед откликом и серия с precheck — не слепой автопилот.",
+      "useIn": ["letter", "interview"],
+      "roles": ["devops", "automation"]
+    },
+    {
+      "text": "Playwright с отдельным chromium-profile: автоматизация hh без личного Chrome пользователя.",
+      "useIn": ["letter", "interview"],
+      "roles": ["devops", "automation"]
+    },
+    {
+      "text": "Apply truth: видео + лог доказывают факт отклика и repeat-skip на реальных вакансиях.",
+      "useIn": ["interview"],
+      "roles": ["devops", "automation"]
+    }
+  ]
+}
