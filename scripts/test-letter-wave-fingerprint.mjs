@@ -15,6 +15,7 @@ import {
   detectWeakLetterFraming,
 } from '../lib/letter-ru-sanitize.mjs';
 import { assessLetterQuality } from '../lib/letter-quality.mjs';
+import { ensureDevopsLetterMetrics } from '../lib/basket-letter.mjs';
 
 assert.equal(
   letterHasMttr15Fingerprint('Сократил время реакции на критические сбои примерно на 15%.'),
@@ -103,6 +104,35 @@ assert.ok(dayItems.some((x) => x.id === 'today'));
 assert.ok(dayItems.some((x) => x.id === 'short'));
 assert.ok(!dayItems.some((x) => x.id === 'pend'), 'pending без shortlist не в волне');
 assert.ok(!dayItems.some((x) => x.id === 'old'));
+
+const base =
+  'Здравствуйте! Откликаюсь на DevOps. Готов обсудить стек Linux и мониторинг.';
+const forced = (() => {
+  process.env.HH_LETTER_FORCE_MTTR15 = '1';
+  try {
+    return ensureDevopsLetterMetrics(base, { seed: 'force' });
+  } finally {
+    delete process.env.HH_LETTER_FORCE_MTTR15;
+  }
+})();
+assert.match(forced, /−15%|15%/);
+
+const rotated = [
+  ensureDevopsLetterMetrics(base, { seed: 'aaa' }),
+  ensureDevopsLetterMetrics(base, { seed: 'bbb' }),
+  ensureDevopsLetterMetrics(base, { seed: 'ccc' }),
+  ensureDevopsLetterMetrics(base, { seed: 'ddd' }),
+];
+const with15 = rotated.filter((x) => /−15%|-15%|время реакции −/i.test(x)).length;
+assert.equal(with15, 0, 'без FORCE не вставляем −15%');
+const unchanged = rotated.filter((x) => x === base).length;
+assert.ok(unchanged >= 1, 'хотя бы один seed без инжекта');
+
+const withMetricAlready = ensureDevopsLetterMetrics(
+  'Здравствуйте! SLA > 85%. Linux.',
+  { seed: 'zzz' }
+);
+assert.equal(withMetricAlready, 'Здравствуйте! SLA > 85%. Linux.');
 
 const apology =
   'Здравствуйте! Откликаюсь на DevOps. Коммерческий Kubernetes/Terraform в письме не приписываю: готов наращивать. MTTR −15%.';
