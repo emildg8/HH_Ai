@@ -8,6 +8,7 @@
 
 | Дата | Срез | Урок | Закреплено |
 |------|------|------|------------|
+| 20.07.2026 | H/letter-L1 | Регресс 17–20.07: gate≠HR; анти-каскад **укорачивал**; L0→L2-tone. L1: JD-hook + weak-volume + wave rewrite без shorten + framed fallback + golden МАГНИТ. Правило: ban/метрика не truncate | SESSION-2026-07-20-letter-regression-plan · test:letter-l1-quality |
 | 20.07.2026 | H/Softline-SLA | Канон SLA Softline: дуга **~78%→~93%**, не «>85%». В DevOps-письмах не ведущий крючок; дуга — l2l3/support/leadership | inventory · basket-letter · resume-experience-canon |
 | 20.07.2026 | H/letter-framing | Hotfix L0 → L2-tone; **letter-framing-router** (JD hook + detectL2Tone + composeDevopsFramedLetter); не второй hunt-day | LETTER-FRAMING-ROUTER · letter-framing-router.mjs |
 | 20.07.2026 | H/apply-automation | Shortlist дня **10–15** (меню), ship **1–3**; `--only=` без авто-regen лестницы; не repair на declined; метрики волны на gen | HUNT-APPLY-AUTOMATION-PLAN |

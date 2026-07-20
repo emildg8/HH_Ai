@@ -84,14 +84,18 @@ flowchart LR
 | — | **Framing router** DevOps vs L2 tone | `letter-framing-router.mjs` | ✅ 20.07 |
 | — | Сегодняшние 5 на hh | regen + `fix-hh-letters-2026-07-20.mjs` | ✅ все 5 |
 
-### L1 — качество смысла (~0,5 дня)
+### L1 — качество смысла (~0,5 дня) ✅ 20.07
 
-| # | Что |
-|---|-----|
-| L1.1 | «Крючок JD»: в первых 2 предложениях маркер из title (Vault/IDP/ЕФО/SberTech/автоматизац*) или fail soft |
-| L1.2 | DevOps title → бан MSSQL/реплики в **первом** абзаце (L2 framing) |
-| L1.3 | Wave-aware **на gen**: если сегодня уже −15% — prompt/ensureDevopsLetterMetrics не предлагает −15%; **не** укорачивать текст вручную |
-| L1.4 | Эталон-фикстура: письмо уровня МАГНИТ (Vault+SLA) в golden test |
+| # | Что | Статус |
+|---|-----|--------|
+| L1.1 | «Крючок JD»: в первых 2 предложениях маркер из title | ✅ `detectMissingJdHook` + batch gate |
+| L1.2 | DevOps title → бан MSSQL/реплики в opening (без «Здравствуйте» в слоте) | ✅ ужесточён |
+| L1.3 | Wave-aware **на gen**: avoid −15%/IT_One; **не** укорачивать | ✅ `ensureDevopsLetterMetrics` + `rewriteMttr15WithoutShorten` |
+| L1.4 | Эталон МАГНИТ + анти-кейсы в golden | ✅ |
+| L1.5 | Fallback `composeDevopsFramedLetter` в basket | ✅ |
+| L1.6 | Weak-volume «N+ сервисов» без коммерческого факта | ✅ |
+| — | План+ретро | [`SESSION-2026-07-20-letter-regression-plan.md`](SESSION-2026-07-20-letter-regression-plan.md) |
+| — | Тест | `npm run test:letter-l1-quality` |
 
 ### L2 — опционально
 

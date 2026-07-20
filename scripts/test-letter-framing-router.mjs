@@ -7,6 +7,7 @@ import {
   resolveLetterFramingBundle,
   buildLetterFramingPromptBlock,
   detectL2ToneDevopsOpening,
+  detectMissingJdHook,
   composeDevopsFramedLetter,
   assessLetterFramingRisks,
 } from '../lib/letter-framing-router.mjs';
@@ -15,6 +16,14 @@ import { assessLetterQualityForBatch } from '../lib/letter-batch-gate.mjs';
 assert.equal(extractJdHook({ title: 'DevOps/Vault-инженер' }).category, 'vault');
 assert.equal(extractJdHook({ title: 'DevOps Engineer (IDP)' }).category, 'idp');
 assert.equal(extractJdHook({ title: 'DevOps в команду Автоматизации ЕФО' }).category, 'automation');
+
+assert.equal(
+  detectMissingJdHook(
+    { title: 'DevOps/Vault', huntTrack: 'devops' },
+    'Здравствуйте! Откликаюсь на DevOps. Linux и Grafana, релизы команды без HashiCorp. Готов обсудить стек дальше.'
+  ).ok,
+  false
+);
 
 const l2ish =
   'Здравствуйте! Откликаюсь на DevOps. На Linux писал регламенты, сопровождал PostgreSQL и Zabbix, разбор инцидентов на контуре из 3+ сервисов. Готов обсудить.';

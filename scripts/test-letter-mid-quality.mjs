@@ -37,7 +37,7 @@ assert.equal(
 assert.equal(
   detectDevopsDbFirstFraming(
     { title: 'DevOps-инженер' },
-    'Здравствуйте! На Linux писал Bash; базы — часть эксплуатации. Готов обсудить.'
+    'Здравствуйте! На Linux писал Bash и автоматизацию; базы — часть эксплуатации. Готов обсудить.'
   ).ok,
   true
 );

@@ -32,6 +32,9 @@ vacancy → letter-framing-router (JD hook + lead/tail facts)
 | LLM игнорирует framing block | снова L2-tone | gate fail → retry с `composeDevopsFramedLetter` fallback | template safe |
 | SLA 78→93 в DevOps opening | тикетный KPI lead | SLA-дуга только l2l3 (`SOFTLINE_SLA_ARC`) | inventory канон |
 | Edit на hh не проходит | старый текст в chatik | `fix-hh-letters-*` + `forceAlwaysEdit` | — |
+| Нет JD-hook в opening | generic mid-письмо | `detectMissingJdHook` в batch/point | `HH_LETTER_JD_HOOK=0` |
+| Weak «N+ сервисов» | gate pass без коммерческого факта | `detectWeakVolumeOnlyMetric` | `HH_LETTER_ALLOW_WEAK_VOLUME=1` |
+| Анти-каскад укорачивает | Рестрим 245 симв. | `rewriteMttr15WithoutShorten` · inject ≥ len | — |
 
 **Допущения и риски:**
 - Предполагаем: title вакансии отражает крючок (Vault, IDP, ЕФО) достаточно для opening.
@@ -45,6 +48,7 @@ vacancy → letter-framing-router (JD hook + lead/tail facts)
 | Функция | Назначение |
 |---------|------------|
 | `extractJdHook(rec)` | Крючок из title (vault/idp/automation/…) |
+| `detectMissingJdHook(rec, text)` | L1: крючок в opening или soft-fail |
 | `resolveLetterFramingBundle(rec)` | lead/tail facts, forbidden, risks |
 | `buildLetterFramingPromptBlock(rec, huntTrack)` | Блок в LLM prompt |
 | `detectL2ToneDevopsOpening(rec, text)` | Gate: L2 в opening DevOps |

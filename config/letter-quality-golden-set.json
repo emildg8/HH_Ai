@@ -64,6 +64,56 @@
       "letter": "Здравствуйте! 4 года в L2: Linux, сети, SLA 99.5%, тикеты Jira/ServiceNow. Разбирал инциденты 24×7. Готов к сменному графику.",
       "role": "support",
       "expect": { "pass": true }
+    },
+    {
+      "id": "hh-133657375-role-mismatch",
+      "record": {
+        "title": "Региональный представитель по Восточной Сибири",
+        "company": "ООО Землякофф Кроп Протекшен"
+      },
+      "letter": "Добрый день! Откликаюсь на DevOps / DevSecOps Engineer в ООО Землякофф Кроп Протекшен. 14+ лет в IT-инфраструктуре, эксплуатации и технической поддержке, последние годы работаю с GitLab, мониторингом и автоматизацией релизов в банковских высоконагруженных контурах. На практике: сократил время реагирования на инциденты более чем на 15%.",
+      "role": "devops",
+      "expect": { "pass": false, "rawPass": false }
+    },
+    {
+      "id": "qa-jd-parroting-indid",
+      "record": { "title": "Technical QA Lead", "company": "Индид" },
+      "letter": "Здравствуйте! Откликаюсь на позицию Technical QA Lead в качестве QA от 5 лет; Опыт руководства командой тестирования; Опыт работы с AI агентами; Понимание основ ИБ: HTTP(S), базового шифрования, сертификатов, подписей; Знание Python (и опыт написания автотестов на нем); Знание и опыт работы с SQL; Готовность взять ответственность за качество продукта.",
+      "role": "qa_lead",
+      "expect": { "pass": false, "rawPass": false }
+    },
+    {
+      "id": "magnit-vault-mid-etalon-2026-07-20",
+      "record": {
+        "title": "DevOps-инженер/Vault-инженер",
+        "company": "МАГНИТ IT",
+        "huntTrack": "devops"
+      },
+      "letter": "Здравствуйте! Откликаюсь на DevOps-инженера/Vault-инженера в МАГНИТ IT. До июня 2026 в IT_One настраивал доступы и ротацию секретов на Linux-контуре, писал Bash под автоматизацию регламентов, сопровождал релизы с мониторингом. Близко к задаче связать Vault с приложениями платформы. Готов обсудить стек и формат работы команды.",
+      "role": "devops",
+      "expect": { "pass": true, "rawPass": true }
+    },
+    {
+      "id": "anti-restream-mssql-l2-opening",
+      "record": {
+        "title": "DevOps-инженер",
+        "company": "Рестрим",
+        "huntTrack": "devops"
+      },
+      "letter": "Здравствуйте! Откликаюсь на DevOps в Рестрим. Сопровождал MSSQL и реплики, бэкапы баз на контуре. Готов обсудить стек.",
+      "role": "devops",
+      "expect": { "pass": false, "rawPass": false }
+    },
+    {
+      "id": "anti-junior-kaspersky-stretch",
+      "record": {
+        "title": "DevOps Engineer (IDP)",
+        "company": "Лаборатория Касперского",
+        "huntTrack": "devops"
+      },
+      "letter": "Привет! Ищу DevOps в Касперского. В IT_One Linux, MTTR 15%. С Kubernetes уже практикуюсь в проектах. Готов обсудить приоритеты команды и стек работы дальше на коммерческом контуре платформы.",
+      "role": "devops",
+      "expect": { "pass": false, "rawPass": false }
     }
   ]
 }

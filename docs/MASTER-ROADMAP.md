@@ -24,13 +24,13 @@
 | **Голос / STT** | Whisper **small prod** (до A2 L-B v5) · GigaAM 1e A1 ✅ **9/10** · I-track: [`COPILOT-I-TRACK-ROADMAP.md`](COPILOT-I-TRACK-ROADMAP.md) |
 | **Блокер среды** | ПЕТЕР `134973403` недоступен · **Magritte visibility** false_positive_already (infra/WE-ON/Флант) — ручная сверка clients · [`SESSION-2026-07-20-visibility-proof.md`](SESSION-2026-07-20-visibility-proof.md) |
 | **Режим охоты** | **North star:** слот E · курс **~8–10/день** (cap/квоты 4/3/3) · **l2l3 auto** HT.7.4 · tam approval · point-wave fingerprint ✅ |
-| **Next step (H)** | [`HUNT-APPLY-AUTOMATION-PLAN.md`](HUNT-APPLY-AUTOMATION-PLAN.md) P0 (only→no-prepare · skip repair declined) · shortlist plan **10–15** / ship **1–3** · не ship WE-ON/Флант · `sync-chats:emil` |
+| **Next step (H)** | [`SESSION-2026-07-20-letter-regression-plan.md`](SESSION-2026-07-20-letter-regression-plan.md) L1 ✅ (JD-hook · wave без укорочения · golden МАГНИТ) · L2 ME checklist ⬜ · не ship WE-ON/Флант |
 | **H-TRACKS** | **HT.6** ✅ · **HT.7.1–7.3** ✅ · **HT.7.4 l2l3 auto** ✅ · CV-split [`RESUME-CANON-SPLIT.md`](RESUME-CANON-SPLIT.md) · virt→infra P1 ✅ |
 | **Next step (I)** | Prep Hub срезы 1–3 ✅ · ME approve cards · Zoom · [`ME-VERDICT-INTERVIEW-PREP-ROUTE-2026-07-14.md`](ME-VERDICT-INTERVIEW-PREP-ROUTE-2026-07-14.md) |
 | **Next step (MC QA)** | **4 корзины** · harvest Anastasia прогон 17.07 (+0) · `:3850` |
 | **Профиль охоты** | **инфра-лента** — devops/infra/l2l3/tam · без «узкий/расширенный» |
 
-**Фраза агенту (H-track):** Читай [`SESSION-2026-07-20-retro-fixes.md`](SESSION-2026-07-20-retro-fixes.md) + visibility-proof · live только `hunt-day:emil -- ship --go` · не ship WE-ON/Флант · `sync-chats:emil` · captcha SOLVE default off.
+**Фраза агенту (H-track):** Читай [`SESSION-2026-07-20-letter-regression-plan.md`](SESSION-2026-07-20-letter-regression-plan.md) · live только `hunt-day:emil -- ship --go` · не ship WE-ON/Флант · `sync-chats:emil` · captcha SOLVE default off.
 
 ### I-track — prep: три оси закрыты (13.07)
 
