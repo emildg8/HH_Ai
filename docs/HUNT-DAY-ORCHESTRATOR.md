@@ -34,17 +34,19 @@
 
 ## Команды
 
-**Ритуал дня (pain-wave1):** `status` → `plan` → `prep [--with-probe --probe-limit=2]` → `ship --go --limit=1…3`. После sync чатов — `npm run devops:audit-false-invited` (без `--reset`, пока не просмотрели отчёт).
+**Ритуал дня (pain-wave1 + automation plan):** `status` → `plan --limit=10…15` (меню дня) → prep писем по shortlist → `ship --go --limit=1…3` (пачка, не все 15). После sync: `npm run devops:audit-false-invited`. Канон автоматизации: [`HUNT-APPLY-AUTOMATION-PLAN.md`](HUNT-APPLY-AUTOMATION-PLAN.md).
 
 ```powershell
 cd d:\Dev\apps\hh-ai
 
 npm run devops:hunt-day:emil -- status --mode=point
-npm run devops:hunt-day:emil -- plan --mode=point --dry-run --limit=10
+npm run devops:hunt-day:emil -- plan --mode=point --dry-run --limit=15
 npm run devops:hunt-day:emil -- prep --limit=8
 npm run devops:hunt-day:emil -- prep --limit=8 --with-probe --probe-limit=2
 npm run devops:hunt-day:emil -- ship --mode=point --dry-run --limit=1
 npm run devops:hunt-day:emil -- ship --mode=point --go --limit=1 --skip-id=<uuid>
+npm run devops:hunt-day:emil -- ship --mode=point --go --limit=1 --only=<uuid>
+npm run devops:hunt-day:emil -- ship --mode=point --go --limit=1 --only=<uuid> --prepare-letters
 npm run devops:hunt-day:emil -- ship --mode=point --go --limit=1 --after-ship=watch
 npm run devops:hunt-day:emil -- ship --mode=basket --go --only=<uuid>
 npm run devops:hunt-day:emil -- repair --id=<uuid>
@@ -60,6 +62,8 @@ npm run devops:hunt-day:anastasia -- ship --mode=basket --dry-run --limit=1
 npm run devops:hunt-day:anastasia -- ship --mode=basket --go --only=<uuid>
 npm run devops:hunt-day:anastasia -- repair --id=<uuid>
 ```
+
+**`--only=` (point):** по умолчанию **без** авто-regen лестницы (`--no-prepare-letters`). Откат: `--prepare-letters` или `HH_POINT_PREPARE_ON_ONLY=1`. Канон: [`HUNT-APPLY-AUTOMATION-PLAN.md`](HUNT-APPLY-AUTOMATION-PLAN.md).
 
 **Live ship только с `--go`.** Без `--go` всегда dry-run.
 

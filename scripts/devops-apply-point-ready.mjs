@@ -41,6 +41,7 @@ import {
 import { resolvePointApplyPool } from '../lib/point-apply-precheck.mjs';
 
 import { ensurePointApplyLetters } from '../lib/point-apply-letter-prep.mjs';
+import { resolvePointApplyNoPrepareLetters } from '../lib/point-apply-prepare-policy.mjs';
 
 import {
 
@@ -74,7 +75,8 @@ const argv = process.argv.slice(2);
 
 const dryRun = argv.includes('--dry-run');
 
-const noPrepareLetters = argv.includes('--no-prepare-letters');
+const prepareLettersFlag = argv.includes('--prepare-letters');
+const noPrepareLettersFlag = argv.includes('--no-prepare-letters');
 
 
 
@@ -149,6 +151,15 @@ const onlyIds = new Set(
     .filter(Boolean)
 
 );
+
+const noPrepareLetters = resolvePointApplyNoPrepareLetters({
+  onlyIdsSize: onlyIds.size,
+  noPrepareLetters: noPrepareLettersFlag,
+  prepareLetters: prepareLettersFlag,
+});
+if (onlyIds.size && noPrepareLetters) {
+  console.log('[point-apply] --only= → без авто-regen лестницы (откат: --prepare-letters / HH_POINT_PREPARE_ON_ONLY=1)');
+}
 
 const REPORT = path.join(DATA_DIR, 'logs', 'point-apply-latest.json');
 

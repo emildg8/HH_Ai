@@ -24,7 +24,7 @@
 | **Голос / STT** | Whisper **small prod** (до A2 L-B v5) · GigaAM 1e A1 ✅ **9/10** · I-track: [`COPILOT-I-TRACK-ROADMAP.md`](COPILOT-I-TRACK-ROADMAP.md) |
 | **Блокер среды** | ПЕТЕР `134973403` недоступен · **Magritte visibility** false_positive_already (infra/WE-ON/Флант) — ручная сверка clients · [`SESSION-2026-07-20-visibility-proof.md`](SESSION-2026-07-20-visibility-proof.md) |
 | **Режим охоты** | **North star:** слот E · курс **~8–10/день** (cap/квоты 4/3/3) · **l2l3 auto** HT.7.4 · tam approval · point-wave fingerprint ✅ |
-| **Next step (H)** | [`SESSION-2026-07-20-pain-wave1.md`](SESSION-2026-07-20-pain-wave1.md) · hygiene+UI «к отклику» · `hunt-day:emil` ритуал prep+probe · не ship WE-ON/Флант · `sync-chats:emil` · `audit-false-invited` |
+| **Next step (H)** | [`HUNT-APPLY-AUTOMATION-PLAN.md`](HUNT-APPLY-AUTOMATION-PLAN.md) P0 (only→no-prepare · skip repair declined) · shortlist plan **10–15** / ship **1–3** · не ship WE-ON/Флант · `sync-chats:emil` |
 | **H-TRACKS** | **HT.6** ✅ · **HT.7.1–7.3** ✅ · **HT.7.4 l2l3 auto** ✅ · CV-split [`RESUME-CANON-SPLIT.md`](RESUME-CANON-SPLIT.md) · virt→infra P1 ✅ |
 | **Next step (I)** | Prep Hub срезы 1–3 ✅ · ME approve cards · Zoom · [`ME-VERDICT-INTERVIEW-PREP-ROUTE-2026-07-14.md`](ME-VERDICT-INTERVIEW-PREP-ROUTE-2026-07-14.md) |
 | **Next step (MC QA)** | **4 корзины** · harvest Anastasia прогон 17.07 (+0) · `:3850` |

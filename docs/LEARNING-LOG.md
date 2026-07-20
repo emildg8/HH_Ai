@@ -8,6 +8,7 @@
 
 | Дата | Срез | Урок | Закреплено |
 |------|------|------|------------|
+| 20.07.2026 | H/apply-automation | Shortlist дня **10–15** (меню), ship **1–3**; `--only=` без авто-regen лестницы; не repair на declined; метрики волны на gen | HUNT-APPLY-AUTOMATION-PLAN |
 | 20.07.2026 | H/pain-wave1 | Гигиена pending fit&lt;50 + UI «к отклику» + ротация letter metrics (не вечный −15%); ритуал prep --with-probe + audit-false-invited | queue-hygiene · queue-to-apply-filter · basket-letter · SESSION-2026-07-20-pain-wave1 |
 | 19.07.2026 | MC/simplify | Партнёр: Т-Банк снят с антилиста; cap 10 = ёмкость после merge-тестов (не KPI Emil); ГНИВЦ пауза **7–10д** (не 21); канон только ROUTE-STATUS; гигиена pending fit&lt;50 | prefs · employer-blacklist · queue-hygiene-low-fit · ANASTASIA-HUNT-ROUTE-STATUS |
 | 20.07.2026 | H/me-risk-fix | ME FIX: (1) point-ready visibility **abort** + verifyVacancyId; (2) wave = applied-today+shortlist; (3) sticky до title-ok; (4) audit false-invited --reset | point-ready · letter-wave · hh-resume-picker · devops-audit-false-invited · SESSION-2026-07-20-me-risk-fixes |

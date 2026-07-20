@@ -328,6 +328,7 @@
     "test:hh-resume-picker-cross-track": "node scripts/test-hh-resume-picker-cross-track.mjs",
     "test:letter-wave-fingerprint": "node scripts/test-letter-wave-fingerprint.mjs",
     "test:queue-to-apply-filter": "node scripts/test-queue-to-apply-filter.mjs",
+    "test:point-apply-prepare-policy": "node scripts/test-point-apply-prepare-policy.mjs",
     "test:robot-recruiter": "node scripts/test-robot-recruiter.mjs",
     "test:basket-ship-wave": "node scripts/test-basket-ship-wave.mjs",
     "test:apply-wave-digest": "node scripts/test-apply-wave-digest.mjs",

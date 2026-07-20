@@ -64,6 +64,7 @@ function parseArgs(argv) {
     if (a === '--dry-run') opts.dryRun = true;
     else if (a === '--go') opts.go = true;
     else if (a === '--no-prepare-letters') opts.noPrepareLetters = true;
+    else if (a === '--prepare-letters') opts.prepareLetters = true;
     else if (a === '--with-probe') opts.withProbe = true;
     else if (a.startsWith('--probe-limit=')) opts.probeLimit = a.slice('--probe-limit='.length);
     else if (a.startsWith('--mode=')) opts.mode = a.slice('--mode='.length);
@@ -173,6 +174,7 @@ async function main() {
         onlyId: opts.onlyId || '',
         packId: opts.packId || '',
         noPrepareLetters: Boolean(opts.noPrepareLetters),
+        prepareLetters: Boolean(opts.prepareLetters),
       });
       console.log(JSON.stringify(result, null, 2));
       console.log(`[hunt-day] ship → ${result.outPath}`);
