@@ -4,6 +4,8 @@
     "updatedAt": "2026-07-19",
     "narrative": "DevOps junior+/middle: 14+ лет L2/SL2 и банковские контуры (СБП, мониторинг) + собственные стартап-проекты 2026 (HH Ai, Playwright). На hh.ru — факты из CV; в письмах tier A — letterSafe STAR из inventory (коммерция и стартап-практика честно разделены).",
     "changelog": [
+      "2026-07-20: IT_One ДПСИТ — партнёр: жизненный цикл кредитной заявки (найти → где зависла → KB или L3 с логами/тестами); STAR dpsit-credit-lifecycle; в CV l2l3/lead сильнее, devops — диагностика без L2-lead",
+      "2026-07-20: Softline/Аплана партнёр — интеграция контура после выкупа (AD/MFA/почта/телефония); массовая миграция офис→ЦОД без простоя; офис→офис (→Девелоника) interview; сплит Softline РФ/иностранная — только interview; без цифры «N сотен» в публичном тексте",
       "2026-07-20: Softline SLA канон — дуга ~78%→~93% (не «>85%»); в DevOps-письмах SLA Softline не ведущий крючок (лучше IT_One/доступы/Linux); SLA-дуга — l2l3/support/leadership",
       "2026-07-19: partner skills — ELK пилот (агент/парсеры/метрики) letterSafe осторожно; MSSQL+MySQL E2 letterSafe (бэкап/реплики/инциденты Aplana+Softline); Softline lead: 10 прямых + найм + SLA ~78%→~93%; Proxmox/Zabbix/Veeam с нуля; ИБ только разбор уязвимостей на встречах; EN письменно",
       "2026-07-19: capability wave1+2 — Jira/Confluence/Kibana/OpenShift/vSphere/Veeam/AD/Oracle letterSafe; Softline Docker внутренних сервисов (несколько, без name-drop); SCCM/MFA/Asterisk/OTRS interviewSafe; запрет Docker/K8s со стендов заказчиков Softline",
@@ -362,13 +364,14 @@
     {
       "name": "MFA",
       "skill": "MFA",
-      "evidenceTier": "E1",
-      "letterSafe": false,
+      "evidenceTier": "E2",
+      "letterSafe": true,
       "interviewSafe": true,
       "resumeSafe": false,
       "gateBoost": false,
-      "tracks": ["l2l3"],
-      "aliases": ["Microsoft Authenticator", "многофакторная аутентификация"]
+      "tracks": ["infra", "l2l3", "support"],
+      "aliases": ["Microsoft Authenticator", "многофакторная аутентификация"],
+      "note": "Softline: внедрение и раскатка MFA при интеграции Апланы. letterSafe для infra/l2l3 при JD; не lead в DevOps-письмах. resumeSafe=false (волна без HT CV)."
     },
     {
       "name": "Asterisk",
@@ -443,6 +446,31 @@
       }
     },
     {
+      "id": "dpsit-credit-lifecycle",
+      "title": "IT_One ДПСИТ — жизненный цикл кредитной заявки (L2→L3)",
+      "period": "коммерческий опыт IT_One / ГПБ",
+      "kind": "commercial",
+      "stack": [
+        "Camunda",
+        "OpenShift",
+        "Keycloak",
+        "PostgreSQL",
+        "Oracle",
+        "Kibana",
+        "SQL",
+        "Jira"
+      ],
+      "roles": ["support", "infra", "leadership"],
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "star": {
+        "situation": "Кредитный контур банка 24/7: клиент в отделении оформляет кредит, у сотрудника банка ошибка/зависание заявки. Нужно быстро найти заявку в контуре и понять, где она зависла.",
+        "action": "Искал заявку, проверял этап/статус (SQL, логи), снимал типовые инциденты знакомыми сценариями из базы знаний. Новые кейсы разбирал полностью (описание, логи, проверки/тесты) и эскалировал на 3-ю линию готовым пакетом, не сырым тикетом.",
+        "result": "Типовые — закрытие на L2; новые — качественная эскалация на L3 с воспроизводимым разбором. Позже тот же навык диагностики перенёс на контуры СБП."
+      }
+    },
+    {
       "id": "softline-support-lead",
       "title": "Softline — руководитель службы техподдержки 1–2 линии",
       "period": "коммерческий опыт 2021–2023",
@@ -469,9 +497,35 @@
       "interviewSafe": true,
       "resumeSafe": false,
       "star": {
-        "situation": "Служба поддержки на площадках RackStore (МСК) и Уфа: vSphere/vSAN, внутренние сервисы и давление по SLA/OLA; в линии ~20+, прямое подчинение ~10.",
-        "action": "SLA/OLA и каталог услуг; найм и RPI/KPI линии; сопровождение инфры (VM lifecycle, Veeam с нуля, AD); Zabbix/Proxmox-контуры; внутренние сервисы на Docker (несколько самописных/внутренних); Atlassian/SCM; без присвоения стендов заказчиков (ФНС/ЦБ).",
-        "result": "Вывел SLA линии с ~78% до ~93% (процессы, KPI/RPI, база знаний); снизил поток типовых обращений клиентов более чем на порядок; выстроил процессы для команды."
+        "situation": "Служба поддержки на площадках RackStore (МСК) и Уфа после выкупа Softline: склейка контуров Апланы, vSphere/vSAN, внутренние сервисы и давление по SLA/OLA; в линии ~20+, прямое подчинение ~10.",
+        "action": "SLA/OLA и каталог услуг; найм и RPI/KPI линии; интеграция AD/РМ, MFA, почты/телефонии; миграция сервисов офис→ЦОД без простоя; сопровождение инфры (VM lifecycle, Veeam с нуля); внутренние сервисы на Docker (несколько); Atlassian/SCM; без присвоения стендов заказчиков (ФНС/ЦБ).",
+        "result": "Вывел SLA линии с ~78% до ~93% (процессы, KPI/RPI, база знаний); снизил поток типовых обращений клиентов более чем на порядок; единый контур ГК и перенос сервисов без простоя критичных контуров."
+      }
+    },
+    {
+      "id": "softline-aplana-contour-integration",
+      "title": "Аплана → Softline — интеграция контура и миграция в ЦОД",
+      "period": "коммерческий опыт 2021–2023",
+      "kind": "commercial",
+      "stack": [
+        "Active Directory",
+        "MFA",
+        "vSphere",
+        "vSAN",
+        "Veeam",
+        "Windows Server",
+        "Asterisk",
+        "Zabbix",
+        "Jira"
+      ],
+      "roles": ["infra", "leadership", "support"],
+      "letterSafe": true,
+      "interviewSafe": true,
+      "resumeSafe": false,
+      "star": {
+        "situation": "Softline выкупил Аплану (организация с многолетней инфраструктурой). Нужно влить людей и сервисы в контур Softline, затем убрать серверы из офиса в ЦОД без простоя проектных и внутренних сервисов.",
+        "action": "Интегрировал контур: AD и рабочие места, почта, телефония, MFA (внедрение и раскатка), закупка оборудования, внутренние сервисы. Многоэтапно перенёс сервисы и проекты в ЦОД: связи, сеть, БД; физпереезд серверов + виртуальный перенос. Подготовил новый офис Апланы с командой сисадминов (впоследствии бренд Девелоника — контекст собеса).",
+        "result": "Единый контур ГК без разрыва сервисов; миграция офис→ЦОД без простоя критичных контуров; рабочий новый офис. Число сервисов в публичном тексте не фиксируем до сверки."
       }
     },
     {
@@ -541,6 +595,11 @@
   ],
   "talkingPoints": [
     {
+      "text": "IT_One ДПСИТ: жизненный цикл кредитной заявки — найти в контуре, понять где/почему зависла (SQL, логи), снять по базе знаний или эскалировать на L3 с полным разбором (логи, тесты). В письмах DevOps — не lead; уместно для l2l3/support.",
+      "useIn": ["letter", "interview"],
+      "roles": ["support", "leadership", "infra"]
+    },
+    {
       "text": "Коммерческий опыт: контуры СБП в IT_One — 7000+ обращений, инциденты L2, Grafana/Kibana, −15% MTTR.",
       "useIn": ["letter", "interview"],
       "roles": ["linux", "infra", "monitoring", "support", "devops"]
@@ -559,6 +618,26 @@
       "text": "Коммерческий опыт Softline: RackStore/Уфа — vSphere/vSAN, Veeam с нуля, AD; внутренние сервисы на Docker; не стенды заказчиков.",
       "useIn": ["letter", "interview"],
       "roles": ["infra", "support", "leadership", "devops"]
+    },
+    {
+      "text": "Аплана→Softline после выкупа: интегрировал контур (AD/рабочие места, почта, телефония, MFA, закупки) в единый контур ГК. В письмах DevOps — не lead; уместно для infra/l2l3 при JD.",
+      "useIn": ["letter", "interview"],
+      "roles": ["infra", "support", "leadership"]
+    },
+    {
+      "text": "Softline/Аплана: массовая миграция проектных и внутренних сервисов из офиса в ЦОД без простоя — этапы, сеть/БД, физпереезд серверов и виртуальный перенос. Цифру сервисов в письмах не называть без сверки.",
+      "useIn": ["letter", "interview"],
+      "roles": ["infra", "devops", "leadership"]
+    },
+    {
+      "text": "Softline/Аплана: подготовка нового офиса и переезд команды с сисадминами (позже бренд Девелоника) — контекст собеса, не обязательный буллет DevOps.",
+      "useIn": ["interview"],
+      "roles": ["infra", "leadership"]
+    },
+    {
+      "text": "Фон Softline: участие в разделении бизнеса Softline (иностранная / РФ) со стороны рук. поддержки — только собес, не CV и не письма.",
+      "useIn": ["interview"],
+      "roles": ["leadership", "support"]
     },
     {
       "text": "Коммерческий опыт Softline: прямое подчинение ~10, найм, RPI/KPI; вывел SLA линии с ~78% до ~93%; в контуре команды ~20+. В письмах DevOps — не ведущий крючок; уместно для l2l3/support/leadership.",
