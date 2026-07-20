@@ -63,8 +63,15 @@ import {
   syncDockMiniActiveView,
 } from './workspace-docks.mjs';
 import { autoRejectDoneReasonPrefix } from './reject-source.mjs';
-import { humanApiError } from './api-errors.mjs';
+import { humanApiError, isAbortLikeApiError } from './api-errors.mjs';
 import { renderCardTile, currentBrowseMode } from './card-tiles.mjs';
+import { configureCardPrimaryCta } from './card-primary-cta.mjs';
+import {
+  buildLlmScoreBreakdownHtml,
+  buildScoreTooltipHtml,
+  formatScoreLineAriaLabel,
+  formatScoreLineDisplay,
+} from './score-tooltip.mjs';
 import { renderDailySparklineHtml } from './daily-sparkline.mjs';
 import { copyVacancyMarkdown, downloadVacancyMarkdown } from './vacancy-export.mjs';
 import {
@@ -74,7 +81,20 @@ import {
 } from './command-palette.mjs';
 import { initKeyboardShortcuts } from './keyboard-shortcuts.mjs';
 import { buildListBreadcrumbItems, mountListBreadcrumbs } from './list-breadcrumbs.mjs';
-import { renderInterviewHubHtml, renderMockOutputHtml } from './interview-hub-ui.mjs';
+import { filteredHiddenListMessage } from './list-empty-state.mjs';
+import {
+  renderInterviewHubHtml,
+  renderMockOutputHtml,
+  resolveDemoInstrumentForHub,
+  renderInterviewHubDetailHtml,
+  refreshCopilotLivePrepBanner,
+  loadInterviewHubStaleWhileRevalidate,
+  clearInterviewHubCacheFromStorage,
+  renderInterviewHubSkeletonHtml,
+  writeInterviewHubCacheToStorage,
+  INTERVIEW_PREP_CHECKLIST_STORAGE_KEY,
+} from './interview-hub-ui.mjs';
+import { listInterviewHubPaletteTargets, interviewHubPaletteLabel } from './interview-hub-palette.mjs';
 import { renderCopilotPanelHtml, initCopilotPanel } from './interview-copilot-ui.mjs';
 import {
   initInterviewPrompt,
@@ -87,11 +107,27 @@ import {
 } from './interview-prompt.mjs';
 import { initListKeyboardNav } from './list-keyboard-nav.mjs';
 import { renderStatusChips } from './card-status.mjs';
+import { mountJourneyStrip, hubOfferToClientRecord } from './journey-drawer.mjs';
 import { applyCopyToDom, syncFullscreenIcon } from './apply-copy-dom.mjs';
+import { itemPassesToApplyFilter } from './queue-to-apply-filter.mjs';
 import { initWorkflowNav } from './ui-workflow.mjs';
 import { initChatInboxUi, openChatInboxModal } from './chat-inbox-ui.mjs';
 import { buildSourceBadgeFragment, formatSourceOpenLabel } from './source-badges.mjs';
-import { tierClassLabel } from './dashboard-copy-ru.mjs';
+import {
+  tierClassLabel,
+  hhSiteStateSourceLabel,
+  applySkipReasonRuLabel,
+  LETTER_SERIES_READY_LABEL,
+  LETTER_SERIES_READY_HINT,
+  inviteKindChipLabel,
+  INVITE_KIND_LABELS,
+  formatInstanceBadge,
+  INTERVIEW_PREP_CHECKLIST_COPY,
+  PREP_FOUNDATION_HUB_COPY,
+  interviewPrepChecklistProgressLabel,
+  interviewPrepCaptureHealthLabel,
+} from './dashboard-copy-ru.mjs';
+import { openConfirmActionModal } from './confirm-action-modal.mjs';
 import { initSourcesPanel, refreshTopTierList } from './sources-panel.mjs';
 import {
   initIngestUrlModal,
@@ -138,6 +174,7 @@ import {
   filterSettingsSearch,
   fillCopilotDeviceSelects,
 } from './settings-hub.mjs';
+import { coerceInterviewLine } from './interview-text-lines.mjs';
 
 const listEl = document.getElementById('list');
 const tpl = document.getElementById('card-tpl');
@@ -155,8 +192,10 @@ const sidebarFilterSourceEl = document.getElementById('sidebar-filter-source');
 const sidebarFilterTierEl = document.getElementById('sidebar-filter-tier');
 const filterSourceEl = sidebarFilterSourceEl;
 const filterTierEl = sidebarFilterTierEl;
+const instanceBadgeEl = document.getElementById('instance-badge');
 
 const FILTER_PRESET_LS_KEY = 'hh-dashboard-filter-preset-v1';
+const INSTANCE_TOAST_SESSION_KEY = 'hh-instance-toast-shown';
 /** @type {{ onlyManual?: boolean, onlyFresh?: boolean }} */
 let filterPresetExtras = { onlyManual: false, onlyFresh: false };
 const filterSalaryEl = document.getElementById('filter-salary');
@@ -170,6 +209,7 @@ const batchFalsePositiveMaxEl = document.getElementById('batch-false-positive-ma
 const learningAutoApplyEl = document.getElementById('learning-auto-apply');
 const learningAutoApplyMinEl = document.getElementById('learning-auto-apply-min');
 const btnLetterCenterRegenEl = document.getElementById('btn-letter-center-regen');
+const btnLetterCenterGenerateEl = document.getElementById('btn-letter-center-generate');
 const letterStatsBodyEl = document.getElementById('letter-stats-body');
 const letterCenterListEl = document.getElementById('letter-center-list');
 const btnLetterCenterPrepareEl = document.getElementById('btn-letter-center-prepare');
@@ -260,11 +300,13 @@ async function flushDashboardRefreshAfterSettings() {
   invalidateLetterStatsCache();
   invalidateLettersSnapshot();
   void refreshLetterStatsSidebar(true);
-  if (currentScoreBand !== 'all') await load({ preserveScroll: true });
+  await load({ preserveScroll: true });
 }
 
 let currentStatus = 'pending';
 let currentApplyView = 'queue';
+/** @type {'toApply'|'all'} режим списка на вкладке очереди (pain-wave1) */
+let currentQueueListMode = 'toApply';
 let currentScoreBand = 'high';
 let currentAppliedFunnel = 'all';
 let chatTemplatesCache = null;
@@ -295,6 +337,9 @@ let layoutSettingsHydrated = false;
 let settingsFocusTrapCleanup = null;
 
 const DASHBOARD_LAYOUT_LS_KEY = 'hh-dashboard-sidebar-layout-v1';
+let batchHuntTrackIds = ['devops', 'infra', 'l2l3', 'tam'];
+const BATCH_HUNT_TRACKS_SESSION_KEY = 'hh-batch-hunt-tracks';
+let defaultBatchHuntTracks = ['devops', 'infra'];
 
 function readDashboardLayoutLocal() {
   try {
@@ -357,6 +402,7 @@ let applyChatWasRunning = false;
 let harvestWasRunning = false;
 let batchWasRunning = false;
 let syncResponsesWasRunning = false;
+let syncResponsesStartedAt = 0;
 let resumeRaiseWasRunning = false;
 let syncChatsWasRunning = false;
 let dailyRoutineWasRunning = false;
@@ -376,6 +422,68 @@ const AUTO_REPROBE_COOLDOWN_MS = 30 * 60 * 1000;
 const AUTO_REPROBE_LS_KEY = 'hh-dashboard-auto-reprobe-ts';
 let autoReprobeInFlight = false;
 let questionnaireReprobeCandidateCount = 0;
+const LIST_RENDER_INITIAL = 80;
+const LIST_RENDER_STEP = 80;
+const LIST_RENDER_CHUNK = 24;
+let listRenderLimit = LIST_RENDER_INITIAL;
+let listRenderGeneration = 0;
+let harvestReloadTimer = null;
+const HARVEST_RELOAD_DEBOUNCE_MS = 8000;
+
+function resetListRenderLimit() {
+  listRenderLimit = LIST_RENDER_INITIAL;
+}
+
+function appendListLoadMoreButton(shown, total) {
+  const wrap = document.createElement('div');
+  wrap.className = 'list-load-more';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-ghost';
+  btn.textContent = `Показать ещё (${shown} из ${total})`;
+  btn.addEventListener('click', () => {
+    listRenderLimit += LIST_RENDER_STEP;
+    renderListFromCache(null);
+  });
+  wrap.appendChild(btn);
+  listEl.appendChild(wrap);
+}
+
+function appendVacancyCardsChunked(items, browseMode, scrollState, generation, onDone) {
+  let idx = 0;
+  function step() {
+    if (generation !== listRenderGeneration) return;
+    const frag = document.createDocumentFragment();
+    const chunkEnd = Math.min(idx + LIST_RENDER_CHUNK, items.length);
+    for (; idx < chunkEnd; idx++) {
+      const it = items[idx];
+      frag.appendChild(
+        browseMode
+          ? renderCardTile(it, scoreThreshold, renderCard, bindDismiss, bindCardDecision)
+          : renderCard(it)
+      );
+    }
+    if (frag.childNodes.length) listEl.appendChild(frag);
+    if (idx < items.length) {
+      requestAnimationFrame(step);
+      return;
+    }
+    listEl.querySelectorAll('.card, .card-tile').forEach((el) => {
+      if (!el.hasAttribute('tabindex')) el.tabIndex = 0;
+    });
+    restoreListScroll(scrollState);
+    onDone?.();
+  }
+  requestAnimationFrame(step);
+}
+
+function scheduleHarvestListReload() {
+  if (harvestReloadTimer) return;
+  harvestReloadTimer = setTimeout(() => {
+    harvestReloadTimer = null;
+    void load({ preserveScroll: true });
+  }, HARVEST_RELOAD_DEBOUNCE_MS);
+}
 
 function debounce(fn, ms) {
   let t;
@@ -412,6 +520,67 @@ function readFiltersFromUI() {
     onlyManual: Boolean(filterPresetExtras.onlyManual),
     onlyFresh: Boolean(filterPresetExtras.onlyFresh),
   };
+}
+
+function hasActiveListFilters(filters = readFiltersFromUI()) {
+  return Boolean(
+    filters.search ||
+    filters.company ||
+    (Number(filters.minScore) > 0) ||
+    filters.onlySalary ||
+    filters.onlyManual ||
+    filters.onlyFresh ||
+    filters.onlyLetterIssues ||
+    filters.onlyLetterWeak ||
+    (filters.source && filters.source !== 'all') ||
+    (filters.tier && filters.tier !== 'all')
+  );
+}
+
+function countForApplyViewTab(view = currentApplyView) {
+  if (!cachedCounts) return null;
+  const map = {
+    queue: cachedCounts.queue,
+    noQuestionnaire: cachedCounts.noQuestionnaire,
+    questionnaire: cachedCounts.questionnaire,
+    applied: cachedCounts.applied,
+    hidden: cachedCounts.hiddenByRole,
+    deferred: cachedCounts.deferred,
+  };
+  const n = map[view];
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+}
+
+function switchScoreBandToAll() {
+  currentScoreBand = 'all';
+  syncScoreBandTabs();
+  updateScoreBandTabLabels();
+  load();
+}
+
+function resetListFiltersToDefault() {
+  if (filterSearchEl) filterSearchEl.value = '';
+  if (filterMinScoreEl) filterMinScoreEl.value = '';
+  if (filterSalaryEl) filterSalaryEl.checked = false;
+  filterPresetExtras = { onlyManual: false, onlyFresh: false };
+  syncFilterControlsFrom('all', 'all');
+  if (filterLetterQualityBtnEl) {
+    filterLetterQualityBtnEl.classList.remove('active');
+    filterLetterQualityBtnEl.setAttribute('aria-pressed', 'false');
+  }
+  if (letterToolbarChipEl) {
+    letterToolbarChipEl.classList.remove('active');
+    letterToolbarChipEl.setAttribute('aria-pressed', 'false');
+  }
+  if (filterLetterWeakBtnEl) {
+    filterLetterWeakBtnEl.classList.remove('active');
+    filterLetterWeakBtnEl.setAttribute('aria-pressed', 'false');
+  }
+  if (currentScoreBand !== 'all') {
+    switchScoreBandToAll();
+    return;
+  }
+  renderListFromCache(null);
 }
 
 function syncFilterControlsFrom(src, tier) {
@@ -508,6 +677,28 @@ function hhSiteStateBadgeText(item) {
   const h = item?.hhApply;
   const st = h?.hhSiteState;
   if (!st || st === 'none') return '';
+  const ik = String(h?.inviteKind || '').trim();
+  if (ik && ik !== 'none') {
+    const ikLabel = INVITE_KIND_LABELS[ik] || inviteKindChipLabel(ik);
+    if (ikLabel) {
+      const when = h.inviteKindAt
+        ? new Date(h.inviteKindAt).toLocaleString('ru-RU', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : h.hhSiteStateAt
+          ? new Date(h.hhSiteStateAt).toLocaleString('ru-RU', {
+              day: '2-digit',
+              month: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : '';
+      return when ? `${ikLabel} · ${when}` : ikLabel;
+    }
+  }
   const labels = {
     invited: 'Приглашение на hh.ru',
     declined: 'Отказ на hh.ru',
@@ -517,7 +708,10 @@ function hhSiteStateBadgeText(item) {
     archived: 'Вакансия в архиве',
     unavailable: 'Отклик недоступен',
   };
-  const label = h.hhSiteStateLabel || labels[st] || st;
+  let label = h.hhSiteStateLabel || labels[st] || st;
+  if (h.hhDetectedOnly && st === 'already_applied') {
+    label = 'Отклик на hh.ru (не через дашборд)';
+  }
   const when = h.hhSiteStateAt
     ? new Date(h.hhSiteStateAt).toLocaleString('ru-RU', {
         day: '2-digit',
@@ -526,7 +720,69 @@ function hhSiteStateBadgeText(item) {
         minute: '2-digit',
       })
     : '';
-  return when ? `${label} · ${when}` : label;
+  const srcRu = h.hhSiteStateSource ? hhSiteStateSourceLabel(h.hhSiteStateSource) : '';
+  const src = srcRu ? ` · источник: ${srcRu}` : '';
+  const base = when ? `${label} · ${when}` : label;
+  return `${base}${src}`;
+}
+
+function hhSiteStateBadgeTitle(item) {
+  const h = item?.hhApply;
+  if (!h?.hhSiteState || h.hhSiteState === 'none') return '';
+  const ik = String(h?.inviteKind || '').trim();
+  if (ik && ik !== 'none') {
+    const ikLabel = INVITE_KIND_LABELS[ik] || inviteKindChipLabel(ik);
+    if (ikLabel) {
+      const parts = [ikLabel];
+      const whenRaw = h.inviteKindAt || h.hhSiteStateAt;
+      if (whenRaw) {
+        parts.push(
+          new Date(whenRaw).toLocaleString('ru-RU', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        );
+      }
+      if (h.inviteKindSource) parts.push(`Источник: ${h.inviteKindSource}`);
+      return parts.filter(Boolean).join('\n');
+    }
+  }
+  const st = h.hhSiteState;
+  const labels = {
+    invited: 'Приглашение на hh.ru',
+    declined: 'Отказ на hh.ru',
+    already_applied: 'Отклик уже на hh.ru',
+    viewed: 'Резюме просмотрели',
+    awaiting: 'Ждём ответа',
+    archived: 'Вакансия в архиве',
+    unavailable: 'Отклик недоступен',
+  };
+  let label = h.hhSiteStateLabel || labels[st] || st;
+  if (h.hhDetectedOnly && st === 'already_applied') {
+    label = 'Отклик на hh.ru (не через дашборд)';
+  }
+  const parts = [label];
+  if (h.hhSiteStateAt) {
+    parts.push(
+      new Date(h.hhSiteStateAt).toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    );
+  }
+  if (h.hhDetectedOnly) {
+    parts.push('Обнаружено на сайте hh.ru — отклик не отправлялся через дашборд в этой сессии.');
+  }
+  if (h.hhSiteStateSource) {
+    parts.push(
+      `Источник детектора: ${hhSiteStateSourceLabel(h.hhSiteStateSource, { expert: true }) || h.hhSiteStateSource}`
+    );
+  }
+  return parts.filter(Boolean).join('\n');
 }
 
 async function setHhSiteStateManual(item, state) {
@@ -542,7 +798,7 @@ async function setHhSiteStateManual(item, state) {
         : 'Статус hh.ru сброшен',
     'good'
   );
-  await loadItems();
+  await load();
 }
 
 /** Показать кнопки «Пригласили» / «Отказ» для обратной связи LLM. */
@@ -608,8 +864,21 @@ function isStaleFollowUpClient(item) {
   return days != null && days >= 7;
 }
 
+function syncQueueListModeTabs() {
+  document.querySelectorAll('[data-queue-list-mode]').forEach((btn) => {
+    const mode = btn.getAttribute('data-queue-list-mode');
+    btn.classList.toggle('active', mode === currentQueueListMode);
+  });
+}
+
 function applyClientFilters(items, filters) {
   let out = filterItemsForApplyView([...items]);
+  if (
+    (currentApplyView === 'queue' || currentApplyView === 'noQuestionnaire') &&
+    currentQueueListMode === 'toApply'
+  ) {
+    out = out.filter((it) => itemPassesToApplyFilter(it));
+  }
   const q = filters.search.toLowerCase();
   if (q) {
     out = out.filter((it) => vacancyMatchesSearch(it, q));
@@ -621,6 +890,15 @@ function applyClientFilters(items, filters) {
   const min = Number(filters.minScore);
   if (Number.isFinite(min) && min > 0) {
     out = out.filter((it) => scoreOf(it) >= min);
+  }
+  if (currentApplyView === 'queue' || currentApplyView === 'noQuestionnaire') {
+    const huntTracks = getSelectedHuntTracks();
+    if (huntTracks.length) {
+      out = out.filter((it) => {
+        const tid = it.huntTrack?.id;
+        return tid && huntTracks.includes(tid);
+      });
+    }
   }
   if (filters.onlySalary) {
     out = out.filter((it) => it.salaryEstimate?.ok);
@@ -718,6 +996,7 @@ function applyPreferencesToSettingsUI(preferences, bounds) {
   if (bounds && typeof bounds === 'object') prefBounds = bounds;
   const p = preferences || {};
   dashboardPreferences = p;
+  applyJourneyPresetToDom(p?.hiringJourney?.preset || 'apply');
   dispatchPrefsUpdated(p);
   const setNum = (el, key, fallback) => {
     if (!el) return;
@@ -1115,13 +1394,13 @@ async function probePreferencesSaveApi() {
   }
 }
 
-async function patchPreferencesApi(patch) {
+async function patchPreferencesApi(patch, extraOpts = {}) {
   const body = JSON.stringify({ patch });
   const tries = [
-    () => api('/api/settings', { method: 'PATCH', body }),
-    () => api('/api/preferences/save', { method: 'POST', body }),
-    () => api('/api/preferences', { method: 'POST', body }),
-    () => api('/api/preferences', { method: 'PATCH', body }),
+    () => api('/api/settings', { method: 'PATCH', body, ...extraOpts }),
+    () => api('/api/preferences/save', { method: 'POST', body, ...extraOpts }),
+    () => api('/api/preferences', { method: 'POST', body, ...extraOpts }),
+    () => api('/api/preferences', { method: 'PATCH', body, ...extraOpts }),
   ];
   let lastErr;
   for (const fn of tries) {
@@ -1135,6 +1414,89 @@ async function patchPreferencesApi(patch) {
   throw lastErr;
 }
 
+function getTauriInvoke() {
+  return (
+    window.__TAURI__?.core?.invoke ||
+    window.__TAURI_INTERNALS__?.invoke ||
+    window.__TAURI__?.invoke
+  );
+}
+
+/** Desktop inject (#hh-desktop-health-banner) — снять после успешной загрузки очереди. */
+function clearDesktopHealthBanner() {
+  document.getElementById('hh-desktop-health-banner')?.remove();
+}
+
+async function pingDashboardHealth(timeoutMs = 12_000) {
+  try {
+    const r = await fetch(new URL('/api/health', window.location.origin), {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!r.ok) return false;
+    const j = await r.json();
+    return j?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+async function recoverDashboardIfStuck() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
+  try {
+    return Boolean(await invoke('restart_dashboard_sidecar'));
+  } catch {
+    return false;
+  }
+}
+
+async function patchPreferencesApiWithRetry(patch, extraOpts = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      if (!(await pingDashboardHealth(4000))) {
+        await recoverDashboardIfStuck();
+      }
+      await new Promise((r) => setTimeout(r, 900 * attempt));
+    }
+    try {
+      return await patchPreferencesApi(patch, extraOpts);
+    } catch (e) {
+      lastErr = e;
+      const msg = String(e?.message || e);
+      if (attempt >= 2 || !/abort|timeout|timed out|fetch|network/i.test(msg)) throw e;
+    }
+  }
+  throw lastErr;
+}
+
+function initDesktopDashboardWatchdog() {
+  if (!getTauriInvoke()) return;
+  let recovering = false;
+  let lastToastAt = 0;
+  const tick = async () => {
+    if (recovering) return;
+    // 12s: saveQueue большой очереди раньше занимал ~5с и ложно ронял health за 4с
+    if (await pingDashboardHealth(12_000)) return;
+    recovering = true;
+    try {
+      const ok = await recoverDashboardIfStuck();
+      if (ok && (await pingDashboardHealth(15_000))) {
+        if (Date.now() - lastToastAt > 60_000) {
+          lastToastAt = Date.now();
+          showToast('Дашборд перезапущен — обновляем очередь и настройки', 'neutral');
+        }
+        load({ preserveScroll: true });
+        window.dispatchEvent(new CustomEvent('hh:dashboard-recovered'));
+      }
+    } finally {
+      recovering = false;
+    }
+  };
+  setInterval(tick, 40_000);
+  setTimeout(tick, 8000);
+}
+
 async function saveSettingsFromUI() {
   if (preferencesSaveAvailable === false) {
     setSettingsHint('Перезапустите дашборд: npm run devops:dashboard, затем F5', 'err');
@@ -1142,8 +1504,15 @@ async function saveSettingsFromUI() {
   }
   markSettingsSaving();
   const patch = readSettingsPatchFromUI();
+  const saveSignal =
+    typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+      ? AbortSignal.timeout(30_000)
+      : undefined;
   try {
-    const res = await patchPreferencesApi(patch);
+    if (!(await pingDashboardHealth(3500))) {
+      await recoverDashboardIfStuck();
+    }
+    const res = await patchPreferencesApiWithRetry(patch, saveSignal ? { signal: saveSignal } : {});
     const prefs = { ...(res.preferences || {}) };
     const uiFromApi = res.ui ? { ...res.ui } : {};
     if (!prefs.dashboardSidebarPanelSides && patch.dashboardSidebarPanelSides) {
@@ -1168,14 +1537,19 @@ async function saveSettingsFromUI() {
       invalidateLetterStatsCache();
       invalidateLettersSnapshot();
       void refreshLetterStatsSidebar(true);
-      if (currentScoreBand !== 'all') load({ preserveScroll: true });
+      load({ preserveScroll: true });
     }
   } catch (e) {
     markSettingsSaveFailed();
+    const msg = String(e?.message || e);
     const hint =
       e.status === 404
         ? 'Сервер без сохранения лимитов — перезапустите: npm run devops:dashboard, затем F5'
-        : e.message || 'Ошибка сохранения';
+        : /abort|timeout|timed out/i.test(msg)
+          ? getTauriInvoke()
+            ? 'Сохранение: дашборд не ответил — перезапуск… подождите 5 с и нажмите «Сохранить сейчас»'
+            : 'Сохранение: дашборд не ответил — npm run desktop:start, затем F5'
+          : humanApiError(e);
     setSettingsHint(hint, 'err');
   }
 }
@@ -1192,6 +1566,137 @@ function flushSaveSettings() {
 function getBatchLimitForRun() {
   const cap = Number(batchLimitEl?.max) || batchSizeCap || 100;
   return Math.min(cap, Math.max(1, Number(batchLimitEl?.value) || 10));
+}
+
+function normalizeBatchHuntTrackIds(ids) {
+  if (!Array.isArray(ids)) return [];
+  return ids.filter((id) => batchHuntTrackIds.includes(String(id || '').trim()));
+}
+
+function readBatchHuntTracksFromSession() {
+  try {
+    const raw = sessionStorage.getItem(BATCH_HUNT_TRACKS_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeBatchHuntTrackIds(parsed);
+    return normalized.length ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistBatchHuntTracksSelection(ids) {
+  const normalized = normalizeBatchHuntTrackIds(ids);
+  const tracks = normalized.length ? normalized : [...defaultBatchHuntTracks];
+  try {
+    sessionStorage.setItem(BATCH_HUNT_TRACKS_SESSION_KEY, JSON.stringify(tracks));
+  } catch {
+    /* ignore */
+  }
+  dashboardPreferences = { ...dashboardPreferences, batchHuntTracks: tracks };
+  void patchPreferencesApi({ batchHuntTracks: tracks }).catch(() => {});
+  return tracks;
+}
+
+function syncBatchHuntTracksUi(tracks) {
+  const group = document.getElementById('batch-hunt-tracks');
+  if (!group) return;
+  const selected = new Set(normalizeBatchHuntTrackIds(tracks));
+  if (!selected.size) {
+    for (const id of defaultBatchHuntTracks) selected.add(id);
+  }
+  group.querySelectorAll('[data-hunt-track]').forEach((btn) => {
+    if (!(btn instanceof HTMLButtonElement)) return;
+    const on = selected.has(btn.dataset.huntTrack || '');
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
+async function hydrateHuntTracksBar() {
+  const group = document.getElementById('batch-hunt-tracks');
+  if (!group) return;
+  try {
+    const data = await api('/api/hunt-tracks');
+    const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
+    if (!tracks.length) return;
+    batchHuntTrackIds = tracks.map((t) => String(t.id || '').trim()).filter(Boolean);
+    const metaDefaults = Array.isArray(data?.meta?.defaultActiveTracks) ? data.meta.defaultActiveTracks : [];
+    const fromBatch = tracks.filter((t) => t.batch?.defaultIncluded).map((t) => t.id);
+    defaultBatchHuntTracks = normalizeBatchHuntTrackIds(metaDefaults.length ? metaDefaults : fromBatch);
+    if (!defaultBatchHuntTracks.length) {
+      defaultBatchHuntTracks = batchHuntTrackIds.slice(0, Math.min(2, batchHuntTrackIds.length));
+    }
+    group.innerHTML = '';
+    for (const t of tracks) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'seg-btn';
+      btn.dataset.huntTrack = t.id;
+      btn.textContent = t.labelShort || t.labelRu || t.id;
+      if (t.labelRu && t.labelRu !== btn.textContent) btn.title = t.labelRu;
+      btn.setAttribute('aria-pressed', 'false');
+      group.appendChild(btn);
+    }
+    delete group.dataset.bound;
+    const session = readBatchHuntTracksFromSession();
+    if (session && !session.some((id) => batchHuntTrackIds.includes(id))) {
+      try {
+        sessionStorage.removeItem(BATCH_HUNT_TRACKS_SESSION_KEY);
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* devops defaults */
+  }
+}
+
+function initBatchHuntTracksUi() {
+  const group = document.getElementById('batch-hunt-tracks');
+  if (!group || group.dataset.bound === '1') return;
+  group.dataset.bound = '1';
+  const initial =
+    readBatchHuntTracksFromSession() ||
+    normalizeBatchHuntTrackIds(dashboardPreferences?.batchHuntTracks) ||
+    [...defaultBatchHuntTracks];
+  syncBatchHuntTracksUi(initial);
+  group.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-hunt-track]');
+    if (!(btn instanceof HTMLButtonElement) || !group.contains(btn)) return;
+    e.preventDefault();
+    const trackId = btn.dataset.huntTrack || '';
+    if (!batchHuntTrackIds.includes(trackId)) return;
+    const selected = new Set(getSelectedHuntTracks());
+    if (selected.has(trackId)) {
+      if (selected.size <= 1) {
+        showToast('Нужен хотя бы один маршрут', 'neutral');
+        return;
+      }
+      selected.delete(trackId);
+    } else {
+      selected.add(trackId);
+    }
+    const next = persistBatchHuntTracksSelection([...selected]);
+    syncBatchHuntTracksUi(next);
+    renderListFromCache(null);
+  });
+}
+
+function getSelectedHuntTracks() {
+  const group = document.getElementById('batch-hunt-tracks');
+  if (group) {
+    const fromUi = [...group.querySelectorAll('[data-hunt-track][aria-pressed="true"]')]
+      .map((btn) => btn.dataset.huntTrack)
+      .filter(Boolean);
+    const normalized = normalizeBatchHuntTrackIds(fromUi);
+    if (normalized.length) return normalized;
+  }
+  const fromSession = readBatchHuntTracksFromSession();
+  if (fromSession?.length) return fromSession;
+  const fromPrefs = normalizeBatchHuntTrackIds(dashboardPreferences?.batchHuntTracks);
+  if (fromPrefs.length) return fromPrefs;
+  return [...defaultBatchHuntTracks];
 }
 
 function showUiTrimHintOnce() {
@@ -1221,6 +1726,8 @@ async function loadDashboardSettings() {
     preferencesSaveAvailable = fromGet || (await probePreferencesSaveApi());
     applyPreferencesToSettingsUI(data.preferences, data.bounds);
     applyDashboardUiFromPreferences(data.preferences, data.ui);
+    await hydrateHuntTracksBar();
+    initBatchHuntTracksUi();
     showUiTrimHintOnce();
     if (data.applyRates) renderApplyRateMeters(data.applyRates);
     await refreshProfileSelect();
@@ -1232,6 +1739,8 @@ async function loadDashboardSettings() {
   } catch {
     settingsHydrated = true;
     preferencesSaveAvailable = false;
+    await hydrateHuntTracksBar();
+    initBatchHuntTracksUi();
     settingsModalHooks?.afterPreferencesLoaded();
   }
 }
@@ -1326,8 +1835,17 @@ function itemLooks1CRole(item) {
   );
 }
 
+/** QA-контур (:3850): Senior/Lead в заголовке — целевые роли, не шум DevOps. */
+function isQaHuntDashboard() {
+  return batchHuntTrackIds.some((id) =>
+    ['qa-lead', 'senior-qa', 'aqa-ai-assist', 'manual-qa'].includes(String(id || '').trim())
+  );
+}
+
 function itemPassesRoleFilters(item) {
-  return !itemLooksSeniorOrLead(item) && !itemLooks1CRole(item);
+  if (itemLooks1CRole(item)) return false;
+  if (isQaHuntDashboard()) return true;
+  return !itemLooksSeniorOrLead(item);
 }
 
 function vacancyHasHhApply(item) {
@@ -1354,11 +1872,18 @@ function hhApplyBadgeText(item) {
   else if (h.hhSiteState === 'declined') parts.push('отказ hh.ru');
   else if (h.hhSiteState === 'viewed') parts.push('просмотрели');
   else if (h.hhSiteState === 'awaiting') parts.push('ждём ответа');
-  else if (h.hhSiteState === 'already_applied') parts.push('отклик на hh.ru');
+  else if (h.hhSiteState === 'already_applied') {
+    parts.push(h.hhDetectedOnly ? 'отклик на hh.ru (сайт)' : 'отклик на hh.ru');
+  }
   if (h.letterDelivered) parts.push('письмо доставлено');
   else if (h.letterInForm) parts.push('письмо в форме');
   else if (h.chatSent) parts.push('письмо в чате');
   else if (h.responseSubmitted) parts.push('отклик без письма');
+  const rl4 = h.resumeL4;
+  if (rl4?.status === 'applied') parts.push(`L4 на hh.ru (${rl4.mode || 'ok'})`);
+  else if (rl4?.status === 'skipped' && rl4.reason) {
+    parts.push(`L4: ${rl4.reason.length > 40 ? 'пропущено' : rl4.reason}`);
+  } else if (rl4?.status === 'failed') parts.push('L4: ошибка записи');
   const roleLabel =
     h.resumeTitleSelected || h.resumeTitlePlanned || item.resumeRouting?.label || h.resumeRole;
   if (roleLabel) {
@@ -1387,7 +1912,7 @@ document.addEventListener('click', () => {
   });
 });
 
-function showToast(message, variant = 'neutral') {
+function showToast(message, variant = 'neutral', opts = {}) {
   let host = document.getElementById('toast-host');
   if (!host) {
     host = document.createElement('div');
@@ -1405,7 +1930,58 @@ function showToast(message, variant = 'neutral') {
     t.classList.remove('toast--visible');
     setTimeout(() => t.remove(), 280);
   };
-  setTimeout(hide, 2600);
+  const durationMs = Number(opts.durationMs) > 0 ? Number(opts.durationMs) : 2600;
+  setTimeout(hide, durationMs);
+}
+
+/** @param {unknown} payload */
+function normalizeInstanceInfo(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const info = /** @type {Record<string, unknown>} */ (payload);
+  const instanceId = String(info.instanceId || info.id || '').trim().toLowerCase();
+  const labelRaw = String(info.label || '').trim();
+  const portRaw = Number(info.port);
+  const fallbackPort = Number(window.location.port);
+  const port = Number.isFinite(portRaw) && portRaw > 0 ? portRaw : Number.isFinite(fallbackPort) ? fallbackPort : null;
+  const label = labelRaw || formatInstanceBadge(instanceId, port || '');
+  const resumeTitle = String(info.resumeTitle || info.hhResumeTitle || '').trim();
+  if (!label) return null;
+  return { instanceId, label, resumeTitle };
+}
+
+/** @param {{ instanceId?: string, label: string, resumeTitle?: string }} info */
+function renderInstanceBadge(info) {
+  if (!instanceBadgeEl) return;
+  instanceBadgeEl.textContent = info.label;
+  instanceBadgeEl.hidden = false;
+  instanceBadgeEl.classList.remove('instance-badge--emil', 'instance-badge--anastasia');
+  if (info.instanceId === 'emil') instanceBadgeEl.classList.add('instance-badge--emil');
+  if (info.instanceId === 'anastasia') instanceBadgeEl.classList.add('instance-badge--anastasia');
+}
+
+/** @param {{ label: string, resumeTitle?: string }} info */
+function maybeShowInstanceToast(info) {
+  try {
+    if (sessionStorage.getItem(INSTANCE_TOAST_SESSION_KEY) === '1') return;
+    const resumeTitle = String(info.resumeTitle || '').trim() || 'не указано';
+    showToast(`Профиль: ${info.label} · резюме: ${resumeTitle}`, 'neutral', { durationMs: 6200 });
+    sessionStorage.setItem(INSTANCE_TOAST_SESSION_KEY, '1');
+  } catch {
+    /* ignore session storage in private mode */
+  }
+}
+
+async function hydrateInstanceBadge() {
+  if (!instanceBadgeEl) return;
+  try {
+    const payload = await api('/api/instance');
+    const info = normalizeInstanceInfo(payload);
+    if (!info) return;
+    renderInstanceBadge(info);
+    maybeShowInstanceToast(info);
+  } catch {
+    /* endpoint может отсутствовать на старом backend */
+  }
 }
 
 function batchPrecheckReasonLabel(key) {
@@ -1421,6 +1997,7 @@ function batchPrecheckReasonLabel(key) {
     'off-target': 'нецелевая',
     letterQuality: 'качество письма',
     fixableLetterQuality: 'можно подготовить автоматически',
+    hh_state: 'уже на hh.ru',
   };
   return m[key] || key;
 }
@@ -1459,18 +2036,41 @@ function setLetterIssuesFilter(enabled) {
   }
 }
 
+function dashboardOriginHint() {
+  try {
+    const { protocol, hostname, port } = window.location;
+    if (port) return `${protocol}//${hostname}:${port}`;
+    return `${protocol}//${hostname}`;
+  } catch {
+    return 'http://127.0.0.1:3849';
+  }
+}
+
 function formatFetchError(err, path) {
+  if (isAbortLikeApiError(err)) {
+    return humanApiError(err);
+  }
   const msg = err?.message || String(err);
   if (msg === 'Failed to fetch' || /failed to fetch/i.test(msg)) {
     return (
       'Нет связи с дашбордом. Запустите в терминале: npm run dashboard\n' +
-      'и откройте http://127.0.0.1:3849 (не file://).'
+      `и откройте ${dashboardOriginHint()} (не file://).`
     );
   }
   if (/loadDevOpsEnv|ReferenceError/i.test(msg)) {
     return 'Ошибка сервера при запуске поиска — обновите код и перезапустите npm run dashboard';
   }
-  return msg;
+  return humanApiError(err);
+}
+
+/** @param {unknown} value */
+function displayStatusText(value) {
+  return coerceInterviewLine(value);
+}
+
+/** @param {{ label?: unknown } | null | undefined} progress */
+function progressStatusLabel(progress) {
+  return displayStatusText(progress?.label);
 }
 
 async function api(path, opts = {}) {
@@ -1485,9 +2085,34 @@ async function api(path, opts = {}) {
       ...opts,
     });
   } catch (err) {
-    const e = new Error(formatFetchError(err, path));
-    e.cause = err;
-    throw e;
+    const canRecover =
+      typeof path === 'string' &&
+      path.startsWith('/api/') &&
+      getTauriInvoke() &&
+      /failed to fetch|networkerror|network error/i.test(String(err?.message || err));
+    if (canRecover) {
+      const recovered = await recoverDashboardIfStuck();
+      if (recovered) {
+        try {
+          r = await fetch(url, {
+            headers: { 'Content-Type': 'application/json', ...opts.headers },
+            ...opts,
+          });
+        } catch (retryErr) {
+          const e = new Error(formatFetchError(retryErr, path));
+          e.cause = retryErr;
+          throw e;
+        }
+      } else {
+        const e = new Error(formatFetchError(err, path));
+        e.cause = err;
+        throw e;
+      }
+    } else {
+      const e = new Error(formatFetchError(err, path));
+      e.cause = err;
+      throw e;
+    }
   }
   const text = await r.text();
   let data;
@@ -1497,7 +2122,7 @@ async function api(path, opts = {}) {
     const looksHtml = /^\s*</.test(text);
     const hint =
       r.status === 404 && (text.trim() === 'Not found' || looksHtml)
-        ? 'Ответ не JSON (часто 404 у статики). Запустите дашборд: npm run dashboard и откройте http://127.0.0.1:3849'
+        ? `Ответ не JSON (часто 404 у статики). Запустите дашборд: npm run dashboard и откройте ${dashboardOriginHint()}`
         : text.slice(0, 400) || r.statusText;
     const err = new Error(hint);
     err.status = r.status;
@@ -1565,10 +2190,13 @@ async function mountEmployerRagPreview(mount, item) {
   summary.textContent = 'Контекст работодателя для LLM';
   details.appendChild(summary);
 
+  const scrollBody = document.createElement('div');
+  scrollBody.className = 'employer-rag-preview__body';
   const pre = document.createElement('pre');
   pre.className = 'employer-rag-preview__text';
   pre.textContent = 'Загрузка…';
-  details.appendChild(pre);
+  scrollBody.appendChild(pre);
+  details.appendChild(scrollBody);
   mount.appendChild(details);
 
   try {
@@ -1588,12 +2216,389 @@ async function mountEmployerRagPreview(mount, item) {
       return;
     }
     pre.textContent = [
-      `РАБОТОДАТЕЛЬ «${intel.company || item.company}» (HR score ${intel.score}/100):`,
-      `История: откликов ${intel.applied}, invite ${intel.inviteRatePct}%, ghost ${intel.ghost}.`,
+      `РАБОТОДАТЕЛЬ «${intel.company || item.company}» (рейтинг ${intel.score}/100):`,
+      `История: откликов ${intel.applied}, приглашений ${intel.inviteRatePct}%, тишина ${intel.ghost}.`,
     ].join('\n');
     details.hidden = false;
   }
 }
+
+/**
+ * Превью L4-подгонки резюме в модалке письма.
+ * @param {HTMLElement} mount
+ * @param {object} item
+ */
+function renderManifestSlotLines(manifest) {
+  if (!manifest?.slots?.length) return '';
+  const lines = [];
+  for (const s of manifest.slots) {
+    const audit =
+      s.audit?.score != null
+        ? ` · AI ${s.audit.score}${s.audit.pass ? '' : ' ⚠'}`
+        : '';
+    const label =
+      s.id === 'aboutMe'
+        ? 'О себе'
+        : s.id === 'skills'
+          ? 'Навыки'
+          : s.id.startsWith('experience.')
+            ? `Опыт #${(s.experienceIndex ?? 0) + 1}`
+            : s.id;
+    const body =
+      s.kind === 'skills'
+        ? Array.isArray(s.value)
+          ? s.value.join(', ')
+          : '—'
+        : String(s.value || '—');
+    lines.push(`▸ ${label}${audit}\n${s.reason ? `  (${s.reason})\n` : ''}${body}`);
+  }
+  if (manifest.skippedSlots?.length) {
+    lines.push(
+      '',
+      'Пропущено:',
+      ...manifest.skippedSlots.map((s) => `  · ${s.id}: ${s.reason}`)
+    );
+  }
+  return lines.join('\n\n');
+}
+
+/**
+ * @param {object} manifest
+ * @param {HTMLElement} host
+ */
+function renderManifestSlotsDom(manifest, host) {
+  host.innerHTML = '';
+  if (!manifest?.slots?.length) return;
+
+  for (const s of manifest.slots) {
+    const slotEl = document.createElement('section');
+    slotEl.className = 'resume-l4-slot';
+    const audit =
+      s.audit?.score != null
+        ? ` · AI ${s.audit.score}${s.audit.pass ? '' : ' ⚠'}`
+        : '';
+    const label =
+      s.id === 'aboutMe'
+        ? 'О себе'
+        : s.id === 'skills'
+          ? 'Навыки'
+          : s.id.startsWith('experience.')
+            ? `Опыт #${(s.experienceIndex ?? 0) + 1}`
+            : s.id;
+    const head = document.createElement('h4');
+    head.className = 'resume-l4-slot__title';
+    head.textContent = `${label}${audit}`;
+    slotEl.appendChild(head);
+    if (s.reason) {
+      const reason = document.createElement('p');
+      reason.className = 'resume-l4-slot__reason muted';
+      reason.textContent = s.reason;
+      slotEl.appendChild(reason);
+    }
+    const body = document.createElement('div');
+    body.className = 'resume-l4-slot__body';
+    if (s.kind === 'skills') {
+      body.textContent = Array.isArray(s.value) ? s.value.join(', ') : '—';
+    } else {
+      const pre = document.createElement('pre');
+      pre.className = 'resume-l4-slot__text';
+      pre.textContent = String(s.value || '—');
+      body.appendChild(pre);
+    }
+    slotEl.appendChild(body);
+    host.appendChild(slotEl);
+  }
+
+  if (manifest.skippedSlots?.length) {
+    const skipped = document.createElement('details');
+    skipped.className = 'resume-l4-skipped';
+    const sum = document.createElement('summary');
+    sum.textContent = `Пропущено (${manifest.skippedSlots.length})`;
+    skipped.appendChild(sum);
+    const ul = document.createElement('ul');
+    ul.className = 'resume-l4-skipped__list';
+    for (const s of manifest.skippedSlots) {
+      const li = document.createElement('li');
+      li.textContent = `${s.id}: ${s.reason}`;
+      ul.appendChild(li);
+    }
+    skipped.appendChild(ul);
+    host.appendChild(skipped);
+  }
+}
+
+/** @param {object} ms */
+function normalizeResumeL4MatchScore(ms = {}) {
+  return {
+    harvest: ms.harvest ?? ms.scoreHarvest,
+    fit: ms.fit ?? ms.scoreFit,
+    projected: ms.projected ?? ms.scoreProjected,
+    delta: ms.delta,
+    hrStackSummary: ms.hrStackSummary,
+  };
+}
+
+/** @param {object} res */
+function formatResumeL4EditsLine(res) {
+  if (res.editsMax == null) return null;
+  if (res.canEditToday === false) {
+    return `Лимит правок резюме на сегодня исчерпан (${res.editsToday}/${res.editsMax}).`;
+  }
+  return `Правок резюме сегодня: ${res.editsToday}/${res.editsMax} (осталось ${res.editsRemaining}).`;
+}
+
+/** @param {object} res @param {{ loading?: boolean }} [opts] */
+function buildResumeL4MetaText(res, opts = {}) {
+  const ms = normalizeResumeL4MatchScore(res.matchScore || {});
+  const scoreLines = [
+    ms.harvest != null ? `Harvest (LLM): ${ms.harvest}` : null,
+    ms.fit != null ? `Соответствие сейчас: ${ms.fit}` : null,
+    ms.projected != null ? `После подгонки: ~${ms.projected}${ms.delta ? ` (+${ms.delta})` : ''}` : null,
+    ms.hrStackSummary ? `Стек: ${ms.hrStackSummary}` : null,
+  ].filter(Boolean);
+  const gapPct = res.gap?.gapScore != null ? `Совпадение ключей: ${res.gap.gapScore}%.` : '';
+  const missing =
+    res.gap?.missing?.length > 0
+      ? `Пробелы (не в резюме): ${res.gap.missing.slice(0, 8).join(', ')}`
+      : '';
+  if (!res.wouldUseL4) {
+    return [
+      scoreLines.join('\n'),
+      gapPct,
+      res.reason || 'Подгонка не требуется.',
+      res.roleMismatchHint || null,
+      res.applyAtHint || null,
+      missing,
+      formatResumeL4EditsLine(res),
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+  }
+  const parts = [
+    scoreLines.join('\n'),
+    gapPct,
+    res.mode ? `Режим: ${res.mode}` : null,
+    res.roleMismatchHint || null,
+    res.applyAtHint || null,
+    formatResumeL4EditsLine(res),
+    res.gap?.missing?.length ? `Пробелы: ${res.gap.missing.slice(0, 6).join(', ')}` : null,
+    res.employerBrief ? `Контекст компании:\n${res.employerBrief.slice(0, 400)}` : null,
+  ];
+  if (opts.loading && res.quick) {
+    parts.push('Генерация текста слотов LLM… (обычно 30–90 с, повторное открытие — мгновенно)');
+  } else if (res.cached) {
+    parts.push('Из кэша');
+  }
+  return parts.filter(Boolean).join('\n\n');
+}
+
+/** @param {HTMLElement} slotsEl @param {object[]} planSlots */
+function renderResumeL4PlanSkeleton(slotsEl, planSlots) {
+  slotsEl.innerHTML = '';
+  for (const s of planSlots || []) {
+    const slotEl = document.createElement('section');
+    slotEl.className = 'resume-l4-slot resume-l4-slot--pending';
+    const head = document.createElement('h4');
+    head.className = 'resume-l4-slot__title';
+    head.textContent = s.label || s.id;
+    slotEl.appendChild(head);
+    if (s.reason) {
+      const reason = document.createElement('p');
+      reason.className = 'resume-l4-slot__reason muted';
+      reason.textContent = s.reason;
+      slotEl.appendChild(reason);
+    }
+    const pending = document.createElement('p');
+    pending.className = 'resume-l4-slot__pending muted';
+    pending.textContent = '…';
+    slotEl.appendChild(pending);
+    slotsEl.appendChild(slotEl);
+  }
+}
+
+/**
+ * @param {HTMLElement} metaEl
+ * @param {HTMLElement} slotsEl
+ * @param {HTMLElement} scrollBody
+ * @param {object} res
+ */
+function applyResumeL4PreviewResponse(metaEl, slotsEl, scrollBody, res, opts = {}) {
+  metaEl.textContent = buildResumeL4MetaText(res, {
+    loading: opts.loading ?? Boolean(res.quick),
+  });
+  scrollBody.querySelectorAll('.resume-l4-taskblocks').forEach((n) => n.remove());
+
+  if (!res.wouldUseL4) {
+    slotsEl.innerHTML = '';
+    return;
+  }
+
+  if (res.manifest?.slots?.length) {
+    renderManifestSlotsDom(res.manifest, slotsEl);
+  } else if (res.quick && res.planSlots?.length) {
+    renderResumeL4PlanSkeleton(slotsEl, res.planSlots);
+  } else {
+    slotsEl.innerHTML = '';
+    const fallback = document.createElement('pre');
+    fallback.className = 'resume-l4-slot__text';
+    fallback.textContent = renderManifestSlotLines(res.manifest) || [
+      res.aboutMe ? `О себе:\n${res.aboutMe}` : null,
+      ...(res.experienceEntries || []).map((e, i) => `Опыт #${i + 1}:\n${e.text || '—'}`),
+      res.skills?.length ? `Навыки: ${res.skills.join(', ')}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    slotsEl.appendChild(fallback);
+  }
+
+  if (res.taskBlocksText) {
+    const tb = document.createElement('details');
+    tb.className = 'resume-l4-taskblocks';
+    const tbSum = document.createElement('summary');
+    tbSum.textContent = 'Блоки задач из вакансии';
+    const tbPre = document.createElement('pre');
+    tbPre.className = 'resume-l4-slot__text';
+    tbPre.textContent = res.taskBlocksText;
+    tb.append(tbSum, tbPre);
+    scrollBody.appendChild(tb);
+  }
+  if (!opts.loading && !res.quick) {
+    void attachResumeHhRestoreUi(scrollBody);
+  }
+}
+
+async function requestResumeHhRestore(resumeHash) {
+  if (
+    !confirm(
+      'Вернуть резюме на hh.ru к состоянию до L4-подгонки?\n\nОткроется окно Chromium с профилем hh.'
+    )
+  ) {
+    return;
+  }
+  try {
+    const res = await api('/api/resume-hh/restore', {
+      method: 'POST',
+      body: JSON.stringify({ resumeHash: resumeHash || undefined }),
+    });
+    showToast(res.message || 'Восстановление запущено', 'good');
+  } catch (e) {
+    alert(e.message || 'Не удалось запустить restore');
+  }
+}
+
+async function attachResumeHhRestoreUi(host) {
+  if (!host) return;
+  host.querySelector('.resume-hh-restore-bar')?.remove();
+  try {
+    const st = await api('/api/resume-hh/status');
+    const bar = document.createElement('div');
+    bar.className = 'resume-hh-restore-bar';
+    if (st.batchRunning) {
+      const p = document.createElement('p');
+      p.className = 'resume-hh-restore-bar__hint muted';
+      p.textContent = '«Вернуть базовое» недоступно — идёт серия откликов';
+      bar.appendChild(p);
+    } else if (st.hasSnapshot) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-ghost btn-sm resume-hh-restore-bar__btn';
+      btn.textContent = 'Вернуть базовое на hh.ru';
+      if (st.savedAt) {
+        btn.title = `Снапшот от ${new Date(st.savedAt).toLocaleString('ru-RU')}`;
+      }
+      btn.addEventListener('click', () => void requestResumeHhRestore(st.resumeHash));
+      bar.appendChild(btn);
+    } else {
+      const p = document.createElement('p');
+      p.className = 'resume-hh-restore-bar__hint muted';
+      p.textContent =
+        'Снапшот для «Вернуть базовое» появится после отклика на hh.ru (кнопка «Авто-отклик» или «С письмом» на карточке), не после черновика письма';
+      bar.appendChild(p);
+    }
+    host.appendChild(bar);
+  } catch {
+    /* status optional */
+  }
+}
+
+async function mountResumeL4Preview(mount, item) {
+  if (!mount || !item?.id) return;
+  mount.innerHTML = '';
+
+  const root = document.createElement('section');
+  root.className = 'employer-rag-preview resume-l4-preview';
+  root.dataset.loading = '1';
+
+  const heading = document.createElement('h3');
+  heading.className = 'resume-l4-preview__heading';
+  heading.textContent = 'Подгонка резюме под вакансию';
+  root.appendChild(heading);
+
+  const scrollBody = document.createElement('div');
+  scrollBody.className = 'employer-rag-preview__body resume-l4-preview__body';
+  const metaEl = document.createElement('div');
+  metaEl.className = 'resume-l4-preview__meta';
+  const slotsEl = document.createElement('div');
+  slotsEl.className = 'resume-l4-slots';
+  scrollBody.append(metaEl, slotsEl);
+  root.appendChild(scrollBody);
+  mount.appendChild(root);
+
+  const seq = ++mountResumeL4Preview._seq;
+  const apiBase = `/api/cover-letter/resume-l4-preview?id=${encodeURIComponent(item.id)}`;
+
+  const storedPayload = item.resumeL4Preview?.payload;
+  if (storedPayload?.manifest?.slots?.length) {
+    applyResumeL4PreviewResponse(metaEl, slotsEl, scrollBody, {
+      ...storedPayload,
+      quick: false,
+      cached: true,
+    });
+    delete root.dataset.loading;
+  } else if (item.matchScore) {
+    metaEl.textContent = buildResumeL4MetaText(
+      { wouldUseL4: true, matchScore: item.matchScore, gap: item.gap },
+      { loading: true }
+    );
+    renderResumeL4PlanSkeleton(slotsEl, [
+      { id: 'aboutMe', label: 'О себе' },
+      { id: 'skills', label: 'Навыки' },
+      { id: 'experience.0', label: 'Опыт #1' },
+    ]);
+  } else {
+    metaEl.textContent = 'Загрузка превью подгонки…';
+  }
+
+  try {
+    const quick = await api(`${apiBase}&quick=1`);
+    if (seq !== mountResumeL4Preview._seq) return;
+    applyResumeL4PreviewResponse(metaEl, slotsEl, scrollBody, { ...quick, quick: true }, { loading: true });
+    if (!quick.wouldUseL4) {
+      delete root.dataset.loading;
+      return;
+    }
+  } catch {
+    /* full fetch ниже */
+  }
+
+  try {
+    const res = await api(apiBase);
+    if (seq !== mountResumeL4Preview._seq) return;
+    applyResumeL4PreviewResponse(metaEl, slotsEl, scrollBody, res);
+    delete root.dataset.loading;
+  } catch (e) {
+    if (seq !== mountResumeL4Preview._seq) return;
+    metaEl.textContent = e.message || 'Не удалось загрузить превью L4';
+    slotsEl.innerHTML = '';
+    const err = document.createElement('p');
+    err.className = 'resume-l4-slot__reason muted';
+    err.textContent =
+      'Полная генерация слотов не завершилась. Закройте и откройте письмо снова или нажмите «Подготовить».';
+    slotsEl.appendChild(err);
+    delete root.dataset.loading;
+  }
+}
+mountResumeL4Preview._seq = 0;
 
 async function requestCoverLetterRegenerateWeak(opts = {}) {
   return api('/api/cover-letter/regenerate-weak', {
@@ -1602,14 +2607,17 @@ async function requestCoverLetterRegenerateWeak(opts = {}) {
   });
 }
 
-async function fetchBatchPrecheck(minScore, maxScore) {
+async function fetchBatchPrecheck(minScore, maxScore, limit) {
   const batchScope = batchScopeForCurrentView();
   const qs = new URLSearchParams({
     batchScope,
     queueStatus: batchScope === 'queue' && currentStatus === 'approved' ? 'approved' : 'pending',
     minScore: String(Math.max(0, Number(minScore || 0))),
     maxScore: String(Math.max(0, Number(maxScore || 0))),
+    limit: String(Math.max(1, Number(limit) || getBatchLimitForRun())),
   });
+  const huntTracks = getSelectedHuntTracks();
+  if (huntTracks.length) qs.set('huntTracks', huntTracks.join(','));
   return api(`/api/batch-precheck?${qs.toString()}`);
 }
 
@@ -1741,7 +2749,7 @@ function openLetterQualityHubModal() {
       glossaryLabel('fpRejected', dashboardUi.uiMode),
       bl?.falsePositiveRate != null ? `${bl.falsePositiveRate}%` : '—',
     ],
-    ['Батч писем ok', bl?.letterBatchReadyRate != null ? `${bl.letterBatchReadyRate}%` : '—'],
+    [LETTER_SERIES_READY_LABEL, bl?.letterBatchReadyRate != null ? `${bl.letterBatchReadyRate}%` : '—'],
     ['Invite', bl?.inviteRate != null ? `${bl.inviteRate}%` : '—'],
     [
       'Golden письма',
@@ -1772,6 +2780,7 @@ function openLetterQualityHubModal() {
   if (hub.letterNoEdit?.noEditPct != null) {
     html += `<p class="modal-hint">${escapeHtml(glossaryLabel('letterQuality', dashboardUi.uiMode))}: без правок <strong>${hub.letterNoEdit.noEditPct}%</strong> (${hub.letterNoEdit.noEdit}/${hub.letterNoEdit.samples} откликов)</p>`;
   }
+  html += `<p class="modal-hint">${escapeHtml(LETTER_SERIES_READY_HINT)}</p>`;
   html += `<dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>`;
   const batchSamples = hub.batchReport?.samples || [];
   if (batchSamples.length) {
@@ -1928,6 +2937,48 @@ function renderLetterCenterList(s, issues) {
     btnLetterCenterPrepareEl.textContent =
       s?.fixable > 0 ? `Подготовить (${s.fixable})` : 'Подготовить';
   }
+  const missingN = Number(s?.missing || 0);
+  const failN = Number(s?.fail || 0);
+  if (btnLetterCenterGenerateEl) {
+    btnLetterCenterGenerateEl.hidden = missingN <= 0;
+    btnLetterCenterGenerateEl.textContent =
+      missingN > 0 ? `Сгенерировать письма (${missingN})` : 'Сгенерировать письма';
+  }
+  if (btnLetterCenterRegenEl) {
+    btnLetterCenterRegenEl.hidden = failN <= 0;
+    btnLetterCenterRegenEl.textContent =
+      failN > 0 ? `Перегенерировать (${failN})` : 'Перегенерировать';
+  }
+}
+
+/** @param {object} [s] */
+function letterCenterRegenPayload(s = {}) {
+  const missing = Number(s.missing || 0);
+  const fail = Number(s.fail || 0);
+  if (missing > 0) {
+    return { mode: 'missing', limit: Math.min(40, Math.max(5, missing)) };
+  }
+  return { mode: 'fail', limit: Math.min(40, Math.max(5, fail || 25)) };
+}
+
+async function runLetterCenterRegen(modeHint) {
+  const s = letterStatsCache?.payload?.s || {};
+  const payload =
+    modeHint === 'missing'
+      ? { mode: 'missing', limit: Math.min(40, Math.max(5, Number(s.missing || 0) || 25)) }
+      : modeHint === 'fail'
+        ? { mode: 'fail', limit: Math.min(40, Math.max(5, Number(s.fail || 0) || 25)) }
+        : letterCenterRegenPayload(s);
+  const res = await requestCoverLetterRegenerateWeak(payload);
+  const msg =
+    res.message ||
+    'Генерация писем в фоне. Прогресс — файл data/cover-letter-regen.log в папке проекта.';
+  if (letterCenterMetaEl) {
+    letterCenterMetaEl.hidden = false;
+    letterCenterMetaEl.textContent = `${msg} Через 1–3 мин обновите список (F5).`;
+  }
+  showToast(msg, 'good', { durationMs: 7000 });
+  return res;
 }
 
 function applyLetterStatsPayload({ s, issues, hub, warn, baselineGoldenOk }) {
@@ -2082,7 +3133,12 @@ function closeModalById(modalId) {
     closeModalEl(document.getElementById('intelligence-digest-modal'));
     return true;
   }
-  return closeTopModal();
+  const generic = document.getElementById(modalId);
+  if (generic && !generic.hidden) {
+    closeModalEl(generic);
+    return true;
+  }
+  return false;
 }
 
 /** @type {{ id: string, item: object } | null} */
@@ -2469,6 +3525,13 @@ function extractApplyLogInsights(text, st) {
     parts.push(`Последняя ошибка: ${lastErrorLine.replace(/^\[[^\]]+\]\s*/, '')}`);
   }
 
+  const lastSiteState = [...lines]
+    .reverse()
+    .find((l) => /\[hh-site-state\]/i.test(l));
+  if (lastSiteState) {
+    parts.push(`Статус hh.ru: ${lastSiteState.replace(/^.*\[hh-site-state\]\s*/i, '')}`);
+  }
+
   const blob = parts.join('\n');
   if (/капч|hh-captcha/i.test(blob)) {
     parts.push(
@@ -2573,10 +3636,11 @@ function renderBatchReportModal(report) {
         ...skipEntries.map(([reason, count]) => {
           const li = document.createElement('li');
           const isLetter = /letter|письм/i.test(reason);
+          const reasonRu = applySkipReasonRuLabel(reason);
           if (isLetter) {
-            li.innerHTML = `${escapeHtml(reason)} — ${count} · <button type="button" class="btn btn-ghost btn-sm" data-batch-report-settings="fp">настроить фильтр</button>`;
+            li.innerHTML = `${escapeHtml(reasonRu)} — ${count} · <button type="button" class="btn btn-ghost btn-sm" data-batch-report-settings="fp">настроить фильтр</button>`;
           } else {
-            li.textContent = `${reason} — ${count}`;
+            li.textContent = `${reasonRu} — ${count}`;
           }
           return li;
         })
@@ -2899,10 +3963,23 @@ function openDailyDigestModal(digest) {
   openModalEl(modal);
 }
 
+function openLetterModal(item) {
+  const cl = item?.coverLetter || {};
+  const approved = String(cl.approvedText || '').trim();
+  const variants = Array.isArray(cl.variants) ? cl.variants.filter(Boolean) : [];
+  if (!approved && variants.length) {
+    openDraftModal(item);
+    return;
+  }
+  openApprovedLetterModal(item);
+}
+
 function openApprovedLetterModal(item) {
   const modal = document.getElementById('approved-letter-modal');
   if (!modal) return;
-  const text = String(item.coverLetter?.approvedText || '').trim();
+  const text =
+    String(item.coverLetter?.approvedText || '').trim() ||
+    String(item.coverLetter?.variants?.[0] || '').trim();
   modal.querySelector('.modal-vacancy-approved').textContent = item.title || item.url || '';
   modal.querySelector('.modal-approved-text').textContent = text;
   const actions = modal.querySelector('.modal-draft-actions');
@@ -2969,16 +4046,23 @@ function openDraftModal(item) {
   const modal = document.getElementById('draft-modal');
   if (!modal) return;
   const body = modal.querySelector('.modal-draft-body');
+  const footer = modal.querySelector('.modal-draft-actions--footer');
   const vacEl = modal.querySelector('.modal-vacancy');
   const titleEl = modal.querySelector('#draft-modal-title');
   if (titleEl) titleEl.textContent = COPY.draftTitle || 'Черновик письма';
   vacEl.textContent = item.title || item.url || '';
   body.innerHTML = '';
+  if (footer) footer.innerHTML = '';
 
   const ragMount = document.createElement('div');
   ragMount.className = 'employer-rag-mount';
   body.appendChild(ragMount);
   void mountEmployerRagPreview(ragMount, item);
+
+  const l4Mount = document.createElement('div');
+  l4Mount.className = 'resume-l4-mount';
+  body.appendChild(l4Mount);
+  void mountResumeL4Preview(l4Mount, item);
 
   const raw = item.coverLetter?.variants || [];
   const variants = raw.length ? raw.map((s) => String(s)) : [];
@@ -3043,7 +4127,7 @@ function openDraftModal(item) {
   const ta = document.createElement('textarea');
   ta.className = 'modal-letter-edit';
   ta.id = `draft-v-${item.id}-edit`;
-  ta.rows = 12;
+  ta.rows = 8;
 
   const actions = document.createElement('div');
   actions.className = 'modal-draft-actions';
@@ -3069,7 +4153,8 @@ function openDraftModal(item) {
   btnDecline.textContent = COPY.draftDecline;
 
   actions.append(btnPrepare, btnSave, btnApprove, btnDecline);
-  body.append(picker, qualityBanner, lbl, ta, actions);
+  body.append(picker, qualityBanner, lbl, ta);
+  (footer || body).appendChild(actions);
 
   const variantQuality = item.coverLetter?.variantQuality || [];
   const startIndex = pickBestVariantIndex(variantQuality, variants.length);
@@ -3559,6 +4644,10 @@ function scoreOf(item) {
   return Number(item.scoreOverall ?? item.geminiScore ?? 0) || 0;
 }
 
+function isDashboardExpertMode() {
+  return dashboardUi.uiMode === UI_MODES.expert;
+}
+
 function renderCard(item, options = {}) {
   const inModal = Boolean(options.inModal);
   const node = tpl.content.firstElementChild.cloneNode(true);
@@ -3570,36 +4659,23 @@ function renderCard(item, options = {}) {
   bindDismiss(node, item);
 
   const scoreEl = node.querySelector('.score');
-  const overall = item.scoreOverall ?? item.geminiScore;
-  const displayOverall = overall != null && overall !== '' ? String(overall) : '—';
-  scoreEl.textContent = displayOverall;
-  scoreEl.setAttribute(
-    'aria-label',
-    displayOverall === '—'
-      ? 'Нет скора'
-      : `Итоговый балл ${displayOverall}, наведи для расшифровки`
-  );
+  const expert = isDashboardExpertMode();
+  const scoreDisplay = formatScoreLineDisplay(item, { expert });
+  scoreEl.textContent = scoreDisplay;
+  scoreEl.setAttribute('aria-label', formatScoreLineAriaLabel(item, { expert }));
 
   const tooltip = node.querySelector('.score-tooltip');
-  const wv = scoreWeights.vacancy;
-  const wc = scoreWeights.cvMatch;
-  const sv = item.scoreVacancy;
-  const scm = item.scoreCvMatch;
-  const so = item.scoreOverall ?? item.geminiScore;
-  if (Number.isFinite(Number(sv)) && Number.isFinite(Number(scm))) {
-    tooltip.innerHTML = [
-      '<strong>Вакансия</strong> (оценка модели): ',
-      String(sv),
-      '<br><strong>Сходство с твоими CV</strong>: ',
-      String(scm),
-      '<br><strong>Итог на карточке</strong>: ',
-      so != null && so !== '' ? String(so) : '—',
-      '<br><br>Если модель не вернула свой <code>scoreOverall</code>, итог считается как ',
-      `<code>${wv.toFixed(2)}×</code>вакансия + <code>${wc.toFixed(2)}×</code>CV (веса из preferences.json).`,
-    ].join('');
+  const llmBreakdown = buildLlmScoreBreakdownHtml(item, { scoreWeights, escapeHtml });
+  if (llmBreakdown) {
+    tooltip.innerHTML = llmBreakdown;
+    if (item.matchScore) {
+      tooltip.innerHTML += `<br><br>${buildScoreTooltipHtml(item, { escapeHtml })}`;
+    }
+  } else if (item.matchScore) {
+    tooltip.innerHTML = buildScoreTooltipHtml(item, { escapeHtml });
   } else {
     tooltip.textContent =
-      'Нет разбивки по компонентам. Добавь записи через npm run harvest с включённым LLM (без --skip-llm).';
+      'Нет разбивки по компонентам. Добавьте записи через npm run harvest с включённым LLM (без --skip-llm).';
   }
   const humanHint = buildScoreHumanHint(item);
   if (humanHint) {
@@ -3656,7 +4732,10 @@ function renderCard(item, options = {}) {
   if (metaCompact) {
     const metaParts = [...new Set(parts)];
     if (item.resumeRouting?.label) metaParts.push(`Резюме: ${item.resumeRouting.label}`);
-    if (item.targeting?.eligible === false) {
+    const appliedOnHh =
+      item.status === 'responded' ||
+      Boolean(item.hhApply?.responseSubmitted || item.hhApply?.lastAt);
+    if (item.targeting?.eligible === false && !appliedOnHh) {
       metaParts.push(`⚠ ${item.targeting.skipReason || 'нецелевая'}`);
       node.classList.add('card--off-target');
     }
@@ -3664,6 +4743,21 @@ function renderCard(item, options = {}) {
   }
 
   renderStatusChips(node.querySelector('.card-status-chips'), item);
+
+  const journeyHost = node.querySelector('.card-journey-host');
+  if (journeyHost) {
+    mountJourneyStrip(journeyHost, item, {
+      onAction: (action, rec) => {
+        if (action === 'open-letter') openDraftModal(rec);
+        else if (action === 'apply-chat') node.querySelector('.btn-apply-chat')?.click();
+        else if (action === 'open-interview-hub') openInterviewHubModal(rec?.id);
+        else if (action === 'interview-prep') node.querySelector('.btn-interview-prep')?.click();
+        else if (action === 'open-chat') {
+          document.dispatchEvent(new CustomEvent('hh-open-chat-inbox', { detail: { id: rec.id } }));
+        }
+      },
+    });
+  }
 
   const setMetaLine = (sel, label, value) => {
     const el = node.querySelector(sel);
@@ -3772,12 +4866,13 @@ function renderCard(item, options = {}) {
   const siteBadge = node.querySelector('.hh-site-badge');
   const siteOnly =
     !showQuestionnaireBlock &&
-    !vacancyHasHhApply(item) &&
     item?.hhApply?.hhSiteState &&
-    item.hhApply.hhSiteState !== 'none';
+    item.hhApply.hhSiteState !== 'none' &&
+    (!vacancyHasHhApply(item) || item.hhApply.hhDetectedOnly);
   if (siteBadge && siteOnly) {
     siteBadge.hidden = false;
     siteBadge.textContent = hhSiteStateBadgeText(item);
+    siteBadge.title = hhSiteStateBadgeTitle(item);
     siteBadge.classList.add(`hh-site-badge--${item.hhApply.hhSiteState}`);
     node.classList.add('card--applied');
     if (item.hhApply.hhSiteState === 'invited') node.classList.add('card--hh-invited');
@@ -4015,9 +5110,9 @@ function renderCard(item, options = {}) {
     });
   }
 
-  if (cl?.status === 'approved' && String(cl?.approvedText || '').trim()) {
+  if (cl?.variants?.length || (cl?.status === 'approved' && String(cl?.approvedText || '').trim())) {
     viewLetterBtn.hidden = false;
-    viewLetterBtn.addEventListener('click', () => openApprovedLetterModal(item));
+    viewLetterBtn.addEventListener('click', () => openLetterModal(item));
   }
 
   const tailorBtn = node.querySelector('.btn-tailor-resume');
@@ -4047,6 +5142,51 @@ function renderCard(item, options = {}) {
   ) => {
     btn.disabled = true;
     try {
+      const storedBlocked = vacancyHhSiteBlocked(item);
+      if (!storedBlocked) {
+        let probeHint = null;
+        if (item.hhApply?.hhSiteState === 'already_applied') {
+          probeHint = {
+            source: item.hhApply.hhSiteStateSource || 'store',
+            label: item.hhApply.hhSiteStateLabel || 'Отклик уже на hh.ru',
+          };
+        } else {
+          try {
+            const probe = await api(
+              `/api/hh-vacancy-probe?id=${encodeURIComponent(item.id)}`
+            );
+            if (!probe.canApply && probe.state === 'already_applied') {
+              probeHint = {
+                source: probe.source || 'live-probe',
+                label: probe.label || 'Отклик уже на hh.ru',
+                cached: probe.cached,
+              };
+            }
+          } catch {
+            /* probe недоступен — продолжаем без подтверждения */
+          }
+        }
+        if (probeHint) {
+          const cacheNote = probeHint.cached ? ' (кэш probe)' : '';
+          const ok = window.confirm(
+            `На hh.ru отклик уже есть (${probeHint.label}, source=${probeHint.source}${cacheNote}).\n\n` +
+              'Продолжить без L4? Письмо может уйти в чат, снапшот не создастся.'
+          );
+          if (!ok) {
+            btn.disabled = false;
+            return;
+          }
+          if (probeHint.source === 'live-probe' || String(probeHint.source || '').includes('probe')) {
+            try {
+              await api(`/api/hh-vacancy-probe?id=${encodeURIComponent(item.id)}&write=1`);
+              await load();
+            } catch {
+              /* badge optional */
+            }
+          }
+        }
+      }
+
       const res = await api('/api/hh-launch-apply-chat', {
         method: 'POST',
         body: JSON.stringify({
@@ -4160,12 +5300,19 @@ function renderCard(item, options = {}) {
     }
   }
 
-  if (approvedLetter) {
-    applyChatBtn.disabled = false;
-    applyChatBtn.removeAttribute('title');
-    applyChatBtn.addEventListener('click', () =>
-      launchApply(applyChatBtn, { usePoolLetter: false, tailorResume: true })
-    );
+  if (approvedLetter && applyChatBtn) {
+    const hhBlocked = vacancyHhSiteBlocked(item);
+    applyChatBtn.disabled = hhBlocked;
+    if (hhBlocked) {
+      applyChatBtn.title =
+        (hhSiteStateBadgeText(item) || 'Отклик уже на hh.ru') +
+        ' — L4 и снапшот только при первом отклике';
+    } else {
+      applyChatBtn.removeAttribute('title');
+      applyChatBtn.addEventListener('click', () =>
+        launchApply(applyChatBtn, { usePoolLetter: false, tailorResume: true })
+      );
+    }
   }
 
   const questionnaireBtn = node.querySelector('.btn-apply-questionnaire');
@@ -4426,7 +5573,7 @@ function mergeBatchAndApplyProgress(st) {
   const chat = st.applyChatProgress;
   const batchActive = Boolean(st.batchActive ?? st.batch?.running ?? st.batchControl?.batchRunning);
   if (!batchActive || !batch) return batch;
-  if (!chat || chat.phase === 'done' || chat.phase === 'error') return batch;
+  if (!chat || chat.phase === 'done' || chat.phase === 'error' || chat.phase === 'skipped') return batch;
   const floor = Math.max(0, Math.floor(Number(batch.current) || 0));
   const current = Math.min(batch.total || 1, floor + (Number(chat.percent) || 0) / 100);
   const stepLabel = chat.label || '';
@@ -4463,7 +5610,28 @@ function pickJobProgressPayload(st) {
   if (st.harvest?.running && st.harvestProgress) {
     return { ...st.harvestProgress, title: COPY.harvest };
   }
-  if (st.applyChatProgress?.phase === 'done' || st.applyChatProgress?.phase === 'error') {
+  const side = st.sideJobs || {};
+  if (side.syncResponses?.running) {
+    return {
+      phase: 'running',
+      percent: 45,
+      label: 'Синхронизация откликов с hh.ru…',
+      title: 'Отклики hh.ru',
+    };
+  }
+  if (side.syncChats?.running) {
+    return {
+      phase: 'running',
+      percent: 45,
+      label: 'Синхронизация чатов…',
+      title: 'Чаты hh.ru',
+    };
+  }
+  if (
+    st.applyChatProgress?.phase === 'done' ||
+    st.applyChatProgress?.phase === 'error' ||
+    st.applyChatProgress?.phase === 'skipped'
+  ) {
     return { ...st.applyChatProgress, title: 'Отклик в браузере' };
   }
   if (st.harvestProgress?.phase === 'done' || st.harvestProgress?.phase === 'error') {
@@ -4496,6 +5664,7 @@ function paintJobProgressBox(box, p, st, { scoped = false } = {}) {
   box.hidden = false;
   box.classList.add('hh-status-strip');
   box.classList.toggle('job-progress--done', p.phase === 'done');
+  box.classList.toggle('job-progress--skipped', p.phase === 'skipped');
   box.classList.toggle('job-progress--error', p.phase === 'error');
   box.classList.toggle('job-progress--paused', p.phase === 'paused');
 
@@ -4760,18 +5929,29 @@ async function probeBatchControlApi() {
   }
 }
 
+function isSideSyncBusy(st) {
+  const side = st.sideJobs || {};
+  return Boolean(
+    side.syncResponses?.running ||
+      side.syncChats?.running ||
+      side.dailyRoutine?.running ||
+      side.resumeRaise?.running
+  );
+}
+
 function formatHumanJobStatus(st) {
   const bc = st.batchControl || {};
   const batchAlive = Boolean(st.batchActive ?? st.batch?.running ?? bc.batchRunning);
+  const side = st.sideJobs || {};
   const msgs = [];
 
   if (st.harvest?.running) {
     const hp = st.harvestProgress;
     const hc = st.harvestControl || {};
     if (hc.command === 'paused') {
-      msgs.push(hp?.label?.trim() || `${COPY.harvest} на паузе`);
+      msgs.push(progressStatusLabel(hp) || `${COPY.harvest} на паузе`);
     } else {
-      msgs.push(hp?.label?.trim() || 'Собираем вакансии с hh.ru…');
+      msgs.push(progressStatusLabel(hp) || 'Собираем вакансии с hh.ru…');
     }
   }
 
@@ -4787,7 +5967,7 @@ function formatHumanJobStatus(st) {
       msgs.push(`${COPY.batch} на паузе${progress}${captcha}`);
     } else {
       const bp = st.batchProgress;
-      const fromProgress = bp?.label?.trim();
+      const fromProgress = progressStatusLabel(bp);
       msgs.push(fromProgress || `Идёт ${COPY.batch.toLowerCase()}${progress}`);
     }
   } else if (bc.canResume) {
@@ -4812,7 +5992,23 @@ function formatHumanJobStatus(st) {
 
   if (st.applyChat?.running && !batchAlive) {
     const ap = st.applyChatProgress;
-    msgs.push(ap?.label?.trim() || 'Отклик в браузере…');
+    msgs.push(progressStatusLabel(ap) || 'Отклик в браузере…');
+    if (dashboardPreferences?.dashboardPlaywrightDisplayMode === 'visible') {
+      msgs.push('Окно Chromium может перекрывать дашборд — сверните или смените режим в Настройки → Система');
+    }
+  }
+
+  if (side.syncResponses?.running) {
+    msgs.push('Синхронизация откликов с hh.ru…');
+  }
+  if (side.syncChats?.running) {
+    msgs.push('Синхронизация чатов…');
+  }
+  if (side.dailyRoutine?.running) {
+    msgs.push('Утренний цикл…');
+  }
+  if (side.resumeRaise?.running) {
+    msgs.push('Подъём резюме на hh.ru…');
   }
 
   if (st.browserLock?.held && !msgs.length) {
@@ -4828,7 +6024,19 @@ function formatHumanJobStatus(st) {
 
   let main = msgs.length ? msgs.join(' · ') : 'Готов к работе';
 
-  if (st.harvestLog?.lastError && !st.harvest?.running) {
+  if (
+    msgs.length === 0 &&
+    st.syncResponsesLog?.lastError &&
+    !side.syncResponses?.running &&
+    !isSideSyncBusy(st)
+  ) {
+    main = 'Последняя синхронизация откликов — ошибка';
+  } else if (
+    msgs.length === 0 &&
+    st.harvestLog?.lastError &&
+    !st.harvest?.running &&
+    !isSideSyncBusy(st)
+  ) {
     main = 'Последний сбор завершился с ошибкой';
   }
 
@@ -4841,20 +6049,33 @@ function formatJobStatusTooltip(st, { msgs = [] } = {}) {
     lines.push(`${COPY.harvest} (процесс ${st.harvest.pid})`);
   if (st.batch?.running && st.batch.pid) lines.push(`${COPY.batchShort} (процесс ${st.batch.pid})`);
   if (st.applyChat?.running && st.applyChat.pid) lines.push(`Отклик (процесс ${st.applyChat.pid})`);
+  const side = st.sideJobs || {};
+  if (side.syncResponses?.running && side.syncResponses.pid) {
+    lines.push(`Sync откликов (процесс ${side.syncResponses.pid})`);
+  }
+  if (side.syncChats?.running && side.syncChats.pid) {
+    lines.push(`Sync чатов (процесс ${side.syncChats.pid})`);
+  }
   if (st.queuePath) lines.push(`Файл очереди: ${st.queuePath}`);
   if (st.browserLock?.held) lines.push(`Блокировка браузера: ${st.browserLock.owner}`);
   if (st.harvestLog?.lastError && !st.harvest?.running) {
     lines.push(`Ошибка сбора: ${st.harvestLog.lastError}`);
   }
+  if (st.syncResponsesLog?.lastError && !side.syncResponses?.running) {
+    lines.push(`Ошибка sync откликов: ${st.syncResponsesLog.lastError}`);
+  }
   const tail = st.harvestLog?.tail?.trim();
   if (tail) lines.push('', tail);
+  const syncTail = st.syncResponsesLog?.tail?.trim();
+  if (syncTail && !side.syncResponses?.running) lines.push('', syncTail);
   if (!lines.length && msgs.length) return '';
   return lines.join('\n');
 }
 
 function formatHarvestStatsLine(h) {
   if (!h) return '';
-  if (h.message) return h.message;
+  const msg = displayStatusText(h.message);
+  if (msg) return msg;
   if (h.added != null) return `${COPY.harvest}: +${h.added} в очередь`;
   return '';
 }
@@ -5109,7 +6330,7 @@ function renderFunnelModalBody(data) {
 
   const harvestNote = data.harvestLast
     ? `<p class="funnel-period-note funnel-harvest-note">Последний сбор: ${
-        data.harvestLast.message || '—'
+        esc(displayStatusText(data.harvestLast.message) || '—')
       }${
         data.harvestLast.serpCards != null
           ? ` · выдача ${data.harvestLast.serpCards}, дубликаты ${data.harvestLast.skippedKnown ?? 0}`
@@ -5189,6 +6410,28 @@ function renderFunnelModalBody(data) {
     </div>`;
 }
 
+async function refreshNorthStarKpi() {
+  const el = document.getElementById('north-star-kpi');
+  if (!el) return;
+  try {
+    const res = await api('/api/north-star-metrics?periodDays=7');
+    const m = res?.metrics;
+    if (!m) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    const lines = [m.slotFillText, m.ePerApplied7dText, m.prepCoverageText].filter(Boolean);
+    const unique = [...new Set(lines)];
+    el.innerHTML = [
+      `<p class="north-star-kpi__title">К собеседованию</p>`,
+      ...unique.map((line) => `<p class="north-star-kpi__line">${escapeHtml(line)}</p>`),
+    ].join('');
+  } catch {
+    el.hidden = true;
+  }
+}
+
 async function loadFunnelAnalytics(filters) {
   const q = funnelFilterQuery(filters ?? readFunnelFiltersFromUI());
   const [funnel, dash] = await Promise.all([
@@ -5262,136 +6505,812 @@ function cachePromptPack(li, pack) {
   }
 }
 
+let interviewHubCache = null;
+let interviewHubSelectedId = null;
+/** @type {import('./command-palette.mjs').PaletteAction[]} */
+let commandPaletteStaticActions = [];
+const INTERVIEW_PREP_STEP_IDS = (INTERVIEW_PREP_CHECKLIST_COPY.steps || [])
+  .map((step) => String(step?.id || '').trim())
+  .filter(Boolean);
+let interviewPrepCaptureHealthTimer = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let interviewHubPrepRefreshTimer = null;
+
+function scheduleInterviewHubRefresh(delayMs = 700) {
+  if (interviewHubPrepRefreshTimer) clearTimeout(interviewHubPrepRefreshTimer);
+  interviewHubPrepRefreshTimer = setTimeout(() => {
+    interviewHubPrepRefreshTimer = null;
+    void refreshInterviewHubModal();
+  }, delayMs);
+}
+
+function buildInterviewPrepDefaultDone() {
+  return Object.fromEntries(INTERVIEW_PREP_STEP_IDS.map((id) => [id, false]));
+}
+
+function readInterviewPrepChecklistState() {
+  const fallback = {
+    done: buildInterviewPrepDefaultDone(),
+    updatedAt: 0,
+  };
+  try {
+    const raw = localStorage.getItem(INTERVIEW_PREP_CHECKLIST_STORAGE_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return fallback;
+    const done = buildInterviewPrepDefaultDone();
+    const sourceDone = parsed.done && typeof parsed.done === 'object' ? parsed.done : {};
+    for (const id of INTERVIEW_PREP_STEP_IDS) done[id] = sourceDone[id] === true;
+    return {
+      done,
+      updatedAt: Number(parsed.updatedAt) || 0,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * @param {Record<string, boolean>} done
+ */
+function writeInterviewPrepChecklistState(done) {
+  try {
+    const normalizedDone = Object.fromEntries(
+      INTERVIEW_PREP_STEP_IDS.map((id) => [id, done[id] === true])
+    );
+    localStorage.setItem(
+      INTERVIEW_PREP_CHECKLIST_STORAGE_KEY,
+      JSON.stringify({
+        done: normalizedDone,
+        updatedAt: Date.now(),
+      })
+    );
+  } catch {
+    /* ignore localStorage quota/privacy errors */
+  }
+}
+
+function applyInterviewPrepChecklistState(root) {
+  if (!root) return;
+  const state = readInterviewPrepChecklistState();
+  let doneCount = 0;
+  root.querySelectorAll('[data-prep-check-id]').forEach((input) => {
+    const id = input.getAttribute('data-prep-check-id');
+    if (!id) return;
+    const checked = state.done[id] === true;
+    input.checked = checked;
+    if (checked) doneCount += 1;
+  });
+  const progressEl = root.querySelector('[data-prep-progress]');
+  if (progressEl) {
+    progressEl.textContent = interviewPrepChecklistProgressLabel(
+      doneCount,
+      INTERVIEW_PREP_STEP_IDS.length
+    );
+  }
+}
+
+function resolveInterviewPrepCaptureHealthStatus(health) {
+  if (!health?.ok) return 'error';
+  if (!health?.available) return 'missing';
+  const ageMs = Date.now() - Number(health.lastHeardAt || 0);
+  const staleByAge = !Number.isFinite(ageMs) || ageMs > 45_000;
+  const staleByLag = Number(health.processingLagMs || 0) > 4_000;
+  return staleByAge || staleByLag ? 'stale' : 'fresh';
+}
+
+function applyInterviewPrepCaptureHealth(root, health) {
+  if (!root) return;
+  const badge = root.querySelector('[data-capture-health-indicator]');
+  if (!badge) return;
+  const status = resolveInterviewPrepCaptureHealthStatus(health);
+  badge.dataset.captureHealthState = status;
+  badge.textContent = interviewPrepCaptureHealthLabel(status);
+  if (health?.available) {
+    const lag = Number(health.processingLagMs || 0);
+    const queue = Number(health.queueDepth || 0);
+    badge.title = `Очередь: ${queue} · lag: ${lag}мс`;
+  } else {
+    badge.title = '';
+  }
+}
+
+function stopInterviewPrepCaptureHealthPoll() {
+  if (interviewPrepCaptureHealthTimer) clearInterval(interviewPrepCaptureHealthTimer);
+  interviewPrepCaptureHealthTimer = null;
+}
+
+async function refreshInterviewPrepCaptureHealth(root) {
+  if (!root?.isConnected) return;
+  try {
+    const health = await api('/api/copilot/capture-health');
+    applyInterviewPrepCaptureHealth(root, health);
+  } catch {
+    applyInterviewPrepCaptureHealth(root, { ok: false, available: false });
+  }
+}
+
+function startInterviewPrepCaptureHealthPoll(root) {
+  stopInterviewPrepCaptureHealthPoll();
+  void refreshInterviewPrepCaptureHealth(root);
+  interviewPrepCaptureHealthTimer = setInterval(() => {
+    if (!root?.isConnected) {
+      stopInterviewPrepCaptureHealthPoll();
+      return;
+    }
+    void refreshInterviewPrepCaptureHealth(root);
+  }, 20_000);
+}
+
+function wireInterviewPrepChecklist(root) {
+  if (!root) return;
+  root.querySelectorAll('[data-prep-check-id]').forEach((input) => {
+    if (input.dataset.prepChecklistWired === '1') return;
+    input.dataset.prepChecklistWired = '1';
+    input.addEventListener('change', () => {
+      const stepId = input.getAttribute('data-prep-check-id');
+      if (!stepId) return;
+      const state = readInterviewPrepChecklistState();
+      state.done[stepId] = input.checked === true;
+      writeInterviewPrepChecklistState(state.done);
+      applyInterviewPrepChecklistState(root);
+    });
+  });
+  applyInterviewPrepChecklistState(root);
+  startInterviewPrepCaptureHealthPoll(root);
+}
+
+function applyJourneyPresetToDom(preset) {
+  const p = preset === 'interview' ? 'interview' : 'apply';
+  document.documentElement.dataset.journeyPreset = p;
+}
+
+function highlightWorkflowForJourneyPreset(preset) {
+  const nav = document.querySelector('.workflow-nav');
+  if (!nav) return;
+  nav.querySelectorAll('[data-workflow]').forEach((btn) => {
+    const isTrack = btn.getAttribute('data-workflow') === 'track';
+    btn.classList.toggle('workflow-nav__step--journey-focus', preset === 'interview' && isTrack);
+  });
+}
+
+async function setJourneyPreset(preset) {
+  const p = preset === 'interview' ? 'interview' : 'apply';
+  try {
+    await patchPreferencesApi({ hiringJourney: { preset: p } });
+    dashboardPreferences = {
+      ...dashboardPreferences,
+      hiringJourney: { ...(dashboardPreferences.hiringJourney || {}), preset: p },
+    };
+    applyJourneyPresetToDom(p);
+    highlightWorkflowForJourneyPreset(p);
+    showToast(p === 'interview' ? 'Фокус: собеседование' : 'Фокус: отклики', 'neutral');
+    document.querySelectorAll('[data-journey-preset]').forEach((btn) => {
+      const active = btn.getAttribute('data-journey-preset') === p;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  } catch (e) {
+    showToast(e.message || String(e), 'bad');
+  }
+}
+
+function hubItemById(hub, id) {
+  if (!id || !hub) return null;
+  const fromOffers = (hub.offers || []).find((o) => o.id === id);
+  if (fromOffers) return fromOffers;
+  const demo = resolveDemoInstrumentForHub(hub);
+  return demo?.id === id ? demo : null;
+}
+
+function wireInterviewHubTabs(root) {
+  if (!root) return;
+  root.querySelectorAll('[data-hub-tab]').forEach((tabBtn) => {
+    if (tabBtn.dataset.hubTabWired === '1') return;
+    tabBtn.dataset.hubTabWired = '1';
+    tabBtn.addEventListener('click', () => {
+      const tab = tabBtn.getAttribute('data-hub-tab');
+      const detail = tabBtn.closest('.interview-hub__detail');
+      if (!detail || !tab) return;
+      detail.querySelectorAll('[data-hub-tab]').forEach((b) => {
+        const on = b.getAttribute('data-hub-tab') === tab;
+        b.classList.toggle('interview-hub__tab--active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      detail.querySelectorAll('[data-hub-tab-panel]').forEach((panel) => {
+        panel.hidden = panel.getAttribute('data-hub-tab-panel') !== tab;
+      });
+    });
+  });
+}
+
+function clearInterviewHubOutputs(root) {
+  if (!root) return;
+  root.querySelectorAll('.interview-hub__output').forEach((out) => {
+    out.hidden = true;
+    out.classList.remove('interview-hub__output--loading');
+    out.textContent = '';
+    out.innerHTML = '';
+  });
+  root.querySelectorAll('[data-hub-action]').forEach((btn) => {
+    btn.disabled = false;
+  });
+}
+
+function mountHubDetailJourney(container, offer, copilot) {
+  const host = container?.querySelector('[data-hub-journey-host]');
+  if (!host || !offer?.id) return;
+  const rec = hubOfferToClientRecord(offer);
+  if (!rec) {
+    host.hidden = true;
+    return;
+  }
+  mountJourneyStrip(host, rec, {
+    fetchRemote: true,
+    onAction: (action, item) => {
+      if (action === 'open-interview-hub') return;
+      if (action === 'open-letter' || action === 'apply-chat') {
+        void openVacancyFromHub(item.id || offer.id);
+        return;
+      }
+      if (action === 'interview-prep') copilot?.focusPrepTab?.();
+    },
+  });
+}
+
+async function openVacancyFromHub(recordId) {
+  if (!recordId) return;
+  closeInterviewHubModal();
+  let targetView = 'queue';
+  const hit = cachedRawItems.find((x) => x.id === recordId);
+  if (hit && vacancyShownInAppliedTab(hit)) targetView = 'applied';
+  if (!hit) {
+    try {
+      const { items } = await api(
+        `/api/vacancies?status=pending&scoreBand=all&applyView=${encodeURIComponent('applied')}`
+      );
+      if (items.some((x) => x.id === recordId)) targetView = 'applied';
+    } catch {
+      /* ignore */
+    }
+  }
+  if (targetView !== currentApplyView) {
+    currentApplyView = targetView;
+    syncApplyViewTabs();
+  }
+  await load({ preserveScroll: true, anchorCardId: recordId });
+  requestAnimationFrame(() => {
+    const card = listEl.querySelector(`[data-record-id="${CSS.escape(recordId)}"]`);
+    card?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const toggle = card?.querySelector('.journey-strip__toggle');
+    if (toggle?.getAttribute('aria-expanded') !== 'true') toggle?.click();
+  });
+}
+
+function wireInterviewHubActions(root, copilot) {
+  if (!root) return;
+  root.querySelectorAll('[data-hub-action]').forEach((btn) => {
+    if (btn.dataset.hubWired === '1') return;
+    btn.dataset.hubWired = '1';
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-id');
+      const action = btn.getAttribute('data-hub-action');
+      const title = btn.getAttribute('data-title') || '';
+      const company = btn.getAttribute('data-company') || '';
+
+      if (action === 'open-teleprompter-settings') {
+        window.dispatchEvent(
+          new CustomEvent('hh-open-settings', {
+            detail: {
+              tab: 'teleprompter',
+              focus: 'copilot',
+              layout: 'wide',
+              focusToast: 'Настройки звука суфлёра',
+            },
+          })
+        );
+        return;
+      }
+
+      if (action === 'desktop-live') {
+        if (id && copilot) {
+          copilot.setMeta({
+            title,
+            company,
+            vacancyId: id,
+            recordId: id,
+            isDemoInstrument: id === 'demo-interview-instrument',
+          });
+        }
+        if (typeof copilot?.startDesktopLive === 'function') {
+          void copilot.startDesktopLive();
+          return;
+        }
+        /* запасной путь — полная панель в этом же окне */
+        const panel = root.closest('#interview-hub-body')?.querySelector('.interview-copilot-panel')
+          || document.querySelector('#interview-hub-body .interview-copilot-panel');
+        const fold = root.closest('#interview-hub-body')?.querySelector('[data-hub-copilot-fold]');
+        if (fold) fold.open = true;
+        panel?.querySelector('[data-copilot-action="desktop-live"]')?.click();
+        return;
+      }
+
+      if (action === 'prep-criterion') {
+        const criterion = btn.getAttribute('data-criterion');
+        if (!id || !criterion) return;
+        const checked = btn.type === 'checkbox' ? Boolean(btn.checked) : true;
+        btn.disabled = true;
+        try {
+          await api('/api/prep-foundation', {
+            method: 'PATCH',
+            body: JSON.stringify({ id, criteria: { [criterion]: checked } }),
+          });
+          interviewHubCache = null;
+          clearInterviewHubCacheFromStorage();
+          showToast(
+            checked
+              ? `Подготовка: ${criterion} ✓`
+              : `Подготовка: ${criterion} снято`,
+            'good'
+          );
+          // Не полный rebuild сразу: saveQueue большой очереди + hub scan → баннер «не отвечает»
+          scheduleInterviewHubRefresh(900);
+        } catch (e) {
+          if (btn.type === 'checkbox') btn.checked = !checked;
+          showToast(e.message || String(e), 'bad');
+        } finally {
+          btn.disabled = false;
+        }
+        return;
+      }
+
+      if (action === 'prep-day-t') {
+        if (!id) return;
+        btn.disabled = true;
+        try {
+          const res = await api('/api/prep-foundation/day-t', {
+            method: 'POST',
+            body: JSON.stringify({ id }),
+          });
+          const plan = res.plan || {};
+          const prefsStage = plan.prefsStage || 'tech';
+          try {
+            await api('/api/settings', {
+              method: 'PATCH',
+              body: JSON.stringify({
+                patch: { 'interviewCopilot.interviewStage': prefsStage },
+              }),
+            });
+          } catch {
+            /* prefs optional if settings down */
+          }
+          if (copilot) {
+            copilot.setMeta({
+              title: plan.title || title,
+              company: plan.company || company,
+              vacancyId: id,
+              recordId: id,
+              interviewStage: prefsStage,
+              isDemoInstrument: id === 'demo-interview-instrument',
+            });
+          }
+          const panel = btn.closest('.interview-hub__foundation') || btn.closest('.interview-hub__item');
+          const view = panel?.querySelector('[data-prep-artifact-view]');
+          if (plan.openScriptFirst !== false || plan.prepStage === 'hr' || plan.prepStage === 'manager') {
+            try {
+              const art = await api(
+                `/api/prep-foundation/artifact?id=${encodeURIComponent(id)}&kind=script`
+              );
+              if (view && art.markdown) {
+                view.textContent = art.markdown;
+                view.hidden = false;
+              }
+            } catch {
+              /* no script yet */
+            }
+          }
+          interviewHubCache = null;
+          clearInterviewHubCacheFromStorage();
+          const toast =
+            plan.prepStage === 'hr'
+              ? PREP_FOUNDATION_HUB_COPY.dayTDoneToastHr
+              : plan.prepStage === 'manager'
+                ? PREP_FOUNDATION_HUB_COPY.dayTDoneToastManager
+                : PREP_FOUNDATION_HUB_COPY.dayTDoneToastTech;
+          showToast(`${toast}${plan.line ? ` · ${plan.line}` : ''}`, 'good');
+          if (plan.openCopilotLive) {
+            if (typeof copilot?.startDesktopLive === 'function') {
+              void copilot.startDesktopLive();
+            } else {
+              const fold = document.querySelector('#interview-hub-body [data-hub-copilot-fold]');
+              if (fold) fold.open = true;
+              copilot?.focusPrepTab?.();
+            }
+          }
+          await refreshInterviewHubModal();
+        } catch (e) {
+          showToast(
+            e.message || PREP_FOUNDATION_HUB_COPY.dayTError || 'Не удалось подготовить день встречи',
+            'bad'
+          );
+        } finally {
+          btn.disabled = false;
+        }
+        return;
+      }
+
+      if (action === 'prep-artifact') {
+        const kind = btn.getAttribute('data-kind') || 'script';
+        if (!id) return;
+        const panel = btn.closest('.interview-hub__foundation') || btn.closest('.interview-hub__item');
+        const view = panel?.querySelector('[data-prep-artifact-view]');
+        btn.disabled = true;
+        try {
+          const res = await api(
+            `/api/prep-foundation/artifact?id=${encodeURIComponent(id)}&kind=${encodeURIComponent(kind)}`
+          );
+          if (view) {
+            view.textContent = res.markdown || '';
+            view.hidden = false;
+          } else {
+            const out =
+              btn.closest('.interview-hub__item')?.querySelector('.interview-hub__output') ||
+              root.querySelector('.interview-hub__output');
+            if (out) {
+              out.hidden = false;
+              out.textContent = res.markdown || '';
+            }
+          }
+        } catch (e) {
+          showToast(
+            e.message || PREP_FOUNDATION_HUB_COPY.errorArtifactFailed || 'Не удалось открыть файл',
+            'bad'
+          );
+        } finally {
+          btn.disabled = false;
+        }
+        return;
+      }
+
+      if (action === 'prep-outcome') {
+        if (!id) return;
+        const form =
+          btn.closest('[data-prep-outcome-form]') ||
+          root.querySelector(`[data-prep-outcome-form][data-id="${CSS.escape(id)}"]`);
+        if (!form) {
+          showToast(PREP_FOUNDATION_HUB_COPY.errorSaveFailed || 'Форма P7 не найдена', 'bad');
+          return;
+        }
+        const outcome = form.querySelector('[data-prep-form="outcome"]')?.value?.trim() || '';
+        const fixes = [...form.querySelectorAll('[data-prep-form="fix"]')]
+          .map((el) => String(el.value || '').trim())
+          .filter(Boolean);
+        const asked = form.querySelector('[data-prep-form="asked"]')?.value?.trim() || '';
+        const note = form.querySelector('[data-prep-form="note"]')?.value?.trim() || '';
+        if (!outcome) {
+          showToast(PREP_FOUNDATION_HUB_COPY.errorNeedOutcome || 'Выберите код исхода', 'bad');
+          return;
+        }
+        if (fixes.length < 3) {
+          showToast(PREP_FOUNDATION_HUB_COPY.errorNeedFixes || 'Нужны три правки', 'bad');
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await api('/api/prep-foundation/outcome', {
+            method: 'POST',
+            body: JSON.stringify({ id, outcome, fixes, note: note || undefined, asked: asked || undefined }),
+          });
+          interviewHubCache = null;
+          clearInterviewHubCacheFromStorage();
+          showToast('P7 сохранён — цикл обновлён', 'good');
+          await refreshInterviewHubModal();
+        } catch (e) {
+          showToast(
+            e.message || PREP_FOUNDATION_HUB_COPY.errorSaveFailed || 'Не удалось сохранить исход',
+            'bad'
+          );
+        } finally {
+          btn.disabled = false;
+        }
+        return;
+      }
+
+      if (action === 'go-vacancy') {
+        clearInterviewHubOutputs(root);
+        await openVacancyFromHub(id);
+        return;
+      }
+
+      if (action === 'offer-decision') {
+        const status = btn.getAttribute('data-decision');
+        if (!id || !status) return;
+        try {
+          await api('/api/offer-decision', {
+            method: 'POST',
+            body: JSON.stringify({ id, status }),
+          });
+          showToast(`Оффер: ${status === 'negotiating' ? 'торг' : status === 'accepted' ? 'принят' : status === 'declined' ? 'отклонён' : 'на рассмотрении'}`, 'good');
+          void refreshInterviewHubModal();
+        } catch (e) {
+          showToast(e.message || String(e), 'bad');
+        }
+        return;
+      }
+
+      if (copilot) {
+        const isDemo = btn.closest('.interview-hub__item--demo') != null || id === 'demo-interview-instrument';
+        copilot.setMeta({ title, company, vacancyId: id, recordId: id, isDemoInstrument: isDemo });
+      }
+
+      if (action === 'copilot-go') {
+        clearInterviewHubOutputs(root);
+        if (copilot && id) {
+          copilot.setMeta({
+            title,
+            company,
+            vacancyId: id,
+            recordId: id,
+            isDemoInstrument: id === 'demo-interview-instrument',
+            interviewStage: copilot.getMeta?.()?.interviewStage,
+          });
+        }
+        const bodyEl = root.closest('#interview-hub-body') || document.getElementById('interview-hub-body');
+        const fold = bodyEl?.querySelector('[data-hub-copilot-fold]');
+        if (fold) fold.open = true;
+        copilot?.focusPrepTab?.();
+        showToast('Полная панель суфлёра открыта ниже', 'neutral');
+        return;
+      }
+
+      if (action === 'slot-save') {
+        const queueId = btn.getAttribute('data-queue-id') || id;
+        const li = btn.closest('.interview-hub__item');
+        if (!li || !queueId) {
+          showToast('Нет ID записи — синхронизируйте отклики');
+          return;
+        }
+        const patch = {};
+        li.querySelectorAll('[data-slot-field]').forEach((el) => {
+          const key = el.getAttribute('data-slot-field');
+          if (!key) return;
+          const val = el.value;
+          if (key === 'startsAt') {
+            patch.startsAt = val ? new Date(val).toISOString() : null;
+          } else {
+            patch[key] = val;
+          }
+        });
+        patch.source = 'manual';
+        btn.disabled = true;
+        try {
+          await api('/api/interview-slot', {
+            method: 'PATCH',
+            body: JSON.stringify({ id: queueId, ...patch }),
+          });
+          showToast('Слот сохранён');
+          await refreshInterviewHubModal();
+          load();
+        } catch (e) {
+          showToast(e.message || String(e));
+        } finally {
+          btn.disabled = false;
+        }
+        return;
+      }
+
+      const li = btn.closest('.interview-hub__item');
+      const out = li?.querySelector('.interview-hub__output');
+      if (!id && action !== 'open-teleprompter-settings') {
+        showToast('Нет ID вакансии — обновите хаб или синхронизируйте отклики hh.ru');
+        return;
+      }
+
+      if (action === 'prompt') {
+        btn.disabled = true;
+        try {
+          const cached = readCachedPromptPack(li);
+          if (cached?.questions?.length) {
+            await openInterviewPromptModal(cached, { api, showToast }, 'script');
+            return;
+          }
+
+          openInterviewPromptLoading({ title, company }, { api, showToast });
+          let pack = null;
+          try {
+            const techRes = await api('/api/interview-mock-tech', {
+              method: 'POST',
+              body: JSON.stringify({ id }),
+            });
+            pack = normalizeToPromptPack(techRes.mock, 'mock-tech', { id, title, company });
+          } catch {
+            const hrRes = await api('/api/interview-mock-hr', {
+              method: 'POST',
+              body: JSON.stringify({ id }),
+            });
+            pack = normalizeToPromptPack(hrRes.hrMock, 'mock-hr', { id, title, company });
+          }
+          if (!pack?.questions?.length) {
+            closeInterviewPromptModal();
+            showToast('Не удалось собрать вопросы — нажмите «Тех. вопросы» или «HR-скрининг»');
+            return;
+          }
+          cachePromptPack(li, pack);
+          await loadInterviewPromptPack(pack, { api, showToast }, 'script');
+        } catch (e) {
+          closeInterviewPromptModal();
+          showToast(e.message || String(e));
+        } finally {
+          btn.disabled = false;
+        }
+        return;
+      }
+
+      if (!out) return;
+      btn.disabled = true;
+      out.hidden = false;
+      out.classList.add('interview-hub__output--loading');
+      out.textContent = 'Загрузка…';
+      try {
+        let path = '/api/interview-prep';
+        if (action === 'mock-tech') path = '/api/interview-mock-tech';
+        if (action === 'mock-hr') path = '/api/interview-mock-hr';
+        const res = await api(path, { method: 'POST', body: JSON.stringify({ id }) });
+        const pack = res.interviewPrep || res.mock || res.hrMock;
+        out.innerHTML = renderMockOutputHtml(pack);
+        if (action === 'mock-tech' || action === 'mock-hr' || action === 'prep') {
+          const src = action === 'mock-hr' ? 'mock-hr' : action === 'mock-tech' ? 'mock-tech' : 'prep';
+          const promptPack = normalizeToPromptPack(pack, src, { id, title, company });
+          cachePromptPack(li, promptPack);
+          if (copilot && action === 'prep' && pack) {
+            copilot.setMeta({ title, company, vacancyId: id, recordId: id, interviewPrep: pack });
+          }
+          const promptBtn = document.createElement('button');
+          promptBtn.type = 'button';
+          promptBtn.className = 'btn btn-primary btn-sm interview-hub__prompt-from-output';
+          promptBtn.textContent = 'Открыть суфлёр';
+          promptBtn.addEventListener('click', () => {
+            void openInterviewPromptModal(promptPack, { api, showToast }, 'script');
+          });
+          out.appendChild(promptBtn);
+        }
+      } catch (e) {
+        out.textContent = e.message || String(e);
+      } finally {
+        out.classList.remove('interview-hub__output--loading');
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
 async function refreshInterviewHubModal() {
   const body = document.getElementById('interview-hub-body');
   if (!body) return;
-  body.innerHTML = '<p class="funnel-loading">Загрузка…</p>';
+  stopInterviewPrepCaptureHealthPoll();
+
   try {
-    const hub = await api('/api/interview-hub');
-    body.innerHTML = renderInterviewHubHtml(hub) + renderCopilotPanelHtml();
-    const copilot = initCopilotPanel({ api, showToast }, body);
-    const firstSlot = hub.offers?.find((o) => o.bucket === 'E');
+    const hub = await loadInterviewHubStaleWhileRevalidate(api, {
+      memoryCache: interviewHubCache,
+      onPaint: (hubData, meta) => {
+        if (meta.kind === 'skeleton') {
+          body.innerHTML = renderInterviewHubSkeletonHtml();
+          return;
+        }
+        if (hubData) {
+          paintInterviewHubBody(hubData);
+        }
+      },
+      onError: (e, meta) => {
+        if (meta.kind === 'stale-fallback') {
+          showToast?.('Хаб: не обновился — показан кэш', 'neutral');
+          return;
+        }
+        body.innerHTML = `<p class="err">${humanApiError(e)}</p>`;
+      },
+    });
+    interviewHubCache = hub;
+    writeInterviewHubCacheToStorage(hub);
+    rebuildCommandPaletteActions();
+    paintInterviewHubBody(hub);
+  } catch (e) {
+    stopInterviewPrepCaptureHealthPoll();
+    body.innerHTML = `<p class="err">${humanApiError(e)}</p>`;
+  }
+}
+
+function paintInterviewHubBody(hub) {
+  const body = document.getElementById('interview-hub-body');
+  if (!body || !hub) return;
+  try {
+    const preset = hub.journeyPreset || dashboardPreferences?.hiringJourney?.preset || 'apply';
+    if (!interviewHubSelectedId || !hubItemById(hub, interviewHubSelectedId)) {
+      interviewHubSelectedId = hub.offers?.find((o) => o.bucket === 'E')?.id || hub.offers?.[0]?.id || null;
+    }
+    body.innerHTML =
+      renderInterviewHubHtml(hub, {
+        selectedId: interviewHubSelectedId,
+        journeyPreset: preset,
+        prefs: dashboardPreferences,
+      }) +
+      `<details class="interview-hub__copilot-fold" data-hub-copilot-fold><summary>Полная панель суфлёра</summary>${renderCopilotPanelHtml()}</details>`;
+    const copilot = initCopilotPanel(
+      {
+        api,
+        showToast,
+        dismissLiveObstructions: () => {
+          closeServiceDrawer();
+          closeModalEl(document.getElementById('settings-modal'));
+          closeModalEl(document.getElementById('letter-issues-modal'));
+          closeModalEl(document.getElementById('interview-prompt-modal'));
+          closeModalEl(document.getElementById('batch-precheck-modal'));
+        },
+      },
+      body
+    );
+    const firstSlot = hubItemById(hub, interviewHubSelectedId) || resolveDemoInstrumentForHub(hub);
     if (firstSlot && copilot) {
       copilot.setMeta({
         title: firstSlot.title,
         company: firstSlot.company,
         vacancyId: firstSlot.id,
         recordId: firstSlot.id,
+        isDemoInstrument: Boolean(firstSlot.isDemoInstrument),
       });
     }
-    body.querySelectorAll('[data-hub-action]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const id = btn.getAttribute('data-id');
-        const action = btn.getAttribute('data-hub-action');
-        const title = btn.getAttribute('data-title') || '';
-        const company = btn.getAttribute('data-company') || '';
-        if (copilot) copilot.setMeta({ title, company, vacancyId: id, recordId: id });
+    applyJourneyPresetToDom(preset);
+    highlightWorkflowForJourneyPreset(preset);
 
-        if (action === 'copilot-go') {
-          copilot?.focusPrepTab?.();
-          window.dispatchEvent(
-            new CustomEvent('hh-open-settings', {
-              detail: {
-                tab: 'teleprompter',
-                focus: 'copilot',
-                layout: 'wide',
-                focusToast: 'Настройки суфлёра перед собеседованием',
-              },
-            })
-          );
-          return;
+    body.querySelectorAll('[data-journey-preset]').forEach((btn) => {
+      btn.addEventListener('click', () => void setJourneyPreset(btn.getAttribute('data-journey-preset')));
+    });
+
+    body.querySelectorAll('[data-hub-select]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        interviewHubSelectedId = btn.getAttribute('data-hub-select');
+        const item = hubItemById(hub, interviewHubSelectedId);
+        const main = body.querySelector('.interview-hub__main');
+        if (main && item) {
+          main.innerHTML = renderInterviewHubDetailHtml(item, { prefs: dashboardPreferences });
+          wireInterviewHubActions(main, copilot);
+          wireInterviewHubTabs(main);
+          mountHubDetailJourney(main, item, copilot);
         }
-
-        const li = btn.closest('.interview-hub__item');
-        const out = li?.querySelector('.interview-hub__output');
-        if (!id) {
-          showToast('Нет ID вакансии — обновите хаб или синхронизируйте отклики hh.ru');
-          return;
-        }
-
-        if (action === 'prompt') {
-          btn.disabled = true;
-          try {
-            const cached = readCachedPromptPack(li);
-            if (cached?.questions?.length) {
-              await openInterviewPromptModal(cached, { api, showToast }, 'script');
-              return;
-            }
-
-            openInterviewPromptLoading({ title, company }, { api, showToast });
-            let pack = null;
-            try {
-              const techRes = await api('/api/interview-mock-tech', {
-                method: 'POST',
-                body: JSON.stringify({ id }),
-              });
-              pack = normalizeToPromptPack(techRes.mock, 'mock-tech', { id, title, company });
-            } catch {
-              const hrRes = await api('/api/interview-mock-hr', {
-                method: 'POST',
-                body: JSON.stringify({ id }),
-              });
-              pack = normalizeToPromptPack(hrRes.hrMock, 'mock-hr', { id, title, company });
-            }
-            if (!pack?.questions?.length) {
-              closeInterviewPromptModal();
-              showToast('Не удалось собрать вопросы — нажмите «Тех. вопросы» или «HR-скрининг»');
-              return;
-            }
-            cachePromptPack(li, pack);
-            await loadInterviewPromptPack(pack, { api, showToast }, 'script');
-          } catch (e) {
-            closeInterviewPromptModal();
-            showToast(e.message || String(e));
-          } finally {
-            btn.disabled = false;
-          }
-          return;
-        }
-
-        if (!out) return;
-        btn.disabled = true;
-        out.hidden = false;
-        out.classList.add('interview-hub__output--loading');
-        out.textContent = 'Загрузка…';
-        try {
-          let path = '/api/interview-prep';
-          if (action === 'mock-tech') path = '/api/interview-mock-tech';
-          if (action === 'mock-hr') path = '/api/interview-mock-hr';
-          const res = await api(path, { method: 'POST', body: JSON.stringify({ id }) });
-          const pack = res.interviewPrep || res.mock || res.hrMock;
-          out.innerHTML = renderMockOutputHtml(pack);
-          if (action === 'mock-tech' || action === 'mock-hr' || action === 'prep') {
-            const src = action === 'mock-hr' ? 'mock-hr' : action === 'mock-tech' ? 'mock-tech' : 'prep';
-            const promptPack = normalizeToPromptPack(pack, src, { id, title, company });
-            cachePromptPack(li, promptPack);
-            if (copilot && action === 'prep' && pack) {
-              copilot.setMeta({ title, company, vacancyId: id, recordId: id, interviewPrep: pack });
-            }
-            const promptBtn = document.createElement('button');
-            promptBtn.type = 'button';
-            promptBtn.className = 'btn btn-primary btn-sm interview-hub__prompt-from-output';
-            promptBtn.textContent = 'Открыть суфлёр';
-            promptBtn.addEventListener('click', () => {
-              void openInterviewPromptModal(promptPack, { api, showToast }, 'script');
-            });
-            out.appendChild(promptBtn);
-          }
-        } catch (e) {
-          out.textContent = e.message || String(e);
-        } finally {
-          out.classList.remove('interview-hub__output--loading');
-          btn.disabled = false;
+        body.querySelectorAll('[data-hub-select]').forEach((navBtn) => {
+          const active = navBtn.getAttribute('data-hub-select') === interviewHubSelectedId;
+          navBtn.classList.toggle('interview-hub__nav-item--active', active);
+          navBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        if (item && copilot) {
+          copilot.setMeta({
+            title: item.title,
+            company: item.company,
+            vacancyId: item.id,
+            recordId: item.id,
+            isDemoInstrument: Boolean(item.isDemoInstrument),
+          });
         }
       });
     });
+
+    wireInterviewHubActions(body, copilot);
+    wireInterviewHubTabs(body);
+    wireInterviewPrepChecklist(body);
+    void refreshCopilotLivePrepBanner(api, body).then((payload) => {
+      copilot?.setLivePrepGate?.(payload);
+    });
+    const firstDetail = body.querySelector('.interview-hub__main');
+    const firstItem = hubItemById(hub, interviewHubSelectedId) || resolveDemoInstrumentForHub(hub);
+    if (firstDetail && firstItem) mountHubDetailJourney(firstDetail, firstItem, copilot);
   } catch (e) {
+    stopInterviewPrepCaptureHealthPoll();
     body.innerHTML = `<p class="err">${e.message}</p>`;
   }
 }
 
-function openInterviewHubModal() {
+function openInterviewHubModal(selectedId = null) {
   closeServiceDrawer();
+  if (selectedId) interviewHubSelectedId = selectedId;
   const modal = document.getElementById('interview-hub-modal');
   if (!modal) return;
   openModalEl(modal);
@@ -5401,6 +7320,7 @@ function openInterviewHubModal() {
 function closeInterviewHubModal() {
   const modal = document.getElementById('interview-hub-modal');
   if (!modal) return;
+  stopInterviewPrepCaptureHealthPoll();
   closeModalEl(modal);
 }
 
@@ -5421,6 +7341,7 @@ function renderDashboardStats(stats) {
     if (mini) mini.hidden = true;
     return;
   }
+  void refreshNorthStarKpi();
   const f = stats.funnel || {};
   if (panel) panel.hidden = false;
   renderFunnelMini(stats);
@@ -5878,7 +7799,12 @@ async function refreshJobStatus() {
       el.textContent = main;
       el.title = formatJobStatusTooltip(st, { msgs });
       el.classList.toggle('job-status--busy', msgs.length > 0);
-      el.classList.toggle('job-status--warn', Boolean(st.harvestLog?.lastError && !st.harvest?.running));
+      el.classList.toggle('job-status--warn', Boolean(
+        (st.harvestLog?.lastError && !st.harvest?.running && !isSideSyncBusy(st)) ||
+          (st.syncResponsesLog?.lastError &&
+            !st.sideJobs?.syncResponses?.running &&
+            !isSideSyncBusy(st))
+      ));
       renderResumeRaiseScheduleStatus(st.resumeRaiseSchedule);
       renderChatFollowUpScheduleStatus(st.chatFollowUpSchedule);
     }
@@ -5886,7 +7812,14 @@ async function refreshJobStatus() {
     if (st.harvestTick?.sequence > lastHarvestTickSeq) {
       lastHarvestTickSeq = st.harvestTick.sequence;
       if (freezeBg) queueDashboardRefreshAfterSettings();
-      else load();
+      else if (st.harvest?.running) scheduleHarvestListReload();
+      else {
+        if (harvestReloadTimer) {
+          clearTimeout(harvestReloadTimer);
+          harvestReloadTimer = null;
+        }
+        void load({ preserveScroll: true });
+      }
     }
 
     if (applyChatWasRunning && !st.applyChat?.running) {
@@ -5895,11 +7828,22 @@ async function refreshJobStatus() {
       else await load();
       if (!freezeBg) {
         if (phase === 'done') {
-          const msg =
-            currentApplyView === 'applied'
-              ? 'Отклик отправлен, список обновлён'
-              : 'Отклик отправлен — карточка в разделе «Отклики»';
-          showToast(msg, 'good');
+          const label = String(st.applyChatProgress?.label || '');
+          const isRealSubmit =
+            /отклик отправлен/i.test(label) && !/уже отклик|пропуск/i.test(label);
+          if (isRealSubmit) {
+            const msg =
+              currentApplyView === 'applied'
+                ? 'Отклик отправлен, список обновлён'
+                : 'Отклик отправлен — карточка в разделе «Отклики»';
+            showToast(msg, 'good');
+          }
+        } else if (phase === 'skipped') {
+          const label = String(st.applyChatProgress?.label || 'Уже отклик');
+          const msg = /повтор|переписк/i.test(label)
+            ? `hh.ru: ${label}`
+            : `hh.ru: ${label} — L4 не выполнялся`;
+          showToast(msg, 'neutral');
         } else if (phase === 'error') {
           showToast('Отклик завершился с ошибкой — см. журнал', 'neutral');
         }
@@ -5909,7 +7853,10 @@ async function refreshJobStatus() {
 
     if (harvestWasRunning && !st.harvest?.running) {
       const hp = st.harvestProgress;
-      const msg = hp?.stats?.message || hp?.label || 'Сбор завершён';
+      const msg =
+        displayStatusText(hp?.stats?.message) ||
+        progressStatusLabel(hp) ||
+        'Сбор завершён';
       const added = hp?.stats?.added;
       if (freezeBg) {
         queueDashboardRefreshAfterSettings();
@@ -5966,14 +7913,25 @@ async function refreshJobStatus() {
     lastBatchPauseReason = pauseReason;
 
     const side = st.sideJobs || {};
+    if (side.syncResponses?.running && !syncResponsesWasRunning) {
+      syncResponsesStartedAt = Date.now();
+    }
     if (syncResponsesWasRunning && !side.syncResponses?.running) {
       if (freezeBg) {
         queueDashboardRefreshAfterSettings();
       } else {
+        const logFresh =
+          (st.syncResponsesLog?.modifiedAt || 0) >= syncResponsesStartedAt - 3000;
+        if (logFresh && st.syncResponsesLog?.lastError) {
+          showToast(
+            `Sync откликов: ${st.syncResponsesLog.lastError.slice(0, 200)}`,
+            'bad'
+          );
+        }
         try {
           await applyNegotiationsCacheToQueue();
         } catch (e) {
-          showToast(e.message || 'Не удалось применить кэш откликов', 'neutral');
+          showToast(e.message || 'Не удалось применить кэш откликов', 'bad');
         }
       }
     }
@@ -5982,7 +7940,7 @@ async function refreshJobStatus() {
     if (syncChatsWasRunning && !side.syncChats?.running) {
       if (freezeBg) queueDashboardRefreshAfterSettings();
       else {
-        void loadItems();
+        void load();
         showToast('Чаты синхронизированы', 'good');
       }
     }
@@ -5990,7 +7948,7 @@ async function refreshJobStatus() {
       if (freezeBg) queueDashboardRefreshAfterSettings();
       else {
         showToast('Утренний цикл завершён — проверьте вкладку «Отклики»', 'good');
-        void loadItems();
+        void load();
       }
     }
     dailyRoutineWasRunning = Boolean(side.dailyRoutine?.running);
@@ -6058,6 +8016,7 @@ function updateListCount(items, counts) {
       status: currentStatus,
       count: shown,
       total,
+      tabTotal: countForApplyViewTab(currentApplyView),
       threshold: scoreThreshold,
       appliedFunnel: currentAppliedFunnel,
       hasLocalFilter: Boolean(hasLocalFilter),
@@ -6090,14 +8049,38 @@ function updateLetterQualityFilterButton() {
 }
 
 function renderListFromCache(scrollState) {
+  try {
   const filters = readFiltersFromUI();
   updateLetterQualityFilterButton();
   const items = applyClientFilters(cachedRawItems, filters);
   updateListCount(items, cachedCounts);
   listEl.innerHTML = '';
   if (!items.length) {
+    const viewPool = cachedRawItems.length;
+    const tabTotal = countForApplyViewTab(currentApplyView);
     if (currentApplyView === 'applied') {
-      if (currentAppliedFunnel === 'stale') {
+      const funnelLabels = {
+        invited: 'Приглашения',
+        viewed: 'Просмотр',
+        awaiting: 'Ждём',
+        stale: '7+ дней',
+        declined: 'Отказы',
+      };
+      if (viewPool > 0 && currentAppliedFunnel !== 'all') {
+        listEl.appendChild(
+          renderEmptyState(
+            `В подразделе «${funnelLabels[currentAppliedFunnel] || currentAppliedFunnel}» нет карточек — всего откликов ${viewPool}.`,
+            [
+              {
+                label: 'Все отклики',
+                primary: true,
+                onClick: () =>
+                  document.getElementById('applied-funnel-tabs')?.querySelector('[data-applied-funnel="all"]')?.click(),
+              },
+            ]
+          )
+        );
+      } else if (currentAppliedFunnel === 'stale') {
         listEl.appendChild(
           renderEmptyState('Нет откликов без ответа дольше 7 дней — хороший знак.', [
             { label: 'Все отклики', onClick: () => document.getElementById('applied-funnel-tabs')?.querySelector('[data-applied-funnel="all"]')?.click() },
@@ -6112,6 +8095,20 @@ function renderListFromCache(scrollState) {
       }
     } else if (currentApplyView === 'hidden') {
       listEl.appendChild(renderEmptyState('Нет скрытых вакансий в этой вкладке. Смените диапазон баллов или статус.'));
+    } else if (viewPool > 0) {
+      const hiddenMsg = filteredHiddenListMessage(viewPool);
+      listEl.appendChild(
+        renderEmptyState(
+          hiddenMsg || `В разделе ${viewPool} карточек, но фильтры их скрывают.`,
+          [
+            { label: 'Сбросить фильтры', primary: true, onClick: () => resetListFiltersToDefault() },
+            { label: 'Все баллы', onClick: () => document.querySelector('#panel-score-band [data-band="all"]')?.click() },
+            ...(currentApplyView === 'questionnaire'
+              ? [{ label: 'Проверка анкет', onClick: () => document.getElementById('btn-questionnaire-probe-filter')?.click() }]
+              : [{ label: 'Очередь', onClick: () => applyViewTabsEl?.querySelector('[data-apply-view="queue"]')?.click() }]),
+          ]
+        )
+      );
     } else if (currentApplyView === 'questionnaire') {
       listEl.appendChild(
         renderEmptyState('Нет вакансий с анкетой в этом разделе.', [
@@ -6135,6 +8132,19 @@ function renderListFromCache(scrollState) {
           { label: COPY.batchAuto, primary: true, onClick: () => document.getElementById('btn-batch-auto')?.click() },
           { label: 'Анкета', onClick: () => applyViewTabsEl?.querySelector('[data-apply-view="questionnaire"]')?.click() },
         ])
+      );
+    } else if (viewPool === 0 && tabTotal != null && tabTotal > 0) {
+      listEl.appendChild(
+        renderEmptyState(
+          `В этой вкладке ${tabTotal} карточек, но текущий фильтр «${currentStatus === 'approved' ? 'Подходят' : currentStatus === 'rejected' ? 'Отклонены' : 'На проверке'}» и диапазон баллов ничего не показывают.`,
+          [
+            { label: 'Все баллы', onClick: () => document.querySelector('#panel-score-band [data-band="all"]')?.click() },
+            {
+              label: 'На проверке',
+              onClick: () => vacancyTabsEl?.querySelector('[data-status="pending"]')?.click(),
+            },
+          ]
+        )
       );
     } else if (cachedCounts?.hiddenByRole > 0 && !filters.search) {
       listEl.appendChild(
@@ -6167,15 +8177,30 @@ function renderListFromCache(scrollState) {
     return;
   }
   const browseMode = currentBrowseMode();
-  items.forEach((it) => {
-    if (browseMode) listEl.appendChild(renderCardTile(it, scoreThreshold, renderCard, bindDismiss, bindCardDecision));
-    else listEl.appendChild(renderCard(it));
+  listRenderGeneration += 1;
+  const generation = listRenderGeneration;
+  const searchActive = Boolean(filters.search?.trim());
+  const effectiveLimit =
+    searchActive || items.length <= LIST_RENDER_INITIAL ? items.length : listRenderLimit;
+  const toRender = items.slice(0, effectiveLimit);
+  appendVacancyCardsChunked(toRender, browseMode, scrollState, generation, () => {
+    if (items.length > toRender.length) {
+      appendListLoadMoreButton(toRender.length, items.length);
+    }
+    if (currentApplyView === 'questionnaire') {
+      void refreshQuestionnaireReprobeStats().then(() => maybeAutoReprobeQuestionnaires());
+    }
   });
-  listEl.querySelectorAll('.card, .card-tile').forEach((el) => {
-    if (!el.hasAttribute('tabindex')) el.tabIndex = 0;
-  });
-  restoreListScroll(scrollState);
-  void refreshQuestionnaireReprobeStats().then(() => maybeAutoReprobeQuestionnaires());
+  } catch (e) {
+    console.error('[dashboard] renderListFromCache', e);
+    listEl.innerHTML = '';
+    listEl.appendChild(
+      renderEmptyState('Не удалось отрисовать список. Обновите страницу или нажмите «Обновить».', [
+        { label: 'Обновить', primary: true, onClick: () => void load() },
+      ])
+    );
+    restoreListScroll(scrollState);
+  }
 }
 
 async function refreshQuestionnaireReprobeStats() {
@@ -6287,6 +8312,7 @@ async function loadDemoQueue(opts = {}) {
 async function load(opts = {}) {
   const scrollState = opts.preserveScroll ? captureListScroll(opts.anchorCardId) : null;
   if (!opts.preserveScroll) {
+    resetListRenderLimit();
     renderListSkeleton();
   }
   try {
@@ -6327,6 +8353,8 @@ async function load(opts = {}) {
     }
     updateApplyViewTabCounts(counts);
     renderListFromCache(scrollState);
+    clearDesktopHealthBanner();
+    window.dispatchEvent(new CustomEvent('hh:dashboard-ready'));
     void refreshLetterStatsSidebar();
     void refreshTopTierList({ api, onFilterTier: setTierFilter });
   } catch (e) {
@@ -6401,6 +8429,8 @@ async function launchApplyBatchFromUi({ minScore, maxScore, limit, batchScope })
     }
     if (minScore != null) body.minScore = minScore;
     if (maxScore != null) body.maxScore = maxScore;
+    const huntTracks = getSelectedHuntTracks();
+    if (huntTracks.length) body.huntTracks = huntTracks;
     const res = await api('/api/hh-launch-apply-batch', { method: 'POST', body: JSON.stringify(body) });
     showToast(res.message || `${COPY.batch} запущена`, 'neutral');
     startJobLogPoll();
@@ -6434,7 +8464,7 @@ async function runBatch({ minScore, maxScore, label }) {
 
   let precheck = null;
   try {
-    precheck = await fetchBatchPrecheck(minScore, maxScore);
+    precheck = await fetchBatchPrecheck(minScore, maxScore, limit);
   } catch {
     precheck = null;
   }
@@ -6448,7 +8478,7 @@ async function runBatch({ minScore, maxScore, label }) {
       const imp = await runBulkLetterPrepare(minScore, maxScore);
       if (imp.improved > 0) {
         showToast(imp.message || `Подготовлено писем: ${imp.improved}`, 'good');
-        precheck = await fetchBatchPrecheck(minScore, maxScore);
+        precheck = await fetchBatchPrecheck(minScore, maxScore, limit);
         await load();
         void refreshLetterStatsSidebar(true);
       }
@@ -6465,6 +8495,7 @@ async function runBatch({ minScore, maxScore, label }) {
       section,
       queueTabLabel,
       reasonLabel: batchPrecheckReasonLabel,
+      huntTracks: getSelectedHuntTracks(),
     });
     if (action === false) return;
 
@@ -6472,7 +8503,7 @@ async function runBatch({ minScore, maxScore, label }) {
       try {
         const imp = await runBulkLetterPrepare(minScore, maxScore);
         showToast(imp.message || `Подготовлено: ${imp.improved || 0}`, imp.improved ? 'good' : 'neutral');
-        precheck = await fetchBatchPrecheck(minScore, maxScore);
+        precheck = await fetchBatchPrecheck(minScore, maxScore, limit);
         updateBatchPrecheckModal(precheck);
         await load();
         void refreshLetterStatsSidebar(true);
@@ -6504,6 +8535,22 @@ async function runBatch({ minScore, maxScore, label }) {
     }
 
     if (action === 'start') {
+      if (precheck?.readiness?.tier === 'blocked') {
+        showToast(
+          precheck.readiness.blockers?.[0]?.message || 'Серию нельзя запустить — см. блок «Можно ли запускать»',
+          'bad'
+        );
+        continue;
+      }
+      if (precheck?.readiness?.tier === 'caution') {
+        const warn = (precheck.readiness.warnings || []).join('\n');
+        if (
+          warn &&
+          !confirm(`Осторожно — перед серией из ${limit} откликов:\n${warn}\n\nЗапустить всё равно?`)
+        ) {
+          continue;
+        }
+      }
       if (precheck && Number(precheck.ready || 0) === 0) {
         showToast('Нет готовых карточек — исправьте блокеры или смените фильтр', 'neutral');
         continue;
@@ -6568,7 +8615,7 @@ document.getElementById('btn-questionnaire-reprobe-batch')?.addEventListener('cl
       body: JSON.stringify({ limit: 5 }),
     });
     showToast(res.message || COPY.questionnaireProbeToast.replace('{n}', String(res.okCount ?? 0)), res.failed ? 'neutral' : 'good');
-    await loadItems();
+    await load();
   } catch (e) {
     alert(e.message);
   } finally {
@@ -6593,7 +8640,7 @@ document.getElementById('btn-questionnaire-probe-filter')?.addEventListener('cli
       body: JSON.stringify({ limit: 5, scope: 'questionnaire' }),
     });
     showToast(res.message || COPY.questionnaireProbeToast.replace('{n}', String(res.okCount ?? 0)), res.failed ? 'neutral' : 'good');
-    await loadItems();
+    await load();
   } catch (e) {
     alert(e.message);
   } finally {
@@ -6615,7 +8662,7 @@ document.getElementById('btn-questionnaire-prep-batch')?.addEventListener('click
   try {
     const res = await api('/api/questionnaire/prep-batch', { method: 'POST', body: '{}' });
     showToast(res.message || `Готово: ${res.okCount}`, 'good');
-    await loadItems();
+    await load();
   } catch (e) {
     alert(e.message);
   } finally {
@@ -6647,7 +8694,7 @@ async function launchBackgroundApi(path, toastMsgOrOpts) {
 async function applyNegotiationsCacheToQueue() {
   const res = await api('/api/apply-negotiations-cache', { method: 'POST', body: '{}' });
   showToast(res.message || `Статусы hh: ${res.updated} карточек`, 'good');
-  await loadItems();
+  await load();
 }
 
 async function runServiceAction(action, triggerEl) {
@@ -6669,7 +8716,7 @@ async function runServiceAction(action, triggerEl) {
       case 'import-negotiations-queue': {
         const res = await api('/api/import-negotiations-queue', { method: 'POST', body: '{}' });
         showToast(res.message || `Импорт: ${res.imported}`, 'good');
-        await loadItems();
+        await load();
         break;
       }
       case 'prune-responded':
@@ -6684,16 +8731,19 @@ async function runServiceAction(action, triggerEl) {
         {
           const res = await api('/api/prune-responded-queue', { method: 'POST' });
           showToast(res.message || `Убрано: ${res.changed}`, 'good');
-          await loadItems();
+          await load();
         }
         break;
       case 'sync-resume-from-source':
         if (
-          !confirm(
-            'Синхронизировать резюме с эталона (техподдержка)?\n\n' +
+          !(await openConfirmActionModal({
+            title: 'Синхронизация резюме',
+            message:
+              'Синхронизировать резюме с эталона (техподдержка)?\n\n' +
               'Заполнит «О себе» и описание опыта на DevOps и других вариантах, если они пустее эталона.\n\n' +
-              'Откроется Chromium. Нужен config/resume-variants.json с hash.'
-          )
+              'Откроется Chromium. Нужен config/resume-variants.json с hash.',
+            confirmLabel: 'Синхронизировать',
+          }))
         ) {
           return;
         }
@@ -6701,13 +8751,19 @@ async function runServiceAction(action, triggerEl) {
         break;
       case 'sync-resume-variants':
         if (
-          !confirm(
-            'Обновить до 5 резюме на hh.ru?\n\nНужен config/resume-variants.json и Chromium (npm run devops:list-resumes).'
-          )
+          !(await openConfirmActionModal({
+            title: 'Обновление резюме',
+            message:
+              'Обновить до 5 резюме на hh.ru?\n\nНужен config/resume-variants.json и Chromium (npm run devops:list-resumes).',
+            confirmLabel: 'Обновить',
+          }))
         ) {
           return;
         }
         await launchBackgroundApi('/api/launch-sync-resume-variants', 'Обновление резюме на hh.ru');
+        break;
+      case 'restore-hh-resume':
+        await requestResumeHhRestore();
         break;
       case 'raise-resumes-all':
         if (
@@ -6763,7 +8819,7 @@ async function runServiceAction(action, triggerEl) {
         {
           const res = await api('/api/chat-reply-batch', { method: 'POST', body: '{}' });
           showToast(`Готово: ${res.processed} черновиков`, 'good');
-          await loadItems();
+          await load();
         }
         break;
       case 'questionnaire-reprobe':
@@ -6793,9 +8849,17 @@ function renderResumeRaiseScheduleStatus(st) {
     settingsCb.checked = st.enabled;
   }
   if (!el || !st) return;
-  const slots = (st.slots || []).map((h) => `${h}:00`).join(', ');
+  const slotLabel = (s) => {
+    if (typeof s === 'string' && s.includes(':')) return s;
+    if (s && typeof s === 'object' && Number.isFinite(s.hour)) {
+      const m = Number.isFinite(s.minute) ? s.minute : 0;
+      return `${String(s.hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    return typeof s === 'number' && Number.isFinite(s) ? `${s}:00` : String(s ?? '');
+  };
+  const slots = (st.slots || []).map(slotLabel).join(', ');
   const pending = st.pendingToday?.length
-    ? `осталось: ${st.pendingToday.map((p) => `${p.hour}:00`).join(', ')}`
+    ? `осталось: ${st.pendingToday.map((p) => (typeof p.label === 'string' && p.label.includes(':') ? p.label : slotLabel(p.hour ?? p))).join(', ')}`
     : 'слоты на сегодня закрыты';
   const last = st.lastRunAt ? ` · ${new Date(st.lastRunAt).toLocaleString('ru-RU')}` : '';
   el.textContent = `${st.enabled ? 'Авто вкл' : 'Авто выкл'} · ${slots} (${st.timezone || 'MSK'}) · ${pending}${last}`;
@@ -6812,9 +8876,17 @@ function renderChatFollowUpScheduleStatus(st) {
     settingsCb.checked = st.enabled;
   }
   if (!el || !st) return;
-  const slots = (st.slots || []).map((h) => `${h}:00`).join(', ');
+  const slotLabel = (s) => {
+    if (typeof s === 'string' && s.includes(':')) return s;
+    if (s && typeof s === 'object' && Number.isFinite(s.hour)) {
+      const m = Number.isFinite(s.minute) ? s.minute : 0;
+      return `${String(s.hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    return typeof s === 'number' && Number.isFinite(s) ? `${s}:00` : String(s ?? '');
+  };
+  const slots = (st.slots || []).map(slotLabel).join(', ');
   const pending = st.pendingToday?.length
-    ? `осталось: ${st.pendingToday.map((p) => `${p.hour}:00`).join(', ')}`
+    ? `осталось: ${st.pendingToday.map((p) => slotLabel(p.hour ?? p)).join(', ')}`
     : 'слоты на сегодня закрыты';
   const last = st.lastRunAt ? ` · ${new Date(st.lastRunAt).toLocaleString('ru-RU')}` : '';
   el.textContent = `${st.enabled ? 'Авто вкл' : 'Авто выкл'} · ${slots} (${st.timezone || 'MSK'}) · ${pending}${last}`;
@@ -7035,6 +9107,10 @@ document.getElementById('filter-reset')?.addEventListener('click', () => {
   filterPresetExtras = { onlyManual: false, onlyFresh: false };
   document.querySelectorAll('[data-preset]').forEach((btn) => btn.classList.remove('active'));
   if (filterSalaryEl) filterSalaryEl.checked = false;
+  if (currentScoreBand !== 'all') {
+    switchScoreBandToAll();
+    return;
+  }
   renderListFromCache(null);
 });
 
@@ -7070,11 +9146,21 @@ filterLetterWeakBtnEl?.addEventListener('click', () => {
 
 btnLetterCenterPrepareEl?.addEventListener('click', () => btnBulkImproveLettersEl?.click());
 
+btnLetterCenterGenerateEl?.addEventListener('click', async () => {
+  btnLetterCenterGenerateEl.disabled = true;
+  try {
+    await runLetterCenterRegen('missing');
+  } catch (e) {
+    showToast(e.message, 'bad');
+  } finally {
+    btnLetterCenterGenerateEl.disabled = false;
+  }
+});
+
 btnLetterCenterRegenEl?.addEventListener('click', async () => {
   btnLetterCenterRegenEl.disabled = true;
   try {
-    const res = await requestCoverLetterRegenerateWeak({ mode: 'fail', limit: 25 });
-    showToast(res.message || 'Перегенерация в фоне', 'good');
+    await runLetterCenterRegen('fail');
   } catch (e) {
     showToast(e.message, 'bad');
   } finally {
@@ -7194,6 +9280,18 @@ for (const btn of document.querySelectorAll('[data-preset]')) {
   });
 }
 
+for (const btn of document.querySelectorAll('[data-queue-list-mode]')) {
+  btn.addEventListener('click', () => {
+    const mode = btn.getAttribute('data-queue-list-mode');
+    if (mode !== 'toApply' && mode !== 'all') return;
+    currentQueueListMode = mode;
+    syncQueueListModeTabs();
+    renderListFromCache(null);
+  });
+}
+
+syncQueueListModeTabs();
+
 settingsProfileSelectEl?.addEventListener('change', async () => {
   const id = settingsProfileSelectEl.value;
   if (!id || !profileOptionsLoaded) return;
@@ -7214,6 +9312,11 @@ settingsProfileSelectEl?.addEventListener('change', async () => {
 });
 
 await applyLocalDashboardDefaults();
+if (window.__TAURI__ || window.__TAURI_INTERNALS__) {
+  document.documentElement.classList.add('hh-desktop');
+  document.documentElement.style.setProperty('--ui-scale', '1');
+  initDesktopDashboardWatchdog();
+}
 initUiScaleControls();
 initThemeControls();
 initCardTuningControls();
@@ -7331,7 +9434,7 @@ const syncSettingsMobileOnResize = debounce(() => {
 }, 150);
 window.addEventListener('resize', syncSettingsMobileOnResize);
 
-function openDashboardSettings(tabId = 'system', { focusId, clearUrl = true, layout, focusToast } = {}) {
+function openDashboardSettings(tabId = 'system', { focusId, clearUrl = true, layout, focusToast, quietToast } = {}) {
   closeServiceDrawer();
   const settingsModal = document.getElementById('settings-modal');
   if (!settingsModal) return;
@@ -7371,7 +9474,7 @@ function openDashboardSettings(tabId = 'system', { focusId, clearUrl = true, lay
     });
   }
   if (!settingsProfileSelectEl?.value) void refreshProfileSelect();
-  if (focusId) focusSettingsField(focusId, { toast: focusToast || '' });
+  if (focusId) focusSettingsField(focusId, { toast: quietToast ? '' : focusToast || '' });
   if (clearUrl) clearSettingsLocationParams();
 }
 
@@ -7579,6 +9682,11 @@ function initCrmUi() {
   settingsModal?.querySelector('[data-close-settings]')?.addEventListener('click', closeSettingsModal);
   settingsModal?.querySelector('.modal-close--settings')?.addEventListener('click', closeSettingsModal);
 
+  window.addEventListener('hh-show-toast', (ev) => {
+    const d = ev.detail || {};
+    if (d.message) showToast(String(d.message), d.variant || 'neutral');
+  });
+
   window.addEventListener('hh-open-settings', (ev) => {
     const detail = ev.detail || {};
     const precheck = document.getElementById('batch-precheck-modal');
@@ -7587,6 +9695,7 @@ function initCrmUi() {
     openDashboardSettings(tab, {
       focusId: detail.focus || '',
       focusToast: detail.focusToast || '',
+      quietToast: Boolean(detail.quietToast),
       layout: detail.layout || '',
       clearUrl: false,
     });
@@ -7673,6 +9782,34 @@ function initShortcutsModal() {
   });
 }
 
+function buildInterviewPaletteActions(hub) {
+  return listInterviewHubPaletteTargets(hub).map((target) => ({
+    id: `interview-hub-${target.id}`,
+    group: 'Следить',
+    label: interviewHubPaletteLabel(target),
+    hint: target.kind === 'demo' ? 'Без hh.ru' : target.kind === 'offer' ? 'Корзина F' : 'Хаб собесов',
+    keywords: `interview собес суфлёр слот ${target.title} ${target.company} ${target.kind}`,
+    run: () => openInterviewHubModal(target.id),
+  }));
+}
+
+function rebuildCommandPaletteActions() {
+  registerCommandPaletteActions([
+    ...commandPaletteStaticActions,
+    ...buildInterviewPaletteActions(interviewHubCache),
+  ]);
+}
+
+async function prefetchInterviewHubForPalette() {
+  try {
+    const hub = await api('/api/interview-hub');
+    interviewHubCache = hub;
+    rebuildCommandPaletteActions();
+  } catch {
+    /* дашборд без API — palette без динамики */
+  }
+}
+
 function initCommandPaletteAndShortcuts() {
   const panelPaletteActions = Object.entries(SIDEBAR_PANELS)
     .filter(([id]) => id !== 'brand')
@@ -7685,7 +9822,7 @@ function initCommandPaletteAndShortcuts() {
       run: () => enableSidebarPanel(id),
     }));
 
-  registerCommandPaletteActions([
+  commandPaletteStaticActions = [
     {
       id: 'harvest',
       group: 'Найти',
@@ -7794,7 +9931,7 @@ function initCommandPaletteAndShortcuts() {
     {
       id: 'batch-manual',
       group: 'Откликнуться',
-      label: COPY.batchManual || 'Ручные отклики',
+      label: COPY.batchManual || 'Ниже порога (разведка)',
       hint: 'Серия ниже порога',
       keywords: 'batch manual ручные',
       run: () => document.getElementById('btn-batch-manual')?.click(),
@@ -7948,6 +10085,16 @@ function initCommandPaletteAndShortcuts() {
       run: () => openShortcutsModal(),
     },
     {
+      id: 'apply-e2e-playbook',
+      group: 'Справка',
+      label: COPY.applyE2ePlaybook || 'Сценарий отклика',
+      hint: COPY.applyE2ePlaybookHint || 'Корзина → анкета → робот',
+      keywords: 'корзина отклик анкета робот рекрутер playbook e2e ship',
+      run: () => {
+        window.open(COPY.applyE2ePlaybookUrl || '/apply-e2e-playbook.html', '_blank', 'noopener');
+      },
+    },
+    {
       id: 'open-palette',
       group: 'Справка',
       label: COPY.allFeatures || 'Все функции',
@@ -7955,7 +10102,10 @@ function initCommandPaletteAndShortcuts() {
       keywords: 'palette команды поиск',
       run: () => openCommandPalette(),
     },
-  ]);
+  ];
+
+  rebuildCommandPaletteActions();
+  void prefetchInterviewHubForPalette();
 
   initKeyboardShortcuts({
     openShortcutsHelp: openShortcutsModal,
@@ -8023,11 +10173,93 @@ initShortcutsModal();
 initAllFeaturesButton();
 initCommandPaletteAndShortcuts();
 initListKeyboardNav(listEl, () => [...listEl.querySelectorAll('.card, .card-tile')]);
+
+configureCardPrimaryCta({
+  enabled: () => {
+    try {
+      const p = JSON.parse(localStorage.getItem('hh-dashboard-prefs-cache') || '{}');
+      if (p.cardPrimaryCta === false) return false;
+    } catch {
+      /* ignore */
+    }
+    return true;
+  },
+  onOpenLetter: (item) => openLetterModal(item),
+  onApply: async (item, btn) => {
+    btn.disabled = true;
+    try {
+      const res = await api('/api/hh-launch-apply-chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: item.id,
+          usePoolLetter: true,
+          tailorResume: true,
+        }),
+      });
+      const pid = res.pid != null ? ` PID ${res.pid}.` : '';
+      showToast(
+        `Отклик запущен.${pid} Должно открыться окно Chromium — смотрите лог и панель прогресса.`,
+        'good'
+      );
+      openApplyLogModal();
+      startJobLogPoll();
+      refreshJobStatus();
+    } catch (e) {
+      alert(e.message);
+      btn.disabled = false;
+    }
+  },
+});
+
 loadDashboardSettings().then(() => {
   openDashboardSettingsFromUrl();
   initDashboardDeepLinks();
+  void hydrateInstanceBadge();
+  const isDesktop =
+    document.documentElement.classList.contains('hh-desktop') ||
+    /\bhh-desktop=1\b/.test(location.search || '');
+  const focusInterview = new URLSearchParams(location.search).get('focus') === 'interview';
+  // Desktop: не блокировать event loop тяжёлым /api/vacancies на старте
+  // (иначе /api/health таймаутится → баннер «Дашборд не отвечает»).
+  if (isDesktop || focusInterview) {
+    clearDesktopHealthBanner();
+    const listEl = document.getElementById('list') || document.getElementById('vacancy-list');
+    if (listEl && !listEl.childElementCount) {
+      listEl.innerHTML =
+        '<p class="stats-placeholder" style="padding:1rem">Очередь не грузится автоматически в Desktop (чтобы не вешать дашборд). Нажмите «Обновить» в очереди, когда понадобится. Суфлёр — кнопка хаба собесов.</p>';
+    }
+    // Не вызываем load() и не открываем hub сразу — оба пути могут сканировать большую очередь
+    return;
+  }
   return load();
 });
 refreshJobStatus();
 setInterval(refreshJobStatus, 2000);
+
+const LLM_PROVIDER_EVENT_KEY = 'hh-llm-last-event';
+let lastLlmProviderEventId = sessionStorage.getItem(LLM_PROVIDER_EVENT_KEY) || '';
+let llmProviderPollReady = false;
+
+async function pollLlmProviderStatus() {
+  try {
+    const st = await api('/api/llm/provider-status');
+    const ev = st?.lastEvent;
+    if (ev?.id) {
+      if (llmProviderPollReady && ev.id !== lastLlmProviderEventId) {
+        showToast(ev.message || 'LLM: переключён резервный провайдер', 'neutral', { durationMs: 6500 });
+      }
+      lastLlmProviderEventId = ev.id;
+      sessionStorage.setItem(LLM_PROVIDER_EVENT_KEY, ev.id);
+      llmProviderPollReady = true;
+    } else if (!llmProviderPollReady) {
+      llmProviderPollReady = true;
+    }
+  } catch {
+    /* фоновый poll */
+  }
+}
+
+void pollLlmProviderStatus();
+setInterval(() => void pollLlmProviderStatus(), 12000);
+
 probeBatchControlApi();

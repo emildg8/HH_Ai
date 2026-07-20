@@ -1,5 +1,7 @@
 /** Подписи и настройки интерфейса (браузер). Синхронизировать с lib/dashboard-ux.mjs */
 
+import { SETTINGS_FORMAT_GEO_COPY } from './dashboard-copy-ru.mjs';
+
 export const UI_MODES = { simple: 'simple', expert: 'expert' };
 
 /** Подписи: простой vs расширенный режим (см. docs/GLOSSARY-UI.md) */
@@ -280,7 +282,8 @@ export const COPY = {
   batch: 'Серия откликов',
   batchShort: 'Серия',
   batchAuto: 'Авто-отклики',
-  batchManual: 'Ручные отклики',
+  batchManual: 'Ниже порога (разведка)',
+  batchManualTip: 'Тот же Playwright и batch, что «Авто-отклики» — только вакансии с баллом ниже порога',
   harvest: 'Поиск вакансий',
   harvestRun: 'Запустить поиск',
   harvestExternal: 'Внешние источники',
@@ -294,6 +297,8 @@ export const COPY = {
   filterPresetTierAFresh: 'Лучшие · свежие',
   filterPresetManual: 'Ручной отклик',
   filterPresetAllSources: 'Все вакансии',
+  filterQueueToApply: 'К отклику',
+  filterQueueAllPending: 'Все в статусе',
   harvestPeriod: 'Период поиска',
   dailyRoutine: 'Утренний цикл',
   openLog: 'Журнал',
@@ -301,6 +306,9 @@ export const COPY = {
   openService: 'Сервисы',
   allFeatures: 'Все функции',
   allFeaturesHint: 'Поиск действий и настроек — Ctrl+K',
+  applyE2ePlaybook: 'Сценарий отклика',
+  applyE2ePlaybookHint: 'Корзина → письмо → анкета → робот в чате',
+  applyE2ePlaybookUrl: '/apply-e2e-playbook.html',
   funnelTitle: 'Статистика откликов',
   confirmStopHarvest: 'Остановить поиск вакансий?',
   confirmStopBatch: 'Остановить серию откликов?',
@@ -346,6 +354,16 @@ export const COPY = {
   dailyRoutineExternal: 'Утренний цикл + Хабр, Telegram, сайты компаний',
   dailyRoutineExternalConfirm: '+ сбор с Хабра, Telegram и сайтов компаний',
   blockSpokenEnglishLabel: 'Блокировать требование устного английского',
+  settingsFormatGeoTitle: SETTINGS_FORMAT_GEO_COPY.title,
+  settingsFormatGeoLead: SETTINGS_FORMAT_GEO_COPY.lead,
+  settingsHarvestRequireRemoteLabel: SETTINGS_FORMAT_GEO_COPY.harvestRequireRemoteLabel,
+  settingsHarvestRequireRemoteHint: SETTINGS_FORMAT_GEO_COPY.harvestRequireRemoteHint,
+  settingsRequireRemoteLabel: SETTINGS_FORMAT_GEO_COPY.requireRemoteLabel,
+  settingsRequireRemoteHint: SETTINGS_FORMAT_GEO_COPY.requireRemoteHint,
+  settingsBatchRequireRemoteLabel: SETTINGS_FORMAT_GEO_COPY.batchRequireRemoteLabel,
+  settingsBatchRequireRemoteHint: SETTINGS_FORMAT_GEO_COPY.batchRequireRemoteHint,
+  settingsBatchGotoApply: SETTINGS_FORMAT_GEO_COPY.batchGotoApply,
+  settingsFormatGeoPolicyInfo: SETTINGS_FORMAT_GEO_COPY.policyInfo,
   questionnaireProbeToast: 'Проверка анкет: {n}',
   harvestHabr: 'Сбор с Хабра',
   onboardingCtaSettings: 'Настроить',

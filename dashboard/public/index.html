@@ -64,11 +64,42 @@
           }
         }
       } catch (_) {}
+      try {
+        var isDesktop =
+          window.__TAURI__ ||
+          window.__TAURI_INTERNALS__ ||
+          /\bhh-desktop=1\b/.test(location.search || '') ||
+          /\bTauri\//.test(navigator.userAgent || '');
+        if (isDesktop) {
+          document.documentElement.classList.add('hh-desktop');
+          document.documentElement.style.setProperty('--ui-scale', '1');
+          var st = document.createElement('style');
+          st.id = 'hh-desktop-critical';
+          st.textContent =
+            'html.hh-desktop,html.hh-desktop body{background:#101116!important}' +
+            'html.hh-desktop{--hh-accent-hover:var(--hh-accent);--hh-tile-hover:var(--hh-tile);' +
+            '--ui-tile-hover:var(--ui-tile);--v4-accent-hover:var(--hh-accent);--v4-tile-hover:var(--hh-tile)}' +
+            'html.hh-desktop *,html.hh-desktop *::before,html.hh-desktop *::after{' +
+            'backdrop-filter:none!important;-webkit-backdrop-filter:none!important;' +
+            'transition:none!important;animation:none!important;filter:none!important}' +
+            'html.hh-desktop #app-shell.app{transform:none!important;zoom:unset!important;' +
+            'width:100vw!important;height:100dvh!important;max-height:100dvh!important;' +
+            'contain:layout;isolation:isolate}' +
+            'html.hh-desktop.hh-modal-open #app-shell>:not(.modal){pointer-events:none!important}' +
+            'html.hh-desktop .modal.modal--open{pointer-events:auto!important;z-index:100000!important}' +
+            'html.hh-desktop .card:hover,html.hh-desktop .service-card:hover{' +
+            'box-shadow:none!important;transform:none!important;filter:none!important}' +
+            'html.hh-desktop .modal-backdrop,html.hh-desktop .modal-dialog{' +
+            'transition:none!important;transform:none!important;backdrop-filter:none!important}' +
+            'html.hh-desktop .float-tip{display:none!important}';
+          document.head.appendChild(st);
+        }
+      } catch (_) {}
     </script>
     <link rel="stylesheet" href="/style.css?v=20260618settings9" />
     <link rel="stylesheet" href="/design-tokens.css?v=20260615seg1" />
     <link rel="stylesheet" href="/design-foundation.css?v=20260615settings6" />
-    <link rel="stylesheet" href="/design-components.css?v=20260615settings6" />
+    <link rel="stylesheet" href="/design-components.css?v=20260621journey2" />
     <link rel="stylesheet" href="/dashboard-shell.css?v=20260531w1" />
     <link rel="stylesheet" href="/dashboard-cards.css?v=20260615settings6" />
     <link rel="stylesheet" href="/dashboard-card-tiles.css?v=20260615settings6" />
@@ -81,6 +112,7 @@
     <link rel="stylesheet" href="/dashboard-controls-polish.css?v=20260615settings6" />
     <link rel="stylesheet" href="/dashboard-settings-v5-layer.css?v=20260618settings9" />
     <link rel="stylesheet" href="/dashboard-settings-v6.css?v=20260618settings9" />
+    <link rel="stylesheet" href="/dashboard-desktop-webview.css?v=20260704desktop4" />
   </head>
   <body>
     <div id="app-shell" class="app crm-layout workspace-shell workspace-shell--v4 workspace-shell--focus" aria-label="HH Ai — дашборд откликов">
@@ -95,6 +127,7 @@
           <span class="brand-mark" aria-hidden="true">HH</span>
           <span class="brand-text">
             <span class="brand-title">HH Ai</span>
+            <span id="instance-badge" class="instance-badge" hidden></span>
           </span>
         </button>
         <nav class="workflow-nav" aria-label="Шаги работы">
@@ -193,10 +226,19 @@
             <button type="button" class="btn btn-primary btn-block btn-routine-hero" id="btn-daily-routine" data-tip="Синхронизация откликов, кэш и чаты" data-copy="dailyRoutine">
               Утренний цикл
             </button>
+            <div class="batch-hunt-tracks-bar">
+              <span class="batch-hunt-tracks-bar__label">Маршруты</span>
+              <div class="batch-hunt-tracks seg-group" id="batch-hunt-tracks" role="group" aria-label="Маршруты серии откликов">
+                <button type="button" class="seg-btn active" data-hunt-track="devops" aria-pressed="true">DevOps</button>
+                <button type="button" class="seg-btn active" data-hunt-track="infra" aria-pressed="true">Инфра</button>
+                <button type="button" class="seg-btn" data-hunt-track="l2l3" aria-pressed="false" title="L2 / L3 поддержка">Поддержка</button>
+                <button type="button" class="seg-btn" data-hunt-track="tam" aria-pressed="false">TAM</button>
+              </div>
+            </div>
             <div class="crm-action-grid">
               <button type="button" class="btn btn-secondary" id="btn-batch-auto" data-tip="Серия откликов с баллом не ниже порога" data-copy="batchAuto">Авто-отклики</button>
               <button type="button" class="btn btn-secondary" id="btn-review-tier-a" data-copy-title="reviewTierATip" data-copy="reviewTierA">Разобрать топ</button>
-              <button type="button" class="btn btn-secondary btn-batch-manual ui-expert-only" id="btn-batch-manual" data-tip="Серия откликов ниже порога" data-copy="batchManual">Ручные отклики</button>
+              <button type="button" class="btn btn-secondary btn-batch-manual ui-expert-only" id="btn-batch-manual" data-tip="Тот же batch и Playwright — вакансии ниже порога балла" data-copy="batchManual">Ниже порога (разведка)</button>
             </div>
           </section>
           </div>
@@ -259,6 +301,10 @@
               <button type="button" class="seg-btn" id="filter-preset-tier-a-fresh" data-preset="tierAFresh" data-copy="filterPresetTierAFresh" title="Автооценка совпадения с резюме и таргетингом">Лучшие · свежие</button>
               <button type="button" class="seg-btn" id="filter-preset-manual" data-preset="manualApply" data-copy="filterPresetManual">Ручной отклик</button>
               <button type="button" class="seg-btn" id="filter-preset-all" data-preset="allSources" data-copy="filterPresetAllSources">Все вакансии</button>
+            </div>
+            <div class="segmented crm-seg-tight sidebar-filters__queue-mode" id="panel-queue-list-mode" role="group" aria-label="Режим списка очереди">
+              <button type="button" class="seg-btn active" data-queue-list-mode="toApply" data-copy="filterQueueToApply" title="Только с письмом — к отклику">К отклику</button>
+              <button type="button" class="seg-btn" data-queue-list-mode="all" data-copy="filterQueueAllPending" title="Весь текущий статус без фильтра письма">Все в статусе</button>
             </div>
             <div class="segmented sidebar-filters__controls crm-seg-tight">
               <div class="sidebar-filters__group score-band-tabs" id="panel-score-band" role="group" aria-label="Оценка">
@@ -398,7 +444,7 @@
               aria-label="Подъём резюме"
             >
               <span class="dock-section__label">Подъём резюме</span>
-              <p class="service-block__desc service-block__desc--compact">На hh.ru — раз в ~4 ч. Авто: 8, 12, 16, 20 (МСК).</p>
+              <p class="service-block__desc service-block__desc--compact">На hh.ru — 2× в день. Авто: 9:30, 13:30 (МСК).</p>
               <label class="field-check service-block__check">
                 <input type="checkbox" id="resume-raise-auto-enabled" checked />
                 <span>Авто-подъём по расписанию</span>
@@ -442,6 +488,7 @@
                 <button type="button" class="btn btn-primary btn-sm" data-service-action="open-interview-hub">Хаб собеседований</button>
                 <button type="button" class="btn btn-secondary btn-sm" data-service-action="sync-resume-from-source">С эталона</button>
                 <button type="button" class="btn btn-secondary btn-sm" data-service-action="sync-resume-variants">Обновить тексты</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-service-action="restore-hh-resume" title="Вернуть «О себе», опыт и навыки из снапшота до L4">Вернуть базовое</button>
                 <button type="button" class="btn btn-secondary btn-sm" data-service-action="import-interview-notes">Заметки собесов</button>
               </div>
             </section>
@@ -459,6 +506,7 @@
             <section class="crm-kpi sidebar-panel sidebar-panel__expandable" data-panel="kpi" aria-label="Воронка и конверсия" title="Графики и конверсия">
               <div class="stats-panel stats-panel--crm" id="stats-panel">
                 <div class="funnel-mini" id="funnel-mini" aria-hidden="true"></div>
+                <div class="north-star-kpi ui-expert-only" id="north-star-kpi" hidden aria-label="Прогресс к собеседованию"></div>
                 <div class="intelligence-kpi-row">
                 <div class="funnel-mini funnel-mini--sources" id="intelligence-sources" hidden title="Клик — сводка по источникам"></div>
                 <button type="button" class="btn btn-ghost btn-sm btn-intelligence-digest ui-expert-only" id="btn-open-intelligence-digest">Сводка источников</button>
@@ -591,6 +639,7 @@
           <div class="card-scroll">
             <p class="meta meta--compact"></p>
             <div class="status-chips card-status-chips" hidden></div>
+            <div class="card-journey-host" hidden></div>
             <div class="card-meta-detail" hidden>
               <p class="meta-line meta-line--company" hidden></p>
               <p class="meta-line meta-line--salary" hidden></p>
@@ -831,7 +880,7 @@
       <div class="modal-backdrop" data-close-interview-hub></div>
       <div class="modal-dialog modal-dialog--wide interview-hub-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="interview-hub-title" tabindex="-1">
         <div class="modal-head">
-          <h2 id="interview-hub-title" class="modal-title">Хаб собеседований</h2>
+          <h2 id="interview-hub-title" class="modal-title">Собеседования</h2>
           <button type="button" class="modal-close" data-close-interview-hub aria-label="Закрыть">×</button>
         </div>
         <div class="modal-body" id="interview-hub-body">
@@ -1091,22 +1140,37 @@
                 <p class="settings-preset-hint" id="settings-targeting-preset-hint">Гибрид и офис Москва разрешены, руководители и разработчики исключаются</p>
                 <p class="settings-field__hint settings-targeting-preview" id="settings-targeting-preview" aria-live="polite">—</p>
               </fieldset>
-              <div class="settings-grid-pair">
-              <fieldset class="settings-group" id="settings-remote-card">
-                <legend class="settings-group__title">Удалёнка</legend>
-                <p class="settings-group__desc">Глобальное правило для сбора и оценки вакансий</p>
+              <fieldset class="settings-group settings-group--span-full" id="settings-format-geo">
+                <legend class="settings-group__title" data-copy="settingsFormatGeoTitle">Формат и гео</legend>
+                <p class="settings-group__desc" data-copy="settingsFormatGeoLead">Поиск широкий, отклик строже</p>
                 <div class="settings-check-list">
+                  <label class="settings-check">
+                    <input type="checkbox" id="pref-harvest-require-remote" data-pref-bool="harvestRequireRemote" />
+                    <span class="settings-check__text">
+                      <strong data-copy="settingsHarvestRequireRemoteLabel">Harvest: требовать удалёнку в шапке</strong>
+                      <small data-copy="settingsHarvestRequireRemoteHint">Выключено — harvest широкий; apply и серия строже</small>
+                    </span>
+                  </label>
                   <label class="settings-check">
                     <input type="checkbox" id="pref-require-remote" data-pref-bool="requireRemote" />
                     <span class="settings-check__text">
-                      <strong>Только удалёнка — глобально</strong>
-                      <small>Без явной remote/hybrid — в «Неподходит»</small>
+                      <strong data-copy="settingsRequireRemoteLabel">Только удалёнка — глобально</strong>
+                      <small data-copy="settingsRequireRemoteHint">Без явной remote/hybrid — в «Неподходит»</small>
                     </span>
                   </label>
                 </div>
+                <div class="settings-format-geo-batch" id="settings-format-geo-batch-row">
+                  <div class="settings-format-geo-batch__head">
+                    <span class="settings-field__label" data-copy="settingsBatchRequireRemoteLabel">Удалёнка в серии откликов</span>
+                    <button type="button" class="btn btn-ghost btn-sm" data-settings-path="batch-remote" data-copy="settingsBatchGotoApply">→ Серия откликов</button>
+                  </div>
+                  <p class="settings-field__hint" id="settings-format-geo-batch-status" aria-live="polite">—</p>
+                  <p class="settings-field__hint settings-field__hint--muted" data-copy="settingsBatchRequireRemoteHint">Переключатель на вкладке «Серия откликов»</p>
+                </div>
+                <p class="settings-field__hint settings-format-geo-policy" id="settings-format-geo-policy-info" data-copy="settingsFormatGeoPolicyInfo">—</p>
                 <div id="settings-remote-warnings" class="settings-warnings" hidden></div>
               </fieldset>
-              <fieldset class="settings-group" id="settings-targeting-format">
+              <fieldset class="settings-group settings-group--span-full" id="settings-targeting-format">
                 <legend class="settings-group__title">Формат работы</legend>
                 <p class="settings-group__desc">Дополнительные правила формата и языка</p>
                 <div class="settings-check-list">
@@ -1146,7 +1210,6 @@
                   </label>
                 </div>
               </fieldset>
-              </div>
               <div class="settings-grid-pair">
               <fieldset class="settings-group" id="settings-targeting-salary">
                 <legend class="settings-group__title">Зарплата</legend>
@@ -1286,9 +1349,39 @@
               <fieldset class="settings-group settings-group--span-full ui-expert-only">
                 <legend class="settings-group__title">Подгонка резюме</legend>
                 <label class="settings-field settings-field--row">
+                  <span class="settings-field__label">Стратегия L4</span>
+                  <select class="field-input" data-setting="applyIntelligence.resumeStrategy" id="pref-resume-strategy">
+                    <option value="auto">Авто (по пробелам и projected)</option>
+                    <option value="L4_when_gap">L4 при пробеле ключей</option>
+                    <option value="always_L4">Всегда L4+</option>
+                    <option value="L2_only">Только L2/L3 (без hh.ru)</option>
+                  </select>
+                </label>
+                <label class="settings-field settings-field--row">
                   <span class="settings-field__label">Порог пробела по ключевым словам</span>
                   <input type="number" class="field-input field-input--narrow" min="0" max="100" data-setting="minKeywordGapScore" id="pref-min-keyword-gap" />
                 </label>
+                <div class="settings-check-list settings-check-list--compact">
+                  <label class="settings-check">
+                    <input type="checkbox" data-setting="applyIntelligence.employerEnrichEnabled" checked />
+                    <span class="settings-check__text">Обогащение контекста компании (Tier 0–3)</span>
+                  </label>
+                </div>
+                <p class="settings-field__hint muted">Tier 3 (поиск): только при реальном apply; потолок = «В сутки» в лимитах hh.ru ниже.</p>
+                <div class="settings-inline-row">
+                  <label class="settings-field settings-field--compact">
+                    <span class="settings-field__label">Кэш, дней</span>
+                    <input type="number" class="field-input field-input--narrow" min="1" max="90" data-setting="applyIntelligence.employerEnrichCacheDays" />
+                  </label>
+                  <label class="settings-field settings-field--compact">
+                    <span class="settings-field__label">Поиск (Tier 3)</span>
+                    <select class="field-input" data-setting="applyIntelligence.employerEnrichSearchBackend">
+                      <option value="none">Выключен</option>
+                      <option value="searxng">SearXNG</option>
+                      <option value="ddg">DuckDuckGo lite</option>
+                    </select>
+                  </label>
+                </div>
               </fieldset>
             </section>
 
@@ -1435,6 +1528,11 @@
                     <select class="field-input" id="settings-mic-select" data-setting="interviewCopilot.micDevice"></select>
                   </label>
                 </div>
+                <label class="settings-field settings-field--device-fallback" id="settings-wasapi-fallback" hidden>
+                  <span class="settings-field__label">Звук с созвона вручную (WASAPI недоступен)</span>
+                  <input type="text" class="field-input" id="settings-wasapi-manual" placeholder="audio=CABLE Output (VB-Audio) или default" autocomplete="off" />
+                  <span class="settings-field__hint">В ffmpeg 8.x loopback часто только через VB-Cable / Stereo Mix. Команда: <code>npm run devops:copilot-devices</code></span>
+                </label>
                 <label class="settings-field settings-field--device-fallback" id="settings-mic-fallback" hidden>
                   <span class="settings-field__label">Микрофон вручную (если нет ffmpeg)</span>
                   <input type="text" class="field-input" id="settings-mic-manual" placeholder="audio=Название устройства" autocomplete="off" />
@@ -1472,7 +1570,7 @@
                 </label>
                 <label class="settings-field">
                   <span class="settings-field__label">Строк в полоске</span>
-                  <input type="number" class="field-input field-input--narrow" min="1" max="6" data-setting="interviewCopilot.liveBarMaxLines" />
+                  <input type="number" class="field-input field-input--narrow" min="0" max="6" title="0 — полный телепромптер" data-setting="interviewCopilot.liveBarMaxLines" />
                 </label>
                 <label class="settings-check">
                   <input type="checkbox" data-setting="interviewCopilot.scriptOnlyOverlay" checked />
@@ -1507,7 +1605,7 @@
                 <p class="settings-group__desc">Пока дашборд запущен, слоты проверяются каждую минуту. Подъём резюме — по умолчанию вкл; follow-up чатов — выкл.</p>
                 <label class="settings-check">
                   <input type="checkbox" id="settings-resume-raise-auto" checked />
-                  <span class="settings-check__text"><strong>Авто-подъём резюме</strong><small>8, 12, 16, 20 (МСК)</small></span>
+                  <span class="settings-check__text"><strong>Авто-подъём резюме</strong><small>9:30, 13:30 (МСК)</small></span>
                 </label>
                 <label class="settings-check">
                   <input type="checkbox" id="settings-chat-follow-up-auto" />
@@ -1518,6 +1616,13 @@
                   <button type="button" class="btn btn-secondary btn-sm" id="btn-settings-open-service-from-tab">Открыть сервис</button>
                 </div>
                 <p class="settings-field__hint">Бот Telegram: <code>npm run telegram:setup-access</code> · Скрытый запуск дашборда: <code>npm run dashboard:hidden</code></p>
+              </fieldset>
+              <fieldset class="settings-group settings-group--span-full" id="settings-llm-provider-card">
+                <legend class="settings-group__title">Провайдер LLM</legend>
+                <p class="settings-group__desc">Основной канал и резерв при нуле баланса или недоступности. Переключения видны в toast и в журнале.</p>
+                <div id="settings-llm-provider-panel" class="settings-llm-provider">
+                  <p class="settings-snapshot__loading">Загрузка…</p>
+                </div>
               </fieldset>
             </section>
 
@@ -1766,13 +1871,14 @@
 
     <div id="draft-modal" class="modal" hidden>
       <div class="modal-backdrop" data-close-modal></div>
-      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="draft-modal-title" tabindex="-1">
+      <div class="modal-dialog modal-dialog--scroll-body modal-dialog--wide" role="dialog" aria-modal="true" aria-labelledby="draft-modal-title" tabindex="-1">
         <div class="modal-head">
           <h2 id="draft-modal-title" class="modal-title">Черновик письма</h2>
           <button type="button" class="modal-close" aria-label="Закрыть">×</button>
         </div>
         <p class="modal-vacancy"></p>
-        <div class="modal-draft-body"></div>
+        <div class="modal-draft-body modal-scroll-region"></div>
+        <div class="modal-draft-actions modal-draft-actions--footer"></div>
       </div>
     </div>
 
@@ -1874,6 +1980,23 @@
       </div>
     </div>
 
+    <div id="confirm-action-modal" class="modal ds-modal" hidden>
+      <div class="modal-backdrop" data-confirm-action-cancel></div>
+      <div class="modal-dialog modal-dialog--narrow" role="dialog" aria-modal="true" aria-labelledby="confirm-action-title" tabindex="-1">
+        <div class="modal-head">
+          <h2 id="confirm-action-title" class="modal-title">Подтвердите действие</h2>
+          <button type="button" class="modal-close" data-confirm-action-cancel aria-label="Закрыть">×</button>
+        </div>
+        <div class="modal-body">
+          <p id="confirm-action-message"></p>
+        </div>
+        <div class="modal-foot modal-foot--actions">
+          <button type="button" class="btn btn-secondary btn-sm" data-confirm-action-cancel>Отмена</button>
+          <button type="button" class="btn btn-primary btn-sm" id="confirm-action-ok">Продолжить</button>
+        </div>
+      </div>
+    </div>
+
     <div id="batch-precheck-modal" class="modal" hidden>
       <div class="modal-backdrop" data-close-modal></div>
       <div class="modal-dialog modal-dialog--wide modal-dialog--v4-sheet batch-precheck-dialog" role="dialog" aria-modal="true" aria-labelledby="batch-precheck-title" tabindex="-1">
@@ -1884,6 +2007,7 @@
         <div class="batch-precheck-body">
           <div id="batch-precheck-summary" class="batch-precheck-summary"></div>
           <div id="batch-precheck-prefs-diff" class="batch-precheck-prefs-diff" hidden></div>
+          <div id="batch-precheck-readiness" class="batch-precheck-readiness" hidden></div>
           <div id="batch-precheck-blockers" class="batch-precheck-blockers-wrap"></div>
           <div id="batch-precheck-samples" class="batch-precheck-samples-wrap" hidden></div>
           <p class="modal-hint">Нецелевые вакансии пропускаются до открытия браузера. При анкете — карточка уйдёт в раздел «Анкета».</p>
@@ -1932,7 +2056,8 @@
         <p class="letter-issues-modal__lead" id="letter-issues-lead">Карточки, где письмо нужно подготовить или исправить</p>
         <p class="letter-center-meta letter-issues-modal__meta" id="letter-center-meta" hidden></p>
         <div class="letter-issues-modal__actions">
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-letter-center-prepare">Подготовить</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-letter-center-generate" hidden>Сгенерировать письма</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-letter-center-prepare" hidden>Подготовить</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btn-letter-center-filter">Показать в списке</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btn-letter-center-more">Сводка качества</button>
           <span class="letter-issues-modal__expert ui-expert-only">
@@ -2082,6 +2207,6 @@
     </div>
 
     <!-- cache-bust: lib/dashboard-asset-version.mjs (app.js + dashboard-v4.css) -->
-    <script type="module" src="/app.js?v=20260618settings9"></script>
+    <script type="module" src="/app.js?v=20260719desktopDeferQueue"></script>
   </body>
 </html>
