@@ -49,6 +49,7 @@
     "setup": "node scripts/setup-wizard.mjs",
     "setup:check": "node scripts/setup-check.mjs",
     "secrets:check": "node scripts/pre-push-secrets-check.mjs",
+    "test:secrets-check": "node scripts/test-pre-push-secrets-check.mjs",
     "hooks:install": "node scripts/install-git-hooks-runner.mjs",
     "smoke:release": "node scripts/smoke-release.mjs",
     "docs:screenshots": "node scripts/capture-demo-screenshots.mjs",
