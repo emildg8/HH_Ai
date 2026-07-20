@@ -34,6 +34,8 @@
 
 ## Команды
 
+**Ритуал дня (pain-wave1):** `status` → `plan` → `prep [--with-probe --probe-limit=2]` → `ship --go --limit=1…3`. После sync чатов — `npm run devops:audit-false-invited` (без `--reset`, пока не просмотрели отчёт).
+
 ```powershell
 cd d:\Dev\apps\hh-ai
 
@@ -46,6 +48,10 @@ npm run devops:hunt-day:emil -- ship --mode=point --go --limit=1 --skip-id=<uuid
 npm run devops:hunt-day:emil -- ship --mode=point --go --limit=1 --after-ship=watch
 npm run devops:hunt-day:emil -- ship --mode=basket --go --only=<uuid>
 npm run devops:hunt-day:emil -- repair --id=<uuid>
+
+# После sync-chats — ложные invited (только отчёт; --reset осознанно)
+npm run devops:audit-false-invited
+npm run devops:sync-chats:emil
 
 # Настя — basket
 npm run devops:hunt-day:anastasia -- status --mode=basket
