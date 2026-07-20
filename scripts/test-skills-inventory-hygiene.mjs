@@ -79,6 +79,11 @@ assert.ok(
   'antiPattern про стенды заказчиков Softline'
 );
 
+const sbp = inv.projects.find((p) => p.id === 'bank-sbp-l2');
+assert.ok(sbp?.letterSafe, 'bank-sbp-l2');
+assert.match(JSON.stringify(sbp?.star || {}), /мерчант|QR/i, 'bank-sbp STAR: мерчант/QR');
+assert.ok(inv.aboutMeByTrack?.l2l3 && inv.aboutMeByTrack?.devops, 'aboutMeByTrack');
+
 const docker = inv.skills.find((s) => s.name === 'Docker');
 assert.ok(docker?.letterSafe && docker?.note, 'Docker note про Softline internal vs заказчики');
 

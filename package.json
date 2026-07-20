@@ -330,6 +330,7 @@
     "test:letter-mid-quality": "node scripts/test-letter-mid-quality.mjs",
     "test:letter-framing-router": "node scripts/test-letter-framing-router.mjs",
     "test:letter-l1-quality": "node scripts/test-letter-l1-quality.mjs",
+    "test:letter-sbp-l2-hooks": "node scripts/test-letter-sbp-l2-hooks.mjs",
     "test:queue-to-apply-filter": "node scripts/test-queue-to-apply-filter.mjs",
     "test:point-apply-prepare-policy": "node scripts/test-point-apply-prepare-policy.mjs",
     "test:robot-recruiter": "node scripts/test-robot-recruiter.mjs",

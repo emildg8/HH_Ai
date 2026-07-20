@@ -4,6 +4,8 @@
     "updatedAt": "2026-07-19",
     "narrative": "DevOps junior+/middle: 14+ лет L2/SL2 и банковские контуры (СБП, мониторинг) + собственные стартап-проекты 2026 (HH Ai, Playwright). На hh.ru — факты из CV; в письмах tier A — letterSafe STAR из inventory (коммерция и стартап-практика честно разделены).",
     "changelog": [
+      "2026-07-20: Bandicam→inventory/letters: STAR bank-sbp-l2 + talking points мерчант/QR; framing l2l3/tam; devops ban merchant-lead; aboutMeByTrack; откат HH_LETTER_SBP_L2_HOOKS=0 · HH_LETTER_BAN_MERCHANT_LEAD=0",
+      "2026-07-20: Bandicam NAS СБП (авг25–мар26) — evidence my/emil/evidence-it1-bandicam-sbp: SM+Toad Oracle+Postman+логи WebLogic+DBeaver PG; мерчанты/QR; не CV-push. ДПСИТ спич (ecredit/Camunda/Kibana/тест-контуры) — interview, не обязан оформлять",
       "2026-07-20: IT_One ДПСИТ — партнёр: жизненный цикл кредитной заявки (найти → где зависла → KB или L3 с логами/тестами); STAR dpsit-credit-lifecycle; в CV l2l3/lead сильнее, devops — диагностика без L2-lead",
       "2026-07-20: Softline/Аплана партнёр — интеграция контура после выкупа (AD/MFA/почта/телефония); массовая миграция офис→ЦОД без простоя; офис→офис (→Девелоника) interview; сплит Softline РФ/иностранная — только interview; без цифры «N сотен» в публичном тексте",
       "2026-07-20: Softline SLA канон — дуга ~78%→~93% (не «>85%»); в DevOps-письмах SLA Softline не ведущий крючок (лучше IT_One/доступы/Linux); SLA-дуга — l2l3/support/leadership",
@@ -402,15 +404,15 @@
       "title": "ГПБ-ИТ / IT_One — проект СБП (L2)",
       "period": "коммерческий опыт 2025–2026 (в IT_One с 2023, переход с другого проекта в ГПБ)",
       "kind": "commercial",
-      "stack": ["Linux", "Grafana", "Kibana", "PostgreSQL", "Oracle", "Jira", "Confluence", "Postman", "СБП"],
+      "stack": ["Linux", "Grafana", "Kibana", "PostgreSQL", "Oracle", "Jira", "Confluence", "Postman", "СБП", "Service Manager"],
       "roles": ["linux", "infra", "monitoring", "support", "devops"],
       "letterSafe": true,
       "interviewSafe": true,
       "resumeSafe": false,
       "star": {
-        "situation": "Высоконагруженные банковские контуры СБП (пром, тест, эмулятор): инциденты 2-й линии, релизы и регламентные работы под SLA.",
-        "action": "Мониторинг и алерты (Grafana, Kibana), диагностика по логам и SQL, проверки API/интеграций в Postman, эскалации смежникам, документация и обучение коллег по сценариям.",
-        "result": "Сократил время реагирования на инциденты более чем на 15% за счёт метрик, алертов и регламентов; ускорил подключение партнёров СБП более чем на 15%; обработал 7000+ обращений и инцидентов."
+        "situation": "Контуры СБП (пром, тест, эмулятор): очередь сопровождения, регистрация мерчантов/точек и QR, инциденты 2-й линии и возвраты под SLA.",
+        "action": "Тикет → параметры регистрации → проверка в БД (Oracle/PostgreSQL) и API (Postman); разбор платежей/QR и callback по SQL и логам приложения; мониторинг Grafana/Kibana; эскалации смежникам с пакетом фактов.",
+        "result": "Сократил время реагирования более чем на 15%; ускорил подключение партнёров СБП более чем на 15%; обработал 7000+ обращений и инцидентов. Evidence Bandicam: my/emil/evidence-it1-bandicam-sbp-2025-2026.md (без PII в письмах)."
       }
     },
     {
@@ -593,9 +595,36 @@
       }
     }
   ],
+  "aboutMeByTrack": {
+    "devops": "DevOps junior+/middle: Linux и автоматизация релизов в банковских контурах; свои пайплайны и gate (HH Ai). Диагностика по логам/SQL — часть эксплуатации, не helpdesk-профиль.",
+    "infra": "Системный инженер: миграции и ЦОД (Softline/Аплана), AD/vSphere, мониторинг; банковские контуры — регламенты и наблюдаемость.",
+    "l2l3": "L2+: нахожу заявку или платёж в контуре, локализую по SQL/логам/API; типовое закрываю по базе знаний, новое — эскалация на L3 с готовым пакетом.",
+    "tam": "Технический аккаунт: прозрачный статус для заказчика и партнёров, эскалации до закрытия, проверки API и документация процессов.",
+    "support_lead": "Руководитель линии: SLA Softline ~78%→~93%, регламенты и обучение; в банке — качество разбора и эскалаций, не «сырой» тикет."
+  },
   "talkingPoints": [
     {
-      "text": "IT_One ДПСИТ: жизненный цикл кредитной заявки — найти в контуре, понять где/почему зависла (SQL, логи), снять по базе знаний или эскалировать на L3 с полным разбором (логи, тесты). В письмах DevOps — не lead; уместно для l2l3/support.",
+      "text": "На СБП вёл регистрацию мерчантов и точек: от тикета до параметров регистрации и проверки статуса в БД и API.",
+      "useIn": ["letter", "interview"],
+      "roles": ["support", "tam", "infra"]
+    },
+    {
+      "text": "Разбирал платежи и QR на СБП: Oracle/PostgreSQL, Postman по payment/status, логи приложения до корневой причины или эскалации.",
+      "useIn": ["letter", "interview"],
+      "roles": ["support", "infra", "monitoring"]
+    },
+    {
+      "text": "IT_One СБП (Bandicam evidence): Toad Oracle, Postman, логи WebLogic/Spring, DBeaver Postgres на тесте; hostname и PII не в письмах. Для DevOps — не lead.",
+      "useIn": ["interview"],
+      "roles": ["support", "tam", "infra"]
+    },
+    {
+      "text": "IT_One ДПСИТ (спич): ecredit, разные кредитные контуры и схемы Camunda; Kibana (+архивы); Postman по API заявок; тестовые контуры. Не обязательный буллет CV.",
+      "useIn": ["interview"],
+      "roles": ["support", "leadership"]
+    },
+    {
+      "text": "На ДПСИТ сопровождал жизненный цикл кредитной заявки: находил в контуре, выяснял где зависла (SQL, логи), снимал по базе знаний или эскалировал на L3 с полным разбором.",
       "useIn": ["letter", "interview"],
       "roles": ["support", "leadership", "infra"]
     },
@@ -620,13 +649,18 @@
       "roles": ["infra", "support", "leadership", "devops"]
     },
     {
-      "text": "Аплана→Softline после выкупа: интегрировал контур (AD/рабочие места, почта, телефония, MFA, закупки) в единый контур ГК. В письмах DevOps — не lead; уместно для infra/l2l3 при JD.",
+      "text": "Аплана→Softline после выкупа: интегрировал контур (AD/рабочие места, почта, телефония, MFA, закупки) в единый контур ГК.",
       "useIn": ["letter", "interview"],
       "roles": ["infra", "support", "leadership"]
     },
     {
-      "text": "Softline/Аплана: массовая миграция проектных и внутренних сервисов из офиса в ЦОД без простоя — этапы, сеть/БД, физпереезд серверов и виртуальный перенос. Цифру сервисов в письмах не называть без сверки.",
+      "text": "Softline/Аплана: массовая миграция проектных и внутренних сервисов из офиса в ЦОД без простоя — этапы, сеть/БД, физпереезд серверов и виртуальный перенос.",
       "useIn": ["letter", "interview"],
+      "roles": ["infra", "devops", "leadership"]
+    },
+    {
+      "text": "Softline/Аплана: цифру числа сервисов в миграции ЦОД не называть без сверки с партнёром.",
+      "useIn": ["interview"],
       "roles": ["infra", "devops", "leadership"]
     },
     {
@@ -640,7 +674,7 @@
       "roles": ["leadership", "support"]
     },
     {
-      "text": "Коммерческий опыт Softline: прямое подчинение ~10, найм, RPI/KPI; вывел SLA линии с ~78% до ~93%; в контуре команды ~20+. В письмах DevOps — не ведущий крючок; уместно для l2l3/support/leadership.",
+      "text": "В Softline: прямое подчинение ~10, найм, RPI/KPI; вывел SLA линии с ~78% до ~93%; в контуре команды ~20+.",
       "useIn": ["letter", "interview"],
       "roles": ["support", "leadership"]
     },

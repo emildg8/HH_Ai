@@ -35,11 +35,15 @@ vacancy → letter-framing-router (JD hook + lead/tail facts)
 | Нет JD-hook в opening | generic mid-письмо | `detectMissingJdHook` в batch/point | `HH_LETTER_JD_HOOK=0` |
 | Weak «N+ сервисов» | gate pass без коммерческого факта | `detectWeakVolumeOnlyMetric` | `HH_LETTER_ALLOW_WEAK_VOLUME=1` |
 | Анти-каскад укорачивает | Рестрим 245 симв. | `rewriteMttr15WithoutShorten` · inject ≥ len | — |
+| Merchant/SM/Toad lead в DevOps | тикетный СБП-тон | `detectMerchantLeadDevopsOpening` | `HH_LETTER_BAN_MERCHANT_LEAD=0` |
+| l2l3 без ДПСИТ/мерчант | слабый L2 hook | `composeL2l3FramedLetter` + framing prompt | `HH_LETTER_SBP_L2_HOOKS=0` |
 
 **Допущения и риски:**
 - Предполагаем: title вакансии отражает крючок (Vault, IDP, ЕФО) достаточно для opening.
 - Может пойти не так: gate слишком жёсткий → regen loop; смягчить regex или warn-only на 1 сессию.
 - Запасной вариант: только `composeDevopsFramedLetter` для point ship без LLM.
+
+Срез Bandicam/спич (вечер 20.07): [`SESSION-2026-07-20-sbp-evidence-letters.md`](SESSION-2026-07-20-sbp-evidence-letters.md) · тест `npm run test:letter-sbp-l2-hooks`.
 
 ---
 
@@ -49,10 +53,13 @@ vacancy → letter-framing-router (JD hook + lead/tail facts)
 |---------|------------|
 | `extractJdHook(rec)` | Крючок из title (vault/idp/automation/…) |
 | `detectMissingJdHook(rec, text)` | L1: крючок в opening или soft-fail |
+| `detectMerchantLeadDevopsOpening(rec, text)` | Ban тикетного СБП lead в devops/infra |
 | `resolveLetterFramingBundle(rec)` | lead/tail facts, forbidden, risks |
-| `buildLetterFramingPromptBlock(rec, huntTrack)` | Блок в LLM prompt |
+| `buildLetterFramingPromptBlock(rec, huntTrack)` | Блок в LLM prompt (devops/infra/l2l3/tam) |
 | `detectL2ToneDevopsOpening(rec, text)` | Gate: L2 в opening DevOps |
 | `composeDevopsFramedLetter(rec)` | Детерминированный DevOps-first текст |
+| `composeL2l3FramedLetter(rec)` | L2: ДПСИТ + мерчанты/QR |
+| `composeTamFramedLetter(rec)` | TAM: статус партнёров + Postman |
 | `assessLetterFramingRisks(rec, letter?)` | Prep JSON: risks + mitigations |
 
 ---
