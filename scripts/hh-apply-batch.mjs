@@ -426,6 +426,8 @@ async function main() {
         done,
         failed,
         skipped,
+        letterIdx,
+        processedIds: [...processedIds],
         planned,
         params: batchParams,
       });
@@ -437,6 +439,8 @@ async function main() {
         done,
         failed,
         skipped,
+        letterIdx,
+        processedIds: [...processedIds],
         planned,
         params: batchParams,
       });
