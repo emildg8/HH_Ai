@@ -26,6 +26,9 @@ jobs:
             node --check "$f"
           done
 
+      - name: Batch resume regression
+        run: npm run test:batch-resume
+
       - name: verify:local (export + PII, без дашборда)
         run: npm run verify:local
 
