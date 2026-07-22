@@ -22,7 +22,10 @@ import {
   buildAnswerLookup,
   resolveAnswerForLiveLabel,
 } from '../lib/hh-employer-questionnaire.mjs';
-import { remapQuestionnaireAnswers } from '../lib/questionnaire-merge.mjs';
+import {
+  mergeQuestionnaire,
+  remapQuestionnaireAnswers,
+} from '../lib/questionnaire-merge.mjs';
 import { mergeQuestionListsPreferOrder } from '../lib/hh-employer-questionnaire.mjs';
 import { mergeProbeQuestionSteps } from '../lib/hh-questionnaire-probe.mjs';
 
@@ -166,6 +169,30 @@ const r2 = remapped.find((x) => x.index === 2)?.answer;
 const r3 = remapped.find((x) => x.index === 3)?.answer;
 if (r1 !== 'SAL' || r2 !== 'FMT' || r3 !== 'BIZ') {
   console.error('FAIL: remap по теме при смене порядка', { r1, r2, r3, remapped });
+  process.exit(1);
+}
+
+const preservedAfterEmptyProbe = mergeQuestionnaire(
+  {
+    questions: oldOrder,
+    savedAnswers: oldAns,
+    status: 'pending_manual',
+    needsProbe: false,
+  },
+  {
+    questions: [],
+    status: 'pending_manual',
+    needsProbe: true,
+  }
+);
+if (
+  preservedAfterEmptyProbe.questions !== oldOrder ||
+  preservedAfterEmptyProbe.savedAnswers !== oldAns ||
+  preservedAfterEmptyProbe.needsProbe !== true
+) {
+  console.error('FAIL: пустой probe не должен стирать сохранённые вопросы и ответы', {
+    preservedAfterEmptyProbe,
+  });
   process.exit(1);
 }
 
