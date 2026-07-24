@@ -32,6 +32,9 @@ jobs:
       - name: Public export path safety
         run: npm run test:public-export-path
 
+      - name: Resume selection safety
+        run: npm run test:hh-resume-match
+
       - name: smoke:release (export zip-срез + npm install)
         run: npm run smoke:release
 
