@@ -8,9 +8,11 @@ import fs from 'fs';
 import path from 'path';
 import { ROOT } from '../lib/paths.mjs';
 import { shouldIgnoreExport } from '../lib/export-ignore.mjs';
+import { assertSafePublicExportPath } from '../lib/public-export-path.mjs';
 
 const outArg = process.argv.find((a) => a.startsWith('--out='));
-const OUT = path.resolve(outArg ? outArg.slice(6) : path.join(ROOT, 'dist', 'hh-ai-public'));
+const requestedOut = path.resolve(outArg ? outArg.slice(6) : path.join(ROOT, 'dist', 'hh-ai-public'));
+const OUT = assertSafePublicExportPath(ROOT, requestedOut);
 
 const SECRET_PATTERNS = [
   [/sk-or-v1-[a-zA-Z0-9._-]+/g, 'sk-or-v1-REDACTED'],
