@@ -50,6 +50,7 @@
     "setup:check": "node scripts/setup-check.mjs",
     "secrets:check": "node scripts/pre-push-secrets-check.mjs",
     "hooks:install": "node scripts/install-git-hooks-runner.mjs",
+    "test:public-export-path": "node scripts/test-public-export-path.mjs",
     "smoke:release": "node scripts/smoke-release.mjs",
     "docs:screenshots": "node scripts/capture-demo-screenshots.mjs",
     "postinstall": "node -e \"console.log('HH Ai: npm run login && npm run dashboard  |  docs/QUICKSTART.md')\""
