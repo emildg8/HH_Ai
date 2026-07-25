@@ -500,6 +500,16 @@ async function main() {
         progress.done('Анкета (батч)');
         return HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED;
       }
+      if (formResult.label === 'session-expired-after-submit') {
+        throw new Error(
+          'Сессия hh.ru истекла после клика «Отправить». Отклик не подтверждён и не отмечен в очереди; выполните npm run login.'
+        );
+      }
+      if (formResult.label === 'no-confirmation-after-submit') {
+        throw new Error(
+          'hh.ru не подтвердил отправку отклика. Вакансия не отмечена как обработанная; проверьте её вручную перед повтором.'
+        );
+      }
       const needResume = String(process.env.HH_PROFILE_RESUME_TITLE || '').trim();
       const hint = needResume
         ? ` Не выбрано резюме «${needResume}» — откройте список резюме на странице отклика или задайте HH_PROFILE_RESUME_HASH в config/devops.env.`
