@@ -26,6 +26,9 @@ jobs:
             node --check "$f"
           done
 
+      - name: Browser lock regression
+        run: node scripts/test-chromium-lock.mjs
+
       - name: verify:local (export + PII, без дашборда)
         run: npm run verify:local
 
