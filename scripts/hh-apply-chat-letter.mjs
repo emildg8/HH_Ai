@@ -272,6 +272,8 @@ async function main() {
       });
       logLine(`[hh-apply-chat] Резюме под вакансию: ${pdfPath}`);
     } catch (e) {
+      resumePdfPath = '';
+      updateVacancyRecord(rec.id, { tailoredResume: null });
       logLine(`[hh-apply-chat] Не удалось собрать PDF резюме: ${e.message}`);
     }
   }
