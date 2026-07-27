@@ -104,6 +104,7 @@ HH_PROFILE=backend
 |----------------|-------------|
 | `HH_PROFILE_RESUME_TITLE` | **Точное** название резюме на hh.ru |
 | `HH_PROFILE_RESUME_HASH` | Из `npm run devops:list-resumes` (надёжнее) |
+| `HH_TAILOR_RESUME_BASE_FILE` | Имя исходного `.md` в `CV/` для PDF под вакансию |
 | `HH_KEYWORDS_FILE` | Файл запросов поиска |
 | `HH_SEARCH_PERIOD` | `1` сутки, `7` неделя, `0` всё время |
 | `HH_SEARCH_EXCLUDE_TOKENS` | Минус-слова в URL hh.ru |
@@ -142,7 +143,9 @@ HH_PROFILE_RESUME_HASH=806e0f3a...
 | Текст резюме | `CV/*.md`, `*.txt`, `*.pdf` |
 | Вес «вакансия vs CV» | `preferences.json` → `llmScoreWeights` |
 
-Положите **одно** основное резюме в `CV/` — см. [CV.md](CV.md).
+Положите **одно** основное резюме в `CV/` — см. [CV.md](CV.md). Если профилей и
+`.md`-резюме несколько, задайте для каждого профиля `HH_TAILOR_RESUME_BASE_FILE`,
+чтобы в отклик не попал файл для другой роли.
 
 ### Сопроводительные письма
 
