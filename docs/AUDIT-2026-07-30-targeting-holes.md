@@ -25,13 +25,10 @@ Store-truth чинил другое: Magritte/clients, sync на `--go`, timeout
 - Карточки именно «здания/хаус» либо ещё не были в fresh-пуле, либо их не смотрели в plan.
 - После ночного harvest + backfill они стали видны в ready — и это выглядит как регресс.
 
-## Что в HEAD vs на диске (факт)
+## Статус после среза `60e67f9` (30.07)
 
-| | HEAD (git) | Диск (сейчас) |
-|--|------------|---------------|
-| `titleLooksFacilityOpsRole` | нет | есть (починен `\w`) |
-| ADAS gate | нет | есть |
-| LEARNING-LOG «facility закрыт» | да (врёт относительно HEAD) | да |
+Facility (`\w`→`[а-яё]*`) · ADAS · авто-support · store-truth · `hunt-day-assess` — **в коммите**.  
+LEARNING-LOG и этот AUDIT согласованы с кодом.
 
 ## Вторая дыра: авто-поддержка (Правокард)
 

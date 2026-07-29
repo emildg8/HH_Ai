@@ -4,7 +4,7 @@
 > **Как читать всю документацию (партнёр):** [`GUIDE-PARTNER.md`](GUIDE-PARTNER.md).  
 > Детали: `HANDOFF-*.md` · код A/B/C → [`MEGA-PLAN-NORTH-STAR.md`](MEGA-PLAN-NORTH-STAR.md) · UI v8 → `ui_north_star_v8` · **LLM** → [`LLM-ROADMAP.md`](LLM-ROADMAP.md) · **мультимодальность** → [`MULTIMODAL-ROADMAP.md`](MULTIMODAL-ROADMAP.md) · **таргетинг** → [`TARGETING-ROADMAP.md`](TARGETING-ROADMAP.md) · **HH API harvest** → [`HH-INGEST-ROADMAP.md`](HH-INGEST-ROADMAP.md)
 
-**Обновлено:** 20.07.2026 (pain-wave1: hygiene + UI «к отклику» + letter metrics · [`SESSION-2026-07-20-pain-wave1.md`](SESSION-2026-07-20-pain-wave1.md)) · 20.07.2026 (ретро-фиксы H) · 19.07.2026 (TG HR+captcha) · 18.07.2026 вечер
+**Обновлено:** 30.07.2026 (chat close · targeting+store-truth · Bell E · [`SESSION-2026-07-30-chat-close-handoff.md`](SESSION-2026-07-30-chat-close-handoff.md)) · 29.07 (ship-truth · retro) · 25.07 (P0 point-apply) · 23.07 (harvest + слоты)
 
 ---
 
@@ -17,20 +17,21 @@
 | **Треки кода** | A + B + C2 + волны 4/D/E — **done** · UI v8 / волна F — **S6/S7** |
 | **Режим LLM** | **L2-dslab** primary; **L0.1** 17/135 готовых ✅ P0 |
 | **Режим M0** | **M0.1** inventory ✅ · **M0.2** messaging baseline ✅ · **HT.5 devops CV** ✅ · **S2.1** подсказка балла (i) ✅ |
-| **H-TARGET** | **HT.0** ✅ · **HT.UI-1** ✅ · **HT.1a** ✅ · **HT.1b** ✅ (код) · **HT.1** wrapper ✅ · **HT.3** suggest→golden ⬜ · **HT.UI-2** hard/soft/match ▶ |
-| **H-INGEST** | Harvest backend: **playwright** (HI.0 probe ✅ · HI.1 ⬜) | [`HH-INGEST-ROADMAP.md`](HH-INGEST-ROADMAP.md) |
-| **B-HUNT-BASKET** | **B0–B6 ✅** + DoD e2e [`APPLY-CHAIN-STABLE`](APPLY-CHAIN-STABLE.md) · exit 9 pre-submit · pack-ship repair×1 · **resume quiz-gate P0+P1+P2** ✅ | [`B-HUNT-BASKET-ROADMAP.md`](B-HUNT-BASKET-ROADMAP.md) · [`SESSION-2026-07-18-resume-quiz-gate.md`](SESSION-2026-07-18-resume-quiz-gate.md) |
-| **Harvest stability** | Checkpoint scoring ✅ · watchdog · **Emil harvest через `--instance=emil`** ✅ (17.07) | [`HUNT-ARCHITECTURE.md`](HUNT-ARCHITECTURE.md) |
-| **Голос / STT** | Whisper **small prod** (до A2 L-B v5) · GigaAM 1e A1 ✅ **9/10** · I-track: [`COPILOT-I-TRACK-ROADMAP.md`](COPILOT-I-TRACK-ROADMAP.md) |
-| **Блокер среды** | ПЕТЕР `134973403` недоступен · **Magritte visibility** false_positive_already (infra/WE-ON/Флант) — ручная сверка clients · [`SESSION-2026-07-20-visibility-proof.md`](SESSION-2026-07-20-visibility-proof.md) |
-| **Режим охоты** | **North star:** слот E · курс **~8–10/день** (cap/квоты 4/3/3) · **l2l3 auto** HT.7.4 · tam approval · point-wave fingerprint ✅ |
-| **Next step (H)** | [`SESSION-2026-07-20-letter-regression-plan.md`](SESSION-2026-07-20-letter-regression-plan.md) L1 ✅ (JD-hook · wave без укорочения · golden МАГНИТ) · L2 ME checklist ⬜ · не ship WE-ON/Флант |
-| **H-TRACKS** | **HT.6** ✅ · **HT.7.1–7.3** ✅ · **HT.7.4 l2l3 auto** ✅ · CV-split [`RESUME-CANON-SPLIT.md`](RESUME-CANON-SPLIT.md) · virt→infra P1 ✅ |
-| **Next step (I)** | Prep Hub срезы 1–3 ✅ · ME approve cards · Zoom · [`ME-VERDICT-INTERVIEW-PREP-ROUTE-2026-07-14.md`](ME-VERDICT-INTERVIEW-PREP-ROUTE-2026-07-14.md) |
-| **Next step (MC QA)** | **4 корзины** · harvest Anastasia прогон 17.07 (+0) · `:3850` |
+| **H-TARGET** | **HT.0–1** ✅ · facility `\w`+авто-support ✅ 30.07 · store-truth формат/declined ✅ · [`AUDIT-2026-07-30-targeting-holes.md`](AUDIT-2026-07-30-targeting-holes.md) · HT.3/UI-2 ▶ |
+| **H-INGEST** | Harvest backend: **playwright** (HI.0 probe ✅ · HI.1 ⬜) · silent → instance emil ✅ | [`HH-INGEST-ROADMAP.md`](HH-INGEST-ROADMAP.md) |
+| **B-HUNT-BASKET** | **B0–B6 ✅** + DoD e2e [`APPLY-CHAIN-STABLE`](APPLY-CHAIN-STABLE.md) · exit 9 pre-submit · pack-ship repair×1 · **resume quiz-gate P0+P1+P2** ✅ | [`B-HUNT-BASKET-ROADMAP.md`](B-HUNT-BASKET-ROADMAP.md) |
+| **Harvest stability** | Checkpoint · watchdog · dual-path очередь Emil=`data/vacancies-devops.json` · прогресс=`data-emil` | [`SESSION-2026-07-29-data-vs-data-emil.md`](SESSION-2026-07-29-data-vs-data-emil.md) |
+| **Голос / STT** | Whisper **small prod** · GigaAM 1e A1 ✅ · I-track: [`COPILOT-I-TRACK-ROADMAP.md`](COPILOT-I-TRACK-ROADMAP.md) |
+| **Блокер среды** | Magritte: ship-truth clients default ✅ · при реальном блоке — ручная сверка · stop harvest перед Playwright |
+| **Режим охоты** | **North star:** слот E · ~8–10/день · **l2l3 auto** · tam approval · live только `hunt-day` |
+| **Слот E (сейчас)** | **Bell Integrator** тех **пн 03.08.2026 14:00 МСК** · vac `135444621` / id `b452c494-…` · кейс `my/emil/Интервью/cases/bell-integrator-tech-20260803/` · ссылка на звонок **ещё нет** |
+| **Next step (H)** | Новый чат: [`SESSION-2026-07-30-chat-close-handoff.md`](SESSION-2026-07-30-chat-close-handoff.md) · plan ready после фикса · ship 1–2 через `hunt-day:emil -- ship --go` · не второй Merlion / не Альфа без GO |
+| **H-TRACKS** | **HT.6** ✅ · **HT.7.1–7.3** ✅ · **HT.7.4 l2l3 auto** ✅ · CV-split [`RESUME-CANON-SPLIT.md`](RESUME-CANON-SPLIT.md) |
+| **Next step (I)** | Bell P5 + суфлёр Swarm/GitFlic · вставить ссылку в слот · hirix follow-up по факту ответа |
+| **Next step (MC QA)** | **4 корзины** · `:3850` |
 | **Профиль охоты** | **инфра-лента** — devops/infra/l2l3/tam · без «узкий/расширенный» |
 
-**Фраза агенту (H-track):** Читай [`SESSION-2026-07-20-letter-regression-plan.md`](SESSION-2026-07-20-letter-regression-plan.md) · live только `hunt-day:emil -- ship --go` · не ship WE-ON/Флант · `sync-chats:emil` · captcha SOLVE default off.
+**Фраза агенту:** читай [`SESSION-2026-07-30-chat-close-handoff.md`](SESSION-2026-07-30-chat-close-handoff.md) · Bell 03.08 14:00 · live только `hunt-day:emil -- ship --go` · targeting `60e67f9` / ship-truth `44baa02`.
 
 ### I-track — prep: три оси закрыты (13.07)
 

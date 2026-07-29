@@ -8,6 +8,7 @@
 
 | Дата | Срез | Урок | Закреплено |
 |------|------|------|------------|
+| 30.07.2026 | H/chat-close | Хвост 29–30 закрыт handoff’ом; partner: не объяснять сбои через git. Synergy `.mdc` в working tree `D` — **не** трогать без просьбы. Канон: `SESSION-2026-07-30-chat-close-handoff.md` | MASTER · SESSION-INDEX · handoff |
 | 30.07.2026 | H/auto-support | `консультант.*поддерж` → l2l3 ловил «линии поддержки автовладельцев» (Правокард). TITLE_NOISE только «автомобил». **Фикс:** early-exit автомобиль/автовладел/КАСКО + TITLE_NOISE | role-classify · hunt-day-assess · test-vacancy-targeting |
 | 30.07.2026 | H/targeting-audit | Дыры facility/ADAS не из store-truth: фиксы 18–21.07 жили локально без среза. Широкое «инженер по эксплуатации» с мая; `\w`+кириллица — повтор ADAS. Ревизия: `AUDIT-2026-07-30-targeting-holes.md` | role-classify · vacancy-targeting · AUDIT |
 | 30.07.2026 | H/facility-\w | В JS `\w` ≠ кириллица: `эксплуатац\w*\s+здан` не ловил «эксплуатации зданий» → title DevOps + ready после backfill chip. Фикс `[а-яё]*` + хаус/недвижим; голый «инженер по эксплуатации» ≠ DevOps без IT-якоря | role-classify · test-vacancy-targeting |

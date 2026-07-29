@@ -23,7 +23,8 @@
 
 | Дата | Транскрипт | Тема | Сделано | Docs | Не доказано |
 |------|------------|------|---------|------|-------------|
-| 29.07 | — | **Ship-truth** — Magritte/outcome/sync/letters | formBannerIgnored · ship --go sync · deliver 90с · infra framing · harvest warn · `test:ship-truth` | [`SESSION-2026-07-29-ship-truth-close.md`](SESSION-2026-07-29-ship-truth-close.md) · retro · data-vs-data-emil | live ship после фикса |
+| 30.07 | [7d11e720](7d11e720-80da-4421-9d6e-eb6e46d20c0d) | **Закрытие чата** — targeting+store + Bell E + handoff | facility/auto gates · store-truth · Bell prep 03.08 · `60e67f9` · MASTER обновлён | [`SESSION-2026-07-30-chat-close-handoff.md`](SESSION-2026-07-30-chat-close-handoff.md) · [`AUDIT-2026-07-30-targeting-holes.md`](AUDIT-2026-07-30-targeting-holes.md) | live plan после фикса; ссылка Bell |
+| 29.07 | [7d11e720](7d11e720-80da-4421-9d6e-eb6e46d20c0d) | **Ship-truth** — Magritte/outcome/sync/letters | formBannerIgnored · ship --go sync · deliver 90с · infra framing · harvest warn · `test:ship-truth` | [`SESSION-2026-07-29-ship-truth-close.md`](SESSION-2026-07-29-ship-truth-close.md) · retro · data-vs-data-emil · store-truth | live ship после фикса |
 | 02.07 | — | **MC изоляция** — фазы 1–3 | data/M0/copilot paths per instance; `test:mc-all-isolation` ✅; HT6.3 snapshot gate | [`SESSION-2026-07-02-mc-isolation-close.md`](SESSION-2026-07-02-mc-isolation-close.md) | HT6.3 live L4 QA; ~29 hardcode `data/` |
 | 02.07 | — | **HT.7.3 TAM** + Trinity chat | `tam` → `auto_with_approval`; chatik fix; Trinity TAM apply ✅; Arenadata reject | [`SESSION-2026-07-02-ht73-tam-trinity-chat.md`](SESSION-2026-07-02-ht73-tam-trinity-chat.md) | nudge ЦФТ (→ 04.07) |
 | 02.07 | — | **Анастасия QA** — HT6.3 + Индид | qa-lead verify-ok; Индид apply + repair письма; apply-truth wiring | [`SESSION-2026-07-02-anastasia-apply-handoff.md`](SESSION-2026-07-02-anastasia-apply-handoff.md) | слот E по Индид |
