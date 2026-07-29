@@ -7,6 +7,7 @@ resetResumeRoutingCache();
 const offTarget = [
   'Инженер-теплотехник',
   'Менеджер по продажам B2B',
+  'Региональный представитель по Восточной Сибири',
   'Оператор БПЛА',
   'Бухгалтер',
   'Слесарь',
@@ -26,6 +27,7 @@ for (const title of offTarget) {
       a.category === 'off-target-irrelevant-title' ||
       a.category === 'off-target-overqualified' ||
       a.category === 'off-target-promo' ||
+      a.category === 'off-target-facility' ||
       a.category === 'work-format'
   );
 }
@@ -42,6 +44,17 @@ for (const title of onTarget) {
   assert.equal(a.eligible, true, `${title} should be eligible`);
   assert.ok(a.resumeRole, `${title} should have resumeRole`);
 }
+
+const backendDevOpsLean = assessVacancyForApply({
+  title: 'Middle Backend-разработчик с уклоном в DevOps',
+  workFormatLine: 'Формат работы: удалённо',
+});
+assert.equal(
+  backendDevOpsLean.eligible,
+  false,
+  'Backend-разработчик с уклоном в DevOps — не целевая роль'
+);
+assert.equal(backendDevOpsLean.category, 'off-target-dev-outside-profile');
 
 const vagueIt = assessVacancyForApply({
   title: 'Системный инженер',
@@ -223,8 +236,13 @@ assert.equal(
   false,
   'industrial signal in description should be skipped'
 );
-assert.equal(neutralTitleIndustrialByDescription.category, 'off-target-industrial');
-
+// Голый «Инженер по эксплуатации» = facility раньше industrial (кириллица/AHO); оба off-target OK
+assert.ok(
+  ['off-target-industrial', 'off-target-facility'].includes(
+    neutralTitleIndustrialByDescription.category
+  ),
+  `expected industrial|facility, got ${neutralTitleIndustrialByDescription.category}`
+);
 const promoCard = assessVacancyForApply({
   title: 'День рождения hh.ru с PRO',
   workFormatLine: 'Формат работы: удалённо',
@@ -251,6 +269,35 @@ const officeOnlyRelaxed = assessVacancyForApply(
 );
 assert.equal(officeOnlyRelaxed.eligible, true, 'relaxed mode should allow unknown format when requireRemote=false');
 
+const spbRemote = assessVacancyForApply({
+  title: 'Инженер технической поддержки',
+  company: 'Nedra Digital',
+  remoteNote: 'удалёнка · Санкт-Петербург · удалёнка явно',
+  workFormat: {
+    format: 'удалёнка',
+    city: 'Санкт-Петербург',
+    hasRemote: true,
+    officeOnly: false,
+  },
+  address: 'Санкт-Петербург, Василеостровская',
+});
+assert.equal(spbRemote.eligible, false, 'SPb remote without Moscow should be off-target');
+assert.ok(
+  spbRemote.category === 'work-format' || spbRemote.category === 'off-target-region',
+  `SPb geo block category: ${spbRemote.category}`
+);
+
+const spbRemoteRejected = assessVacancyForApply({
+  title: 'Инженер технической поддержки',
+  remoteNote: 'удалёнка · Санкт-Петербург',
+  workFormat: { format: 'удалёнка', city: 'Санкт-Петербург', hasRemote: true },
+  address: 'Санкт-Петербург',
+});
+assert.equal(spbRemoteRejected.eligible, false, 'matchRejectRule spb catches remote SPb');
+assert.ok(
+  spbRemoteRejected.category === 'work-format' || spbRemoteRejected.category === 'off-target-region'
+);
+
 assert.equal(
   resumeSelectionMatches('DevOps-инженер', { title: 'DevOps-инженер', role: 'devops' }),
   true
@@ -262,6 +309,95 @@ assert.equal(
 assert.equal(
   resumeSelectionMatches('Support L2', { title: 'DevOps-инженер', role: 'devops' }),
   false
+);
+
+const sberFacility = assessVacancyForApply({
+  title: 'Специалист по эксплуатации объектов (сервис-менеджер)',
+  company: 'Сбер для экспертов',
+  descriptionForLlm:
+    'эксплуатация объектов недвижимости Банка, офис по адресу: г. Обнинск, разъездной характер',
+  workFormatLine: 'офис по адресу: г. Обнинск',
+});
+assert.equal(sberFacility.eligible, false, 'facility ops Obninsk off-target');
+assert.equal(sberFacility.category, 'off-target-facility');
+
+// Cyrillic +\w bug: «эксплуатации зданий» не матчилось → DevOps ready (hunt-day 30.07)
+for (const title of [
+  'Инженер по эксплуатации зданий и сооружений',
+  'Инженер по эксплуатации недвижимости',
+  'Инженер по эксплуатации/хаус-мастер',
+  'Инженер по эксплуатации',
+]) {
+  const a = assessVacancyForApply({
+    title,
+    workFormatLine: 'Формат работы: гибрид',
+    address: 'Москва',
+  });
+  assert.equal(a.eligible, false, `${title} → facility off-target`);
+  assert.equal(a.category, 'off-target-facility', `${title} category`);
+}
+
+const itOpsLinux = assessVacancyForApply({
+  title: 'Инженер по эксплуатации Linux',
+  workFormatLine: 'Формат работы: удалённо',
+  descriptionForLlm: 'Linux, systemd, мониторинг, инциденты L2',
+});
+assert.equal(itOpsLinux.eligible, true, 'IT эксплуатация Linux остаётся целевой');
+
+// Авто-поддержка (Правокард) ≠ IT L2: «консультант.*поддерж» ловил l2l3
+for (const title of [
+  'Консультант линии поддержки автовладельцев',
+  'Консультант линии автомобильной поддержки',
+]) {
+  const a = assessVacancyForApply({
+    title,
+    company: 'Правокард',
+    workFormatLine: 'Формат работы: удалённо',
+    descriptionForLlm: 'помощь водителям, ДТП, эвакуатор',
+  });
+  assert.equal(a.eligible, false, `${title} → не IT L2`);
+}
+
+const adasAutonomous = assessVacancyForApply({
+  title: 'Системный инженер в команду автономных технологий',
+  company: 'Автономный транспорт',
+  descriptionForLlm:
+    'системного инжиниринга и архитектуры в области систем автономного вождения, управление требованиями',
+});
+assert.equal(adasAutonomous.eligible, false, 'ADAS autonomous off-target');
+assert.equal(adasAutonomous.category, 'off-target-industrial');
+
+const atlasPnr = assessVacancyForApply({
+  title: 'Инженер технической поддержки и ПНР',
+  company: 'ООО Атлас',
+  descriptionForLlm:
+    'внедрением и пусконаладкой наших СХД и последующей технической поддержкой, аппаратных комплексов',
+});
+assert.equal(atlasPnr.eligible, false, 'hardware PNR/СХД off-target');
+assert.equal(atlasPnr.category, 'off-target-industrial');
+
+const digitalServiceMgr = assessVacancyForApply({
+  title: 'Сервис-менеджер (Электронный чиновник)',
+  company: 'ГКУ Инфогород',
+  descriptionForLlm: 'поддержка цифровых сервисов, SLA, Service Desk, удалённо',
+  workFormatLine: 'Формат работы: удалённо',
+});
+assert.equal(digitalServiceMgr.eligible, true, 'IT service manager still eligible');
+
+const marksmanL1 = assessVacancyForApply({
+  title: 'Инженер технической поддержки',
+  company: 'Marksman',
+  descriptionForLlm: `
+Мы находимся в поиске Инженера технической поддержки (1-я линяя) в государственную корпорацию.
+Принимать инциденты; при необходимости эскалировать обращения на 2 и 3 линии поддержки.
+Сменный график работы: 1/3 (офис в центре Москвы). Формат работы: на месте работодателя.
+`,
+  workFormatLine: 'на месте работодателя',
+});
+assert.equal(marksmanL1.eligible, false, 'Marksman L1 + сутки blocked');
+assert.ok(
+  marksmanL1.category === 'off-target-l1' || marksmanL1.category === 'work-format',
+  `Marksman category: ${marksmanL1.category}`
 );
 
 console.log('test-vacancy-targeting: OK');

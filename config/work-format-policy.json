@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "version": 1,
+    "profile": "удалёнка UTC+2…+5 приоритет; гибрид/офис — commute МО; резерв TZ — eligible с effectiveSortScore"
+  },
+  "coreTzMin": 2,
+  "coreTzMax": 5,
+  "reserveSortPenalty": 20,
+  "coreRemoteSortBonus": 5,
+  "commuteSortBonus": 0,
+  "hybridSoftnessDoc": "docs/HYBRID-SOFTNESS.md",
+  "allowUnknownFormatInHarvest": true,
+  "autoApplyUnknownFormat": false
+}
