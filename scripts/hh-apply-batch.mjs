@@ -382,13 +382,13 @@ async function main() {
         logBatch(`OK ${stepNum}/${planned}: ${stepTitle}`);
         batchProgress.step(done, `Готово ${done}/${planned}`, { done, failed, skipped });
       } catch (e) {
-        processedIds.add(rec.id);
         if (e.message === 'BATCH_STOPPED' || shouldStopBatch()) {
           stopReason = 'stop';
           logBatch('Прервано пользователем во время отклика');
           break;
         }
         if (isBatchRecoverableApplyError(e.message)) {
+          processedIds.add(rec.id);
           skipped++;
           logBatch(`Пропуск ${stepNum}/${planned}: ${e.message}`);
           batchProgress.step(done, `Пропуск ${stepNum}/${planned}`, { done, failed, skipped });
