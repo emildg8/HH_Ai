@@ -31,6 +31,7 @@ fs.writeFileSync(
 fs.writeFileSync(path.join(dataDir, 'vacancies-queue.json'), '[]\n');
 
 process.env.HH_DATA_DIR = dataDir;
+process.env.HH_HUNT_DAY_SYNC = '0';
 
 const {
   buildHuntDayStatus,
@@ -119,6 +120,7 @@ const status = await buildHuntDayStatus({
   prefs: JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')),
   huntTracks: ['devops', 'infra'],
   resolvePool: fakePool,
+  skipNegotiationsPrep: true,
 });
 assert.equal(status.slice, 2);
 assert.equal(status.mode, 'point');
@@ -134,6 +136,7 @@ const plan = await buildHuntDayPlan({
   dryRun: true,
   resolvePool: fakePool,
   checkLane: true,
+  skipNegotiationsPrep: true,
 });
 assert.equal(plan.readyCount, 1);
 assert.equal(plan.candidates[0].id, 'r1');
@@ -284,6 +287,27 @@ fs.writeFileSync(
   }),
   'utf8'
 );
+fs.writeFileSync(
+  path.join(dataDir, 'vacancies-queue.json'),
+  JSON.stringify(
+    [
+      {
+        id: 'aaaa1111-0000-0000-0000-000000000001',
+        company: 'QaCo',
+        title: 'QA',
+        status: 'pending',
+      },
+      {
+        id: 'bbbb2222-0000-0000-0000-000000000002',
+        company: 'LeadCo',
+        title: 'Lead',
+        status: 'pending',
+      },
+    ],
+    null,
+    2
+  )
+);
 
 const prevInstance = process.env.HH_INSTANCE_ID;
 process.env.HH_INSTANCE_ID = 'anastasia';
@@ -294,6 +318,7 @@ assert.deepEqual(loadAnastasiaDayBasketIds().slice(0, 1), [
 const statusBasket = await buildHuntDayStatus({
   mode: 'basket',
   prefs: JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')),
+  skipNegotiationsPrep: true,
 });
 assert.equal(statusBasket.pool.poolId, 'anastasia-day');
 assert.equal(statusBasket.pool.ready, 2);
@@ -305,6 +330,7 @@ await assert.rejects(
       prefs: {},
       packId: 'some-pack',
       checkLane: false,
+      skipNegotiationsPrep: true,
     }),
   /--pack=/
 );

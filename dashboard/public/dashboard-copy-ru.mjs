@@ -117,6 +117,8 @@ export function hhSiteStateSourceLabel(source, opts = {}) {
 export const APPLY_SKIP_REASON_RU = {
   resume_visibility: 'видимость резюме на hh (нужны клиенты HH)',
   resume_visibility_preflight_error: 'не удалось проверить видимость резюме на hh',
+  false_positive_already:
+    'Magritte: баннер видимости при уже открытом резюме (не «уже отклик»)',
   'hygiene:low-fit': 'гигиена очереди: низкий балл',
 };
 
@@ -246,10 +248,11 @@ export const INTERVIEW_HUB_UX_COPY = {
   expertTools: 'Дополнительно',
   progressReady: 'Готово к встрече',
   progressPartial: 'Готовность',
-  prepOverlay: 'Только сценарий поверх',
+  prepOverlay: 'Включить сценарий',
+  prepOverlayTitle: 'Прокрутка подготовленного сценария поверх экрана — без захвата звука',
   startLive: 'Включить суфлёр поверх Zoom',
   startLiveTitle: 'Запуск окна подсказок поверх Zoom',
-  startLiveHint: 'Зелёная кнопка включает суфлёр здесь, в этом окне.',
+  startLiveHint: '«Сценарий» — текст подготовки. «Суфлёр поверх Zoom» — живые подсказки по речи.',
   pathLead: '',
   pathSteps: [],
   nextTitle: 'Действия',
@@ -656,6 +659,40 @@ const INVITE_KIND_CHIP_SHORT = {
 export function inviteKindChipLabel(kind) {
   const k = String(kind || '').trim();
   return INVITE_KIND_CHIP_SHORT[k] || '';
+}
+
+const APPLY_CHANNEL_CHIP_SHORT = {
+  cold_hh: 'cold hh',
+  warm_referral: 'по знакомству',
+  agency: 'агентство',
+};
+
+/** @param {string} channel */
+export function applyChannelChipLabel(channel) {
+  const k = String(channel || '')
+    .trim()
+    .toLowerCase();
+  return APPLY_CHANNEL_CHIP_SHORT[k] || '';
+}
+
+/** @param {string} channel @param {string} [note] */
+export function applyChannelChipTitle(channel, note) {
+  const label = applyChannelChipLabel(channel);
+  if (!label) return '';
+  const n = String(note || '').trim();
+  if (kIsWarm(channel)) {
+    return n
+      ? `Канал: ${label} · ${n} · не входит в cold KPI hh`
+      : `Канал: ${label} · не входит в cold KPI hh`;
+  }
+  return n ? `Канал: ${label} · ${n}` : `Канал: ${label}`;
+}
+
+function kIsWarm(channel) {
+  const k = String(channel || '')
+    .trim()
+    .toLowerCase();
+  return k === 'warm_referral' || k === 'agency';
 }
 
 /** @param {{ tier?: string, labelRu?: string, reason?: string } | null | undefined} roleTier */

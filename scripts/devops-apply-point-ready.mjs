@@ -26,8 +26,6 @@ import { loadPreferences } from '../lib/preferences.mjs';
 
 import { ROOT, DATA_DIR } from '../lib/paths.mjs';
 
-import { HH_SITE_STATES, hhSiteStateBlocksApply, hhSiteStateLabel } from '../lib/hh-vacancy-response-state.mjs';
-
 import { assertPointApplyAllowed } from '../lib/hunt-tracks.mjs';
 
 import { recordNeedsQuestionnaireWork } from '../lib/questionnaire-labels.mjs';
@@ -63,7 +61,16 @@ import {
   recordPointApplyTrack,
   pointApplyTrackQuotaSummary,
   trackQuotaRemaining,
+  pointQuotaAwarePickEnabled,
 } from '../lib/point-apply-track-quotas.mjs';
+import {
+  classifyPointApplyOutcome,
+  isAlreadyAppliedInQueue,
+} from '../lib/point-apply-outcome.mjs';
+import {
+  assessOnlySitePreflight,
+  pointForceOnlyEnabled,
+} from '../lib/point-apply-only-preflight.mjs';
 
 
 
@@ -177,173 +184,12 @@ function scoreOf(rec) {
 
 
 
-function isAlreadyAppliedInQueue(rec) {
-
-  if (!rec) return true;
-
-  if (rec.status === 'responded') return true;
-
-  if (rec.hhApply?.responseSubmitted) return true;
-
-  const st = String(rec.hhApply?.hhSiteState || rec.negotiationStatus || '').toLowerCase();
-
-  return st === 'already_applied' || st === 'response_sent' || st === 'submitted';
-
-}
-
-
-
-function hasSubmittedOnHh(rec) {
-
-  if (!rec) return false;
-
-  if (rec.status === 'responded') return true;
-
-  return Boolean(rec.hhApply?.responseSubmitted);
-
-}
-
-
-
-function classifyPointApplyOutcome({ before, after, childCode }) {
-
-  const hhSiteState = String(after?.hhApply?.hhSiteState || '').toLowerCase();
-
-  const responseSubmitted = hasSubmittedOnHh(after);
-
-  const hadResponseBefore = hasSubmittedOnHh(before);
-
-  const detectedOnly =
-    Boolean(after?.hhApply?.hhDetectedOnly) &&
-    !after?.hhApply?.letterDelivered &&
-    !after?.hhApply?.letterInForm;
-
-  const label = hhSiteStateLabel(hhSiteState);
-
-
-
-  if (childCode !== 0) {
-
-    return {
-
-      status: 'failed',
-
-      exitCode: childCode,
-
-      responseSubmitted,
-
-      verifiedOnHh: false,
-
-      hhSiteState: hhSiteState || 'none',
-
-      note: 'hh-apply-chat завершился с ошибкой',
-
-      failGate: true,
-
-    };
-
-  }
-
-
-
-  if (hhSiteState === HH_SITE_STATES.UNAVAILABLE || hhSiteState === HH_SITE_STATES.ARCHIVED) {
-
-    return {
-
-      status: 'false-positive',
-
-      exitCode: childCode,
-
-      responseSubmitted,
-
-      verifiedOnHh: false,
-
-      hhSiteState,
-
-      note: `${label || hhSiteState}: отклик на hh недоступен, SUCCESS запрещён`,
-
-      failGate: true,
-
-    };
-
-  }
-
-
-
-  if (!responseSubmitted) {
-
-    return {
-
-      status: 'false-positive',
-
-      exitCode: childCode,
-
-      responseSubmitted: false,
-
-      verifiedOnHh: false,
-
-      hhSiteState: hhSiteState || 'none',
-
-      note: 'exit 0 без подтверждения responseSubmitted в queue',
-
-      failGate: true,
-
-    };
-
-  }
-
-
-
-  if (detectedOnly || (hhSiteStateBlocksApply(hhSiteState) && hadResponseBefore)) {
-
-    return {
-
-      status: 'skipped-repeat',
-
-      exitCode: childCode,
-
-      responseSubmitted: true,
-
-      verifiedOnHh: true,
-
-      hhSiteState: hhSiteState || 'already_applied',
-
-      note: 'Повторный отклик/статус hh уже был — skip, не first-apply success',
-
-      failGate: false,
-
-    };
-
-  }
-
-
-
-  return {
-
-    status: 'ok',
-
-    exitCode: childCode,
-
-    responseSubmitted: true,
-
-    verifiedOnHh: true,
-
-    hhSiteState: hhSiteState || 'already_applied',
-
-    note: 'Отклик подтверждён post-check (responseSubmitted=true)',
-
-    failGate: false,
-
-  };
-
-}
-
-
-
-async function pickReadyForPointApply(readyItems) {
+async function pickReadyForPointApply(readyItems, opts = {}) {
 
   /** @type {object[]} */
   let pool = readyItems;
+  const preferredTrack = String(opts.preferredTrack || '').trim() || null;
+  const forceOnly = pointForceOnlyEnabled(argv);
 
   if (onlyIds.size) {
 
@@ -358,7 +204,9 @@ async function pickReadyForPointApply(readyItems) {
 
       const rec = getVacancyRecord(id);
 
-      if (!rec || isAlreadyAppliedInQueue(rec)) continue;
+      if (!rec) continue;
+      // --only=: site preflight ниже (не режем stale already_applied через isAlreadyAppliedInQueue)
+      if (!onlyIds.size && isAlreadyAppliedInQueue(rec)) continue;
 
       forced.push({
 
@@ -392,15 +240,46 @@ async function pickReadyForPointApply(readyItems) {
 
   }
 
-  const eligibleItems = pool.filter((item) => {
+  /** @type {object[]} */
+  const eligibleItems = [];
+  /** @type {Array<{ id: string, code: string, reason: string }>} */
+  const onlyPreflightHard = [];
 
+  for (const item of pool) {
     const rec = getVacancyRecord(item.id) || item;
+    if (onlyIds.size && !onlyIds.has(item.id)) continue;
+    if (skipIds.has(item.id)) continue;
 
-    if (onlyIds.size && !onlyIds.has(item.id)) return false;
+    if (onlyIds.size) {
+      const pre = assessOnlySitePreflight(rec, { forceOnly });
+      if (pre.hardSkip) {
+        onlyPreflightHard.push({
+          id: item.id,
+          code: pre.code || 'hard',
+          reason: pre.reason || 'site preflight',
+        });
+        console.log(
+          `[point-apply] --only preflight hard-skip ${String(rec.company || item.id).slice(0, 40)}: ${pre.reason}`
+        );
+        continue;
+      }
+      if (pre.softWarn && pre.reason) {
+        console.warn(`[point-apply] --only preflight warning: ${pre.reason}`);
+      }
+    } else if (isAlreadyAppliedInQueue(rec)) {
+      continue;
+    }
 
-    return !skipIds.has(item.id) && !isAlreadyAppliedInQueue(rec);
+    eligibleItems.push(item);
+  }
 
-  });
+  if (onlyIds.size && !eligibleItems.length && onlyPreflightHard.length) {
+    return {
+      picked: null,
+      blockedSamples: [],
+      onlyPreflightHard,
+    };
+  }
 
   const queue = loadQueue({ force: true }) || [];
   const waveItems = collectPointDayWaveLetterItems(queue, {
@@ -412,15 +291,17 @@ async function pickReadyForPointApply(readyItems) {
   }));
 
   const { picked, blockedSamples } = await pickPointApplyCandidate(eligibleItems, {
-
     getRec: (id) => getVacancyRecord(id),
     waveItems,
-
+    force: forceOnly === true,
+    preferredTrack:
+      pointQuotaAwarePickEnabled() && preferredTrack ? preferredTrack : null,
+    classifyTrack: (rec) => classifyVacancyHuntTrack(rec),
   });
 
-  if (!picked) return { picked: null, blockedSamples };
+  if (!picked) return { picked: null, blockedSamples, onlyPreflightHard };
 
-  return { picked, blockedSamples };
+  return { picked, blockedSamples, onlyPreflightHard };
 
 }
 
@@ -474,6 +355,11 @@ async function runOneApply(pick, out) {
             verifyVacancyId: verifyVacancyId || undefined,
           });
           console.log(`[point-apply] visibility: ${vis?.message || vis?.ok || JSON.stringify(vis)}`);
+          if (vis?.formBannerIgnored) {
+            console.warn(
+              `[point-apply] visibility: formBannerIgnored — продолжаем (clients уже ок): ${vis.message || ''}`
+            );
+          }
           if (vis && vis.ok === false) {
             const reason = vis.reason || 'resume_visibility';
             console.warn(`[point-apply] visibility STOP: ${reason} — ${vis.message || ''}`);
@@ -481,6 +367,7 @@ async function runOneApply(pick, out) {
               ok: false,
               status: 'skip',
               reason,
+              note: vis.message || reason,
               message: vis.message || 'resume_visibility',
               pick,
               visibility: vis,
@@ -627,6 +514,8 @@ async function main() {
       prefs,
 
       limit: Math.max(3, runLimit * 2),
+
+      skipIds: [...skipIds],
 
       log: console.log,
 
@@ -808,11 +697,18 @@ async function main() {
 
 
 
-    const pickedWrap = await pickReadyForPointApply(readyItems);
+    const pickedWrap = await pickReadyForPointApply(readyItems, {
+      preferredTrack: trackThisRound,
+    });
 
     if (!pickedWrap.picked) {
 
-      if (pickedWrap.blockedSamples?.length) {
+      if (pickedWrap.onlyPreflightHard?.length) {
+        out.status = 'skip';
+        out.note = pickedWrap.onlyPreflightHard[0]?.reason || 'only site preflight';
+        out.message = `Preflight --only=: ${out.note}`;
+        out.onlyPreflightHard = pickedWrap.onlyPreflightHard;
+      } else if (pickedWrap.blockedSamples?.length) {
 
         out.status = 'blocked-point-gate';
 
@@ -833,6 +729,11 @@ async function main() {
       lastOut = out;
 
       console.log(out.message);
+
+      if (pickedWrap.onlyPreflightHard?.length && onlyIds.size) {
+        session.skipped++;
+        continue;
+      }
 
       break;
 
@@ -924,9 +825,33 @@ async function main() {
 
     if (preferLine) console.log(`[point-apply] ${preferLine}`);
 
+    // Мягкий ready без письма: догнать сопроводительное перед Playwright.
+    let applyRec = pick;
+    if (!noPrepareLetters && !String(pick.coverLetter?.approvedText || '').trim()) {
+      try {
+        await ensurePointApplyLetters({
+          ids: [pick.id],
+          prefs,
+          throwOnApproveFail: false,
+          log: console.log,
+        });
+      } catch (err) {
+        console.warn(`[point-apply] автописьмо для ${pick.id}: ${err?.message || err}`);
+      }
+      applyRec = getVacancyRecord(pick.id) || pick;
+    }
+    if (!String(applyRec.coverLetter?.approvedText || '').trim()) {
+      out.status = 'letter-missing-after-prep';
+      out.message = 'Нет утверждённого письма после автоподготовки — пропуск';
+      session.attempts.push(out);
+      lastOut = out;
+      console.log(out.message);
+      continue;
+    }
 
 
-    const result = await runOneApply(pick, out);
+
+    const result = await runOneApply(applyRec, out);
 
     out.status = result.status;
 
@@ -938,7 +863,11 @@ async function main() {
 
     out.hhSiteState = result.hhSiteState;
 
-    out.note = result.note;
+    out.note = result.note || result.message || '';
+
+    out.message = result.message || out.message || out.note || '';
+
+    out.reason = result.reason || out.reason || '';
 
     session.attempts.push(out);
 

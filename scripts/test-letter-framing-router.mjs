@@ -16,6 +16,29 @@ import { assessLetterQualityForBatch } from '../lib/letter-batch-gate.mjs';
 assert.equal(extractJdHook({ title: 'DevOps/Vault-инженер' }).category, 'vault');
 assert.equal(extractJdHook({ title: 'DevOps Engineer (IDP)' }).category, 'idp');
 assert.equal(extractJdHook({ title: 'DevOps в команду Автоматизации ЕФО' }).category, 'automation');
+assert.equal(
+  extractJdHook({
+    title: 'DevOps-инженер',
+    descriptionForLlm: 'Grafana Prometheus Linux CI/CD',
+  }).category,
+  'sre'
+);
+assert.doesNotMatch(
+  composeDevopsFramedLetter({
+    title: 'DevOps-инженер',
+    company: 'ТестКо',
+    descriptionForLlm: 'Kubernetes Jenkins Linux',
+  }),
+  /helpdesk/i
+);
+assert.match(
+  composeDevopsFramedLetter({
+    title: 'DevOps',
+    company: 'A',
+    descriptionForLlm: 'нужен helpdesk и первая линия',
+  }),
+  /helpdesk/i
+);
 
 assert.equal(
   detectMissingJdHook(
@@ -30,6 +53,11 @@ const l2ish =
 assert.equal(
   detectL2ToneDevopsOpening({ title: 'DevOps', huntTrack: 'devops' }, l2ish).ok,
   false
+);
+assert.equal(
+  detectL2ToneDevopsOpening({ title: 'Системный инженер', huntTrack: 'infra' }, l2ish).ok,
+  true,
+  'infra: L2-tone opening разрешён'
 );
 
 const devopsOk =

@@ -1,31 +1,551 @@
 {
   "version": 1,
   "documents": [
-    { "path": "docs/README.md", "status": "canonical", "audience": "all" },
-    { "path": "docs/QUICKSTART.md", "status": "canonical", "audience": "all" },
-    { "path": "docs/FIRST-RUN.md", "status": "canonical", "audience": "all" },
-    { "path": "docs/PUBLIC-RELEASE.md", "status": "canonical", "audience": "recipient" },
-    { "path": "docs/BETA-TESTER-GUIDE.md", "status": "canonical", "audience": "beta" },
-    { "path": "docs/CONFIG-GUIDE.md", "status": "canonical", "audience": "all" },
-    { "path": "docs/OPS-RHYTHM.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/CONVERSION-GLUE.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/APPLY-GATE.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/OBSERVABILITY.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/HANDOFF-TEMPLATE.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/PRODUCT-STANDARDS.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/PRODUCT-ANATOMY.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/HYGIENE-BACKLOG.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/SETTINGS-MODULE.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/DASHBOARD-DESIGN-TOKENS.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/HIRING-OPERATIONS.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/HIRING-HR-PLAYBOOK.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/MARKET-RU-HR-QA.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/SOURCE-EXPERTISE.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/INGEST-IMPROVEMENTS.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/HANDOFF-RESUME-CRUD.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/HANDOFF-2026-06-19.md", "status": "canonical", "audience": "maintainer" },
-    { "path": "docs/HANDOFF-2026-06-18.md", "status": "archive", "audience": "maintainer" },
-    { "path": "docs/DASHBOARD-UX-PLAN.md", "status": "archive", "audience": "maintainer" },
-    { "path": "docs/DEMO-COPILOT-5MIN.md", "status": "canonical", "audience": "maintainer" }
+    {
+      "path": "docs/GUIDE-PARTNER.md",
+      "status": "canonical",
+      "audience": "all"
+    },
+    {
+      "path": "docs/README.md",
+      "status": "canonical",
+      "audience": "all"
+    },
+    {
+      "path": "docs/QUICKSTART.md",
+      "status": "canonical",
+      "audience": "all"
+    },
+    {
+      "path": "docs/FIRST-RUN.md",
+      "status": "canonical",
+      "audience": "all"
+    },
+    {
+      "path": "docs/PUBLIC-RELEASE.md",
+      "status": "canonical",
+      "audience": "recipient"
+    },
+    {
+      "path": "docs/BETA-TESTER-GUIDE.md",
+      "status": "canonical",
+      "audience": "beta"
+    },
+    {
+      "path": "docs/CONFIG-GUIDE.md",
+      "status": "canonical",
+      "audience": "all"
+    },
+    {
+      "path": "docs/OPS-RHYTHM.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/CONVERSION-GLUE.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/APPLY-GATE.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/APPLY-CHAIN-STABLE.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/APPLY-END-TO-END-PLAYBOOK.md",
+      "status": "canonical",
+      "audience": "partner"
+    },
+    {
+      "path": "docs/HUNT-DAY-ORCHESTRATOR.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-07-29-ship-truth-close.md",
+      "status": "session",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-07-29-retro.md",
+      "status": "session",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-07-29-data-vs-data-emil.md",
+      "status": "session",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/ROBOT-RECRUITER.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-07-15-aya-robot-recruiter.md",
+      "status": "session",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/OBSERVABILITY.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HANDOFF-TEMPLATE.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/PRODUCT-STANDARDS.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/PRODUCT-ANATOMY.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HYGIENE-BACKLOG.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SETTINGS-MODULE.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/DASHBOARD-DESIGN-TOKENS.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HIRING-OPERATIONS.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HIRING-HR-PLAYBOOK.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/MARKET-RU-HR-QA.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/CANDIDATE-POSITIONING-2026.md",
+      "status": "canonical",
+      "audience": "all"
+    },
+    {
+      "path": "docs/AGENT-DOMAIN-TRUTH.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SOURCE-EXPERTISE.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/INGEST-IMPROVEMENTS.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HUNT-ARCHITECTURE.md",
+      "status": "canonical",
+      "audience": "all"
+    },
+    {
+      "path": "docs/HUNT-TRACKS-ROADMAP.md",
+      "status": "canonical",
+      "audience": "all"
+    },
+    {
+      "path": "docs/HH-NEGOTIATION-STATUS.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/ROLE-LADDER-M0-MATRIX.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/WORK-PLAN-DOCS-CLEANUP.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/DEMO-COPILOT-5MIN.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/COPILOT-ROADMAP.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/COPILOT-SCALING.md",
+      "status": "redirect",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/COPILOT-I-HR-BACKLOG.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/DEMO-COPILOT-LIVE-MOCK.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/MEGA-PLAN-NORTH-STAR.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/MEGA-PLAN-NORTH-STAR.html",
+      "status": "canonical",
+      "audience": "all"
+    },
+    {
+      "path": "docs/MASTER-ROADMAP.md",
+      "status": "canonical",
+      "audience": "all"
+    },
+    {
+      "path": "docs/WORK-PLAN-C2-FOLLOWUP.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/LLM-ROADMAP.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/MULTIMODAL-ROADMAP.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/MULTIMODAL-SKILLS-PLAYBOOK.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HH-INGEST-ROADMAP.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/TARGETING-ROADMAP.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/FEATURE-MAP.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SCENARIOS-PLAYBOOK.md",
+      "status": "canonical",
+      "audience": "all"
+    },
+    {
+      "path": "docs/SESSION-INDEX-2026-06.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/S1-HUNT-CHECKLIST.md",
+      "status": "canonical",
+      "audience": "all",
+      "description": "Precheck и точечные отклики; серия — инструмент дашборда, не north star"
+    },
+    {
+      "path": "docs/LEARNING-LOG.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HIRING-JOURNEY-UX.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/INFRA-KNOWLEDGE.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/ops/checklists/interview-before.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/ops/checklists/offer-review.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/ops/checklists/weekly-patterns.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HANDOFF-2026-06-18.md",
+      "status": "redirect",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HANDOFF-2026-06-19.md",
+      "status": "redirect",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HANDOFF-2026-06-20.md",
+      "status": "redirect",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HANDOFF-RESUME-CRUD.md",
+      "status": "redirect",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/DASHBOARD-UX-PLAN.md",
+      "status": "redirect",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/archive/2026-06-mass-apply-era/ARCHIVE-INDEX.md",
+      "status": "archive",
+      "audience": "all"
+    },
+    {
+      "path": "docs/archive/2026-06-mass-apply-era/DASHBOARD-UX-PLAN.md",
+      "status": "archive",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/archive/2026-06-mass-apply-era/HANDOFF-2026-06-18.md",
+      "status": "archive",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/archive/2026-06-mass-apply-era/HANDOFF-2026-06-19.md",
+      "status": "archive",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/archive/2026-06-mass-apply-era/HANDOFF-2026-06-20.md",
+      "status": "archive",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/archive/2026-06-mass-apply-era/HANDOFF-RESUME-CRUD.md",
+      "status": "archive",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/archive/2026-06-mass-apply-era/S1-HUNT-CHECKLIST-mass-apply-era.md",
+      "status": "archive",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/archive/2026-06-mass-apply-era/VOT-INTEGRATION-ASSESSMENT.md",
+      "status": "archive",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/ANASTASIA-H-PROFILE-PLAN.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/ANASTASIA-HT63-APPLY-RUNBOOK.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/ANASTASIA-LAN-DASHBOARD.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/archive/2026-06-30-anastasia-qa-session/ARCHIVE-INDEX.md",
+      "status": "archive",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/archive/2026-06-30-anastasia-qa-session/COMMANDS.md",
+      "status": "archive",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/archive/2026-06-30-anastasia-qa-session/SESSION-HANDOFF.md",
+      "status": "archive",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/CANDIDATE-POSITIONING-QA-2026.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/CANDIDATE-WISHES-ANASTASIA.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/CANDIDATE-WISHES-TEMPLATE.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/DEMO-COPILOT-5MIN-QA.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/diagrams/HH-AI-BPMN-README.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/enterprise-architecture/BUSINESS-REQUIREMENTS.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/enterprise-architecture/c4/as-is-component.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/enterprise-architecture/c4/as-is-container.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/enterprise-architecture/c4/as-is-context.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/enterprise-architecture/c4/to-be-component.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/enterprise-architecture/c4/to-be-container.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/enterprise-architecture/c4/to-be-context.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/enterprise-architecture/drawio/README.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/enterprise-architecture/README.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/H-PROFILE-ROADMAP.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HH-RESUME-FIELDS-ROADMAP.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/HUNT-APPLY-PACE.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/MULTI-CANDIDATE-ROADMAP.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/MULTI-PROFILE-GUIDE.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/MULTI-PROFILE-STATUS.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-06-29-docs-me.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-06-29-h-track-close.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-06-30-ht60-audit.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-06-30-ht66-career-canon.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-06-30-ht66-live.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-06-30-ht69-resume-handoff.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-06-30-qa-ht60-baseline.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/SESSION-2026-06-30-qa-ht61-me-hr-audit.md",
+      "status": "canonical",
+      "audience": "maintainer"
+    },
+    {
+      "path": "docs/VOT-INTEGRATION-ASSESSMENT.md",
+      "status": "redirect",
+      "audience": "maintainer"
+    }
   ]
 }

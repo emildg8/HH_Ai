@@ -4,6 +4,7 @@
  *
  *   npm run devops:hunt-day:emil -- status --mode=point
  *   npm run devops:hunt-day:emil -- plan --mode=point --dry-run
+ *   npm run devops:hunt-day:emil -- assess --limit=20
  *   npm run devops:hunt-day:emil -- prep --limit=8
  *   npm run devops:hunt-day:emil -- ship --mode=point --dry-run --limit=1
  *   npm run devops:hunt-day:emil -- ship --mode=point --go --limit=1 --after-ship=watch
@@ -18,6 +19,7 @@
  * Live ship только с --go. Авто-repair в ship запрещён → отдельный repair.
  * Настя: live по умолчанию --mode=basket (point — только после ручного plan).
  * --after-ship=watch: после ok — robot watchdog по id (поверхность 3).
+ * --after-ship=chat-ai: после ok — очередь ИИ-помощника /chat (поверхность 4, без авто-send).
  */
 import {
   buildHuntDayStatus,
@@ -26,10 +28,12 @@ import {
   runHuntDayRepair,
   runHuntDayPrep,
   runHuntDayAfterShipWatch,
+  runHuntDayAfterShipChatAi,
   writeHuntDayJson,
   normalizeHuntDayMode,
   ApplyLaneBusyError,
 } from '../lib/hunt-day-orchestrator.mjs';
+import { buildHuntDayAssess, formatHuntDayAssessRu } from '../lib/hunt-day-assess.mjs';
 import { getPointApplyAutoTracks } from '../lib/point-apply-track-quotas.mjs';
 import { loadPreferences } from '../lib/preferences.mjs';
 
@@ -39,16 +43,27 @@ function usage() {
 Инстанс: npm run devops:hunt-day:emil | devops:hunt-day:anastasia
 
 Команды:
-  status [--mode=point|basket]
+  status [--mode=point|basket] [--sync|--no-sync]
   plan   [--mode=point|basket] [--dry-run] [--limit=10] [--skip-id=] [--only=] [--pack=]
+         [--sync|--no-sync]
+  assess [--limit=20] [--full-tracks] [--tracks=…] [--skip-id=] [--only=]
+         [--sync|--no-sync]
+         Комплексная оценка до ship (gate + site + письмо + квота + pack state). Без --force-only.
+         --full-tracks: все pending в выбранных маршрутах (не весь harvest).
   prep   [--limit=8] [--tracks=…] [--with-probe] [--probe-limit=N]
   ship   [--mode=point|basket] [--dry-run|--go] [--limit=1] [--skip-id=] [--only=] [--pack=]
-         [--after-ship=watch] [--after-ship-wait=45]
+         [--no-prepare-letters|--prepare-letters] [--force-only]
+         [--after-ship=watch|chat-ai] [--after-ship-wait=сек]
+         Live --go: sync обязателен; --no-sync запрещён (отладка: --force-no-sync)
   repair --id=<uuid>
+
+Перед status/plan/assess/ship(--go): merge кэша переговоров; live sync если кэш старше 12ч
+(или --sync). --no-sync на ship --go — только с --force-no-sync.
 
 Без --go ship всегда dry-run. Repair — отдельная фаза (не из ship).
 Настя: live basket (--mode=basket); --pack= не поддержан (только --from-day / --only=).
 --after-ship=watch: после status=ok — robot-recruiter-watch по id (--send-auto, без чипов).
+--after-ship=chat-ai: после status=ok — enqueue + пауза (~25с×2) + hh-chat-ai-queue process --go (ИИ в первую минуту).
 `);
 }
 
@@ -63,8 +78,13 @@ function parseArgs(argv) {
   for (const a of rest) {
     if (a === '--dry-run') opts.dryRun = true;
     else if (a === '--go') opts.go = true;
+    else if (a === '--sync') opts.sync = true;
+    else if (a === '--no-sync') opts.noSync = true;
+    else if (a === '--force-no-sync') opts.forceNoSync = true;
     else if (a === '--no-prepare-letters') opts.noPrepareLetters = true;
     else if (a === '--prepare-letters') opts.prepareLetters = true;
+    else if (a === '--force-only') opts.forceOnly = true;
+    else if (a === '--full-tracks') opts.fullTracks = true;
     else if (a === '--with-probe') opts.withProbe = true;
     else if (a.startsWith('--probe-limit=')) opts.probeLimit = a.slice('--probe-limit='.length);
     else if (a.startsWith('--mode=')) opts.mode = a.slice('--mode='.length);
@@ -118,7 +138,14 @@ async function main() {
 
   try {
     if (command === 'status') {
-      const status = await buildHuntDayStatus({ mode, prefs, huntTracks, skipIds });
+      const status = await buildHuntDayStatus({
+        mode,
+        prefs,
+        huntTracks,
+        skipIds,
+        sync: Boolean(opts.sync),
+        noSync: Boolean(opts.noSync),
+      });
       const outPath = writeHuntDayJson('hunt-day-status-latest.json', status);
       console.log(JSON.stringify(status, null, 2));
       console.log(`[hunt-day] status → ${outPath}`);
@@ -136,10 +163,31 @@ async function main() {
         checkLane: true,
         onlyId: opts.onlyId || '',
         packId: opts.packId || '',
+        sync: Boolean(opts.sync),
+        noSync: Boolean(opts.noSync),
       });
       const outPath = writeHuntDayJson('hunt-day-plan-latest.json', plan);
       console.log(JSON.stringify(plan, null, 2));
       console.log(`[hunt-day] plan → ${outPath}`);
+      return;
+    }
+
+    if (command === 'assess') {
+      const report = await buildHuntDayAssess({
+        prefs,
+        huntTracks,
+        skipIds,
+        limit: Number(opts.limit) || (opts.fullTracks ? 5000 : 20),
+        onlyId: opts.onlyId || '',
+        fullTracks: Boolean(opts.fullTracks),
+        sync: Boolean(opts.sync),
+        noSync: Boolean(opts.noSync),
+      });
+      const outPath = writeHuntDayJson('hunt-day-assess-latest.json', report);
+      console.log(formatHuntDayAssessRu(report));
+      console.log('');
+      console.log(JSON.stringify({ counts: report.counts, byTrack: report.byTrack, scope: report.scope, go: report.go, conditional: report.conditional, negotiationsPrep: report.negotiationsPrep }, null, 2));
+      console.log(`[hunt-day] assess → ${outPath}`);
       return;
     }
 
@@ -175,6 +223,10 @@ async function main() {
         packId: opts.packId || '',
         noPrepareLetters: Boolean(opts.noPrepareLetters),
         prepareLetters: Boolean(opts.prepareLetters),
+        forceOnly: Boolean(opts.forceOnly),
+        noSync: Boolean(opts.noSync),
+        forceNoSync: Boolean(opts.forceNoSync),
+        sync: Boolean(opts.sync),
       });
       console.log(JSON.stringify(result, null, 2));
       console.log(`[hunt-day] ship → ${result.outPath}`);
@@ -190,8 +242,18 @@ async function main() {
         result.afterShipWatch = watch;
         console.log(JSON.stringify({ afterShipWatch: watch }, null, 2));
         if (watch.outPath) console.log(`[hunt-day] after-ship watch → ${watch.outPath}`);
+      } else if (go && afterShip === 'chat-ai') {
+        const chatAi = await runHuntDayAfterShipChatAi({
+          outcomes: result.outcomes,
+          waitSec: Number(opts.afterShipWait) || 25,
+          processGo: true,
+          log: console.log,
+        });
+        result.afterShipChatAi = chatAi;
+        console.log(JSON.stringify({ afterShipChatAi: chatAi }, null, 2));
+        if (chatAi.outPath) console.log(`[hunt-day] after-ship chat-ai → ${chatAi.outPath}`);
       } else if (afterShip && afterShip !== 'off' && afterShip !== 'none') {
-        console.warn(`[hunt-day] неизвестный --after-ship=${afterShip} (ожидается watch|off)`);
+        console.warn(`[hunt-day] неизвестный --after-ship=${afterShip} (ожидается watch|chat-ai|off)`);
       }
 
       process.exit(exitFromOutcomes(result.outcomes, dryRun));
