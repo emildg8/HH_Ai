@@ -20,6 +20,7 @@ import {
 import { answerFromCvHeuristic } from '../lib/hh-questionnaire-cv-fill.mjs';
 import {
   buildAnswerLookup,
+  extractLabelForField,
   resolveAnswerForLiveLabel,
 } from '../lib/hh-employer-questionnaire.mjs';
 import { remapQuestionnaireAnswers } from '../lib/questionnaire-merge.mjs';
@@ -51,6 +52,16 @@ if (rows.length !== 2 || rows[0].answer !== 'Сайты 18+') {
 const empty = { hhApply: { questionnaire: {} } };
 if (recordHasDashboardQuestionnaireAnswers(empty)) {
   console.error('FAIL: пустая запись не должна иметь ответов');
+  process.exit(1);
+}
+
+const unlabeledField = {
+  evaluate(fn, arg) {
+    return fn({ parentElement: null }, arg);
+  },
+};
+if ((await extractLabelForField(unlabeledField)) !== '') {
+  console.error('FAIL: поле без подписи должно возвращать пустую строку');
   process.exit(1);
 }
 
