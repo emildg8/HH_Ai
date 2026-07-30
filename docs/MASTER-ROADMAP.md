@@ -25,13 +25,13 @@
 | **Блокер среды** | Magritte: ship-truth clients default ✅ · при реальном блоке — ручная сверка · stop harvest перед Playwright |
 | **Режим охоты** | **North star:** слот E · ~8–10/день · **l2l3 auto** · tam approval · live только `hunt-day` |
 | **Слот E (сейчас)** | **Bell Integrator** тех **пн 03.08.2026 14:00 МСК** · vac `135444621` / id `b452c494-…` · кейс `my/emil/Интервью/cases/bell-integrator-tech-20260803/` · ссылка на звонок **ещё нет** |
-| **Next step (H)** | Новый чат: [`SESSION-2026-07-30-chat-close-handoff.md`](SESSION-2026-07-30-chat-close-handoff.md) · plan ready после фикса · ship 1–2 через `hunt-day:emil -- ship --go` · не второй Merlion / не Альфа без GO |
+| **Next step (H)** | Новый чат: [`SESSION-2026-07-23-to-07-30-FULL-CHAT-EXTRACT.md`](SESSION-2026-07-23-to-07-30-FULL-CHAT-EXTRACT.md) · plan ready после фикса · ship 1–2 через `hunt-day:emil -- ship --go` · не второй Merlion / не Альфа без GO |
 | **H-TRACKS** | **HT.6** ✅ · **HT.7.1–7.3** ✅ · **HT.7.4 l2l3 auto** ✅ · CV-split [`RESUME-CANON-SPLIT.md`](RESUME-CANON-SPLIT.md) |
 | **Next step (I)** | Bell P5 + суфлёр Swarm/GitFlic · вставить ссылку в слот · hirix follow-up по факту ответа |
 | **Next step (MC QA)** | **4 корзины** · `:3850` |
 | **Профиль охоты** | **инфра-лента** — devops/infra/l2l3/tam · без «узкий/расширенный» |
 
-**Фраза агенту:** читай [`SESSION-2026-07-30-chat-close-handoff.md`](SESSION-2026-07-30-chat-close-handoff.md) · Bell 03.08 14:00 · live только `hunt-day:emil -- ship --go` · targeting `60e67f9` / ship-truth `44baa02`.
+**Фраза агенту:** читай [`SESSION-2026-07-23-to-07-30-FULL-CHAT-EXTRACT.md`](SESSION-2026-07-23-to-07-30-FULL-CHAT-EXTRACT.md) (+ RAW при споре) · Bell 03.08 14:00 · live только `hunt-day:emil -- ship --go` · `60e67f9` / `44baa02`.
 
 ### I-track — prep: три оси закрыты (13.07)
 

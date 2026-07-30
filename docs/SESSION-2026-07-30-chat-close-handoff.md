@@ -1,8 +1,13 @@
-# SESSION 2026-07-30 — закрытие чата (handoff в новый)
+# SESSION 2026-07-30 — закрытие чата (короткий указатель)
+
+> **Полная выжимка всего чата 23–30.07 (не только хвост):**  
+> [`SESSION-2026-07-23-to-07-30-FULL-CHAT-EXTRACT.md`](SESSION-2026-07-23-to-07-30-FULL-CHAT-EXTRACT.md)  
+> **Сырые 342 запроса:** [`archive/2026-07-session-handoffs/CHAT-7d11e720-RAW-USER-QUERIES-BY-DAY.md`](archive/2026-07-session-handoffs/CHAT-7d11e720-RAW-USER-QUERIES-BY-DAY.md)
 
 > **Транскрипт:** [`7d11e720-80da-4421-9d6e-eb6e46d20c0d`](7d11e720-80da-4421-9d6e-eb6e46d20c0d)  
-> **Период активного хвоста:** 29–30.07.2026 (Эмиль, `:3849`)  
 > **Партнёр:** закрыл вкладку → продолжение в **новом чате**. Не переспрашивать фазу.
+
+Ниже — только якоря хвоста 29–30. Всё остальное (23–28: Merlion, Devhunt, hirix, очередь, Настя, TG, ATS…) — в FULL extract.
 
 Связанные срезы уже на диске (читать по задаче):
 
@@ -143,11 +148,9 @@ Gate devops/infra/l2l3 ~148 · remote/hybrid ~116 · ≥70 remote/hybrid ~41 · 
 ## Фраза агенту (скопировать в новый чат)
 
 ```
-Читай docs/SESSION-2026-07-30-chat-close-handoff.md и MASTER «Где мы».
-Bell: слот 2026-08-03 14:00 МСК, vacancy 135444621 / b452c494 — ссылка на звонок ещё нет; кейс my/emil/Интервью/cases/bell-integrator-tech-20260803/.
-Targeting+store-truth в коммите 60e67f9; ship-truth 44baa02.
+Читай docs/SESSION-2026-07-23-to-07-30-FULL-CHAT-EXTRACT.md
+(при споре «что говорили» — RAW в docs/archive/2026-07-session-handoffs/CHAT-7d11e720-RAW-*).
+Bell: 2026-08-03 14:00 МСК, vacancy 135444621 / b452c494 — ссылки на звонок ещё нет.
 Не шипать второй Merlion; Альфа declined; live только hunt-day:emil -- ship --go.
-Не объяснять через git — цепочка причин. Дальше: [твоя задача].
+Не объяснять через git. Дальше: [твоя задача].
 ```
-
-Варианты задач: `покажи ready fresh-tier-A после фикса` · `P5 Bell сделал` · `ссылка Bell: <URL>` · `ship 1–2 tier A`.
