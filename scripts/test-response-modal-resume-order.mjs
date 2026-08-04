@@ -26,6 +26,7 @@ try {
       route.fulfill({
         contentType: 'text/html',
         body: `
+          <meta charset="utf-8">
           <main>
             <h1>Отклик на вакансию</h1>
             ${hasFileInput ? '<input type="file" aria-label="Резюме PDF">' : ''}
