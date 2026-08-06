@@ -1,9 +1,11 @@
 # HH Ai — локальный помощник откликов на hh.ru
 
+> **For recruiters / tech screen:** local automation product — **Playwright** browser E2E, **Node.js** dashboard, **GitHub Actions** CI, portable releases, optional Docker. Demonstrates **internal tooling & test automation** (gates, retries, observability), not a black-box spam bot. Stack: Node.js · Playwright · CI/CD · Windows/Linux install path.
+
 [![Release](https://img.shields.io/github/v/release/emildg8/HH_Ai?label=3.2.0)](https://github.com/emildg8/HH_Ai/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Версия:** 3.2.0 · [**Быстрый старт**](docs/QUICKSTART.md) · [Документация](docs/README.md) · [Скачать](https://github.com/emildg8/HH_Ai/releases/latest) · [Changelog](CHANGELOG.md)
+**Версия:** 3.2.0 · [**Быстрый старт**](docs/QUICKSTART.md) · [Путеводитель по docs](docs/GUIDE-PARTNER.md) · [Оглавление](docs/README.md) · [Скачать](https://github.com/emildg8/HH_Ai/releases/latest) · [Changelog](CHANGELOG.md)
 
 Автоматизация [hh.ru](https://hh.ru): сбор вакансий, LLM-оценка, сопроводительные, отклик через Playwright, дашборд с анкетой и батч-откликами.
 
