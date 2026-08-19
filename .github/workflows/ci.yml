@@ -29,6 +29,9 @@ jobs:
       - name: verify:local (export + PII, без дашборда)
         run: npm run verify:local
 
+      - name: Queue concurrency
+        run: npm run test:store-concurrency
+
       - name: smoke:release (export zip-срез + npm install)
         run: npm run smoke:release
 
