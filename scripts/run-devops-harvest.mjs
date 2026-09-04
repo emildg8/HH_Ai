@@ -3,7 +3,7 @@
  *   npm run devops:harvest
  *   npm run devops:harvest -- --skip-llm
  */
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 
-loadDevOpsEnv();
+loadProfile();
 await import('./harvest.mjs');

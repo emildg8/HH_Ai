@@ -2,9 +2,9 @@
  *   npm run devops:regenerate-letters
  *   npm run devops:regenerate-letters -- --limit=30 --resume
  */
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 
-loadDevOpsEnv();
+loadProfile();
 
 /** Массовый прогон: один запрос на вакансию (бриф — отдельно, в дашборде можно TWO_PHASE=1). */
 if (process.env.COVER_LETTER_TWO_PHASE === undefined) {

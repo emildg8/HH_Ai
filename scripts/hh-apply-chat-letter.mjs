@@ -20,9 +20,9 @@ import readline from 'readline';
 import { loadEnv } from '../lib/load-env.mjs';
 import { meaningfulQuestions } from '../lib/questionnaire-labels.mjs';
 import { mergeQuestionnaire } from '../lib/questionnaire-merge.mjs';
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 loadEnv();
-loadDevOpsEnv();
+loadProfile();
 
 import { sessionProfilePath, DATA_DIR } from '../lib/paths.mjs';
 import { getVacancyRecord, updateVacancyRecord } from '../lib/store.mjs';
@@ -231,7 +231,7 @@ async function main() {
         .split('')
         .reduce((a, c) => a + c.charCodeAt(0), 0)
     );
-    letter = pickCoverLetterFromPool(idx);
+    letter = pickCoverLetterFromPool(idx, { role: rec.title, company: rec.company });
     updateVacancyRecord(rec.id, {
       coverLetter: {
         status: 'approved',
@@ -344,6 +344,29 @@ async function main() {
 
     await assertHhLoggedIn(page, { log: logLine, captchaContext: 'страница вакансии' });
 
+    // Отклик уже был: hh заменяет «Откликнуться» на «Отклик другим резюме»
+    // (верно для любого статуса — отправлен, приглашение, отказ).
+    const alreadyApplied = await page
+      .evaluate(() => {
+        const t = (document.body.innerText || '').toLowerCase();
+        return t.includes('отклик другим резюме') || t.includes('откликнуться повторно');
+      })
+      .catch(() => false);
+
+    if (alreadyApplied) {
+      logLine('[hh-apply-chat] Отклик на эту вакансию уже есть — помечаю и пропускаю.');
+      try {
+        const prevHh = getVacancyRecord(rec.id)?.hhApply || rec.hhApply || {};
+        updateVacancyRecord(rec.id, {
+          hhApply: { ...prevHh, lastAt: new Date().toISOString(), responseSubmitted: true, note: 'already-applied' },
+        });
+      } catch {}
+      await closeContextSafe(ctx, BROWSER_OWNER);
+      process.exit(0);
+    }
+
+
+
     await ensureActivePage('before_click_response');
     const btn = await withStepHeartbeat(logLine, 'открытие формы отклика', () =>
       openVacancyResponseFlow(page, {
@@ -357,15 +380,43 @@ async function main() {
     step('click_response', 'Форма отклика', 32);
     page = (await resolvePageAfterResponseClick(ctx, page)) || page;
     await page.waitForTimeout(600);
+
     await ensureNoCaptchaBlocking(page, { log: logLine, context: 'форма отклика' });
 
-    if (noSubmit) {
-      logLine('[hh-apply-chat] --no-submit: форма открыта, отправку и чат не трогаем.');
+    if (noSubmit || dryRun) {
+      logLine(`[hh-apply-chat] ${dryRun ? '--dry-run' : '--no-submit'}: форма открыта, отправку и чат не трогаем.`);
       if (stayOpen) await waitEnter('Enter — закрыть браузер: ');
       return 0;
     }
 
     page = await ensureActivePage('before_complete_response');
+
+    // Анкета работодателя видна в шапке формы сразу — не тратим время на мастера.
+    const hasQuestionnaire = await page
+      .evaluate(() => {
+        const t = (document.body.innerText || '').toLowerCase();
+        return (
+          t.includes('ответить на несколько вопросов работодателя') ||
+          t.includes('ответьте на вопросы')
+        );
+      })
+      .catch(() => false);
+
+    if (hasQuestionnaire) {
+      logLine('[hh-apply-chat] Анкета работодателя — карточка в раздел «Анкета», пропускаю.');
+      try {
+        updateVacancyRecord(rec.id, {
+          hhApply: {
+            ...(getVacancyRecord(rec.id)?.hhApply || rec.hhApply || {}),
+            questionnaire: { status: 'pending', detectedAt: new Date().toISOString() },
+          },
+        });
+      } catch {}
+      console.log('[hh-apply-batch-skip] анкета: обнаружена на форме');
+      await closeContextSafe(ctx, BROWSER_OWNER);
+      process.exit(HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED);
+    }
+
     step('modal_prepare', 'Мастер отклика', 40);
 
     const formResult = await withStepHeartbeat(logLine, 'мастер отклика (резюме, письмо, отправка)', () =>
@@ -531,6 +582,8 @@ async function main() {
     }
 
     let letterFilledInForm = letter ? await verifyCoverLetterInForm(page, letter) : false;
+    // Форма уже закрыта после отправки — доверяем подтверждению вставки из мастера.
+    if (letter && formResult.letterInForm) letterFilledInForm = true;
     if (letter && formResult.letterInForm && !letterFilledInForm) {
       logLine(
         '[hh-apply-chat] Письмо не в поле сопроводительного (возможно попало в анкету) — отправим в переписку.'
@@ -544,6 +597,13 @@ async function main() {
     logLine(`[hh-apply-chat] Отправка отклика: ${formResult.label}`);
     step('submit_response', 'Отклик отправлен', 72);
     let responseSubmitted = true;
+    // Отметка сразу после отправки: если прервать процесс дальше, отклик не потеряется.
+    try {
+      const prevHhEarly = getVacancyRecord(rec.id)?.hhApply || rec.hhApply || {};
+      updateVacancyRecord(rec.id, {
+        hhApply: { ...prevHhEarly, lastAt: new Date().toISOString(), responseSubmitted: true },
+      });
+    } catch {}
     page = (await waitForActivePage(ctx, page, 5000)) || page;
     await betweenMajorSteps(page).catch(() => {});
 
