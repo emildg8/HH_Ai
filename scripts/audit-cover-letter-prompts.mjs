@@ -3,9 +3,9 @@
  *   npm run devops:audit-letters
  */
 
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 
-loadDevOpsEnv();
+loadProfile();
 
 import { loadQueue } from '../lib/store.mjs';
 import { loadCvBundle } from '../lib/cv-load.mjs';

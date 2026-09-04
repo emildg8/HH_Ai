@@ -5,10 +5,10 @@
 
 import fs from 'fs';
 import { loadEnv } from '../lib/load-env.mjs';
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 
 loadEnv();
-loadDevOpsEnv();
+loadProfile();
 
 import { sessionProfilePath } from '../lib/paths.mjs';
 import { assertHhLoggedIn, isLoggedInOnHh } from '../lib/hh-session-check.mjs';

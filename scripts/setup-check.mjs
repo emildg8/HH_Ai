@@ -6,13 +6,13 @@
 import fs from 'fs';
 import path from 'path';
 import { loadEnv } from '../lib/load-env.mjs';
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 import { ROOT, CV_DIR, getQueueFile } from '../lib/paths.mjs';
 import { listProfiles } from '../lib/load-profile.mjs';
 import { sessionProfilePath } from '../lib/paths.mjs';
 
 loadEnv();
-loadDevOpsEnv();
+loadProfile();
 
 const ok = [];
 const warn = [];
@@ -75,7 +75,7 @@ function main() {
 
   const profilePath = profileEnvPath();
   if (fs.existsSync(profilePath)) pass(`Профиль: ${path.relative(ROOT, profilePath)}`);
-  else action(`npm run profile:init -- --id=devops --title=DevOps`);
+  else action(`npm run profile:init -- --id=<id> --title=<название>`);
 
   const prof = readProfileEnv();
   if (/HH_PROFILE_RESUME_TITLE\s*=\s*\S+/i.test(prof)) pass('HH_PROFILE_RESUME_TITLE задан');
@@ -118,7 +118,7 @@ function main() {
 
   const profiles = listProfiles();
   if (profiles.length > 1) pass(`Профилей: ${profiles.map((p) => p.id).join(', ')}`);
-  else pass(`Активный профиль: ${process.env.HH_PROFILE || 'devops'}`);
+  else pass(`Активный профиль: ${process.env.HH_PROFILE || 'default'}`);
 
   console.log('\n--- Итог ---');
   if (todo.length === 0 && warn.length === 0) {

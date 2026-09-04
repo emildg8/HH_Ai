@@ -1,4 +1,4 @@
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 
-loadDevOpsEnv();
+loadProfile();
 await import('./audit-cover-letter-prompts.mjs');

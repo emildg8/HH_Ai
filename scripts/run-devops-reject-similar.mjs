@@ -3,7 +3,7 @@
  *   npm run devops:reject-similar -- --list
  *   npm run devops:reject-similar -- --apply
  */
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 
-loadDevOpsEnv();
+loadProfile();
 await import('./reject-similar.mjs');

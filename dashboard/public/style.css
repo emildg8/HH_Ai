@@ -2181,3 +2181,18 @@ html[data-card-density='full'] .card-para--desc {
     max-height: none;
   }
 }
+
+/* --- local fix: Firefox/Safari схлопывают min-height: max(100%, ...) в grid --- */
+.card {
+  min-height: auto !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+.card-body,
+.card-scroll {
+  overflow: visible !important;
+  min-height: auto !important;
+}
+#list {
+  align-items: start !important;
+}

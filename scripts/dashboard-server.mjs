@@ -8,11 +8,11 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { loadEnv } from '../lib/load-env.mjs';
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 import { parseHarvestPeriodDays, harvestPeriodLabel } from '../lib/hh-search-period.mjs';
 import { getBrowserLockInfo, clearStaleBrowserLock } from '../lib/chromium-session.mjs';
 loadEnv();
-loadDevOpsEnv();
+loadProfile();
 
 const cliPort = process.argv.find((a) => a.startsWith('--port='));
 if (cliPort) process.env.DASHBOARD_PORT = cliPort.slice('--port='.length);
@@ -1105,7 +1105,7 @@ const server = http.createServer(async (req, res) => {
       if (questionnaireAuto || (usePoolLetter && process.env.HH_QUESTIONNAIRE_AUTO === '1')) {
         childArgs.push('--questionnaire-auto');
       }
-      loadDevOpsEnv();
+      loadProfile();
       child = spawn(process.execPath, childArgs, {
         cwd: ROOT,
         detached: true,
@@ -1184,7 +1184,7 @@ const server = http.createServer(async (req, res) => {
       logFd,
       `\n======== HARVEST ${new Date().toISOString()} period=${harvestPeriodLabel(periodDays)} ========\n`
     );
-    loadDevOpsEnv();
+    loadProfile();
     const child = spawn(process.execPath, [harvestScript], {
       cwd: ROOT,
       detached: true,
@@ -1297,7 +1297,7 @@ const server = http.createServer(async (req, res) => {
       if (maxScore > 0) args.push(`--max-score=${maxScore}`);
       args.push(`--batch-scope=${batchScope}`);
     }
-    loadDevOpsEnv();
+    loadProfile();
     const child = spawn(process.execPath, args, {
       cwd: ROOT,
       detached: true,

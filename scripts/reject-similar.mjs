@@ -8,9 +8,9 @@
  *   npm run devops:reject-similar -- --learn   # только правила из ваших причин отклонения
  */
 
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 
-loadDevOpsEnv();
+loadProfile();
 
 import { loadQueue } from '../lib/store.mjs';
 import { rejectSimilarPendingFromReason } from '../lib/reject-similar-apply.mjs';

@@ -3,7 +3,7 @@
  *   npm run devops:rescore
  *   npm run devops:rescore -- --all-pending --limit=50
  */
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 
-loadDevOpsEnv();
+loadProfile();
 await import('./rescore-queue.mjs');

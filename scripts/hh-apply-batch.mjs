@@ -12,9 +12,9 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { loadDevOpsEnv } from '../lib/load-devops-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 
-loadDevOpsEnv();
+loadProfile();
 import { loadQueue, updateVacancyRecord } from '../lib/store.mjs';
 import {
   applyRateLimitsSnapshot,
@@ -228,6 +228,9 @@ async function main() {
   const candidates = filterForBatchScope(
     loadQueue()
       .filter((x) => x.status === status)
+      .filter((x) => !(x.hhApply && (x.hhApply.responseSubmitted || x.hhApply.lastAt)))
+      .filter((x) => !x.hhApply?.archived)
+      .filter((x) => !x.hhApply?.retryAfter || new Date(x.hhApply.retryAfter) <= new Date())
       .filter((x) => x.url)
       .filter((x) => !processedIds.has(x.id)),
     batchScope,
@@ -316,9 +319,13 @@ async function main() {
         break;
       }
 
-      let letter = String(rec.coverLetter?.approvedText || '').trim();
+      // HH_LETTER_ALWAYS_FROM_POOL=1 — игнорировать кэш письма в карточке.
+      let letter =
+        String(process.env.HH_LETTER_ALWAYS_FROM_POOL || '').trim() === '1'
+          ? ''
+          : String(rec.coverLetter?.approvedText || '').trim();
       if (!letter && usePoolLetters) {
-        letter = pickCoverLetterFromPool(letterIdx++);
+        letter = pickCoverLetterFromPool(letterIdx++, { role: rec.title, company: rec.company });
         const now = new Date().toISOString();
         updateVacancyRecord(rec.id, {
           coverLetter: {
@@ -363,7 +370,11 @@ async function main() {
           failed,
           skipped,
         });
-        const exitCode = await runApplyForId(rec.id, { tailorResume, dryRun });
+        const applyResult = await runApplyForId(rec.id, { tailorResume, dryRun });
+        const exitCode =
+          typeof applyResult === 'object' && applyResult !== null
+            ? applyResult.exitCode
+            : applyResult;
         if (exitCode === HH_APPLY_EXIT_QUESTIONNAIRE_DEFERRED) {
           skipped++;
           logBatch(
@@ -390,6 +401,19 @@ async function main() {
         }
         if (isBatchRecoverableApplyError(e.message)) {
           skipped++;
+          try {
+            const archived = /снята с публикации|в архиве|недоступна для отклика/i.test(String(e.message || ''));
+            updateVacancyRecord(rec.id, {
+              hhApply: {
+                ...(rec.hhApply || {}),
+                lastFailAt: new Date().toISOString(),
+                ...(archived
+                  ? { archived: true }
+                  : { retryAfter: new Date(Date.now() + 3600_000).toISOString() }),
+              },
+            });
+            if (archived) logBatch(`  «${rec.title}» — в архиве, исключаю из очереди`);
+          } catch {}
           logBatch(`Пропуск ${stepNum}/${planned}: ${e.message}`);
           batchProgress.step(done, `Пропуск ${stepNum}/${planned}`, { done, failed, skipped });
           continue;

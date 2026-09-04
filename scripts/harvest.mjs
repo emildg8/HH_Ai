@@ -17,6 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { loadEnv } from '../lib/load-env.mjs';
+import { loadProfile } from '../lib/load-profile.mjs';
 import { loadSearchKeywords } from '../lib/load-keywords.mjs';
 import {
   sessionProfilePath,
@@ -55,6 +56,7 @@ import { addVacancyRecord, knownVacancyIds } from '../lib/store.mjs';
 import { scoreVacancyLocally, resolveScoreMode } from '../lib/local-vacancy-score.mjs';
 
 loadEnv();
+loadProfile();
 /** CLI после loadEnv: переопределяет .env для одного запуска (иначе override в load-env перебивает shell). */
 for (const a of process.argv) {
   const mLimit = /^--session-limit=(\d+)$/.exec(a);
@@ -234,10 +236,18 @@ async function main() {
         urlsFound: urls.length,
         currentKeyword: key,
       });
-      await page.goto(buildSearchUrl(key), { waitUntil: 'domcontentloaded', timeout: 60_000 });
-      await ensureNoCaptchaBlocking(page, { context: 'поиск (harvest)' });
-      await sleepMs(randomIntInclusive(searchJitterMin, searchJitterMax));
-      const found = await collectVacancyCardsFromSearch(page);
+      const maxPages = Math.max(1, Number(process.env.HH_SEARCH_PAGES || 1) || 1);
+      const found = [];
+      for (let pg = 0; pg < maxPages; pg++) {
+        if (found.length >= perKeyLimit) break;
+        const url = buildSearchUrl(key) + (pg ? `&page=${pg}` : '');
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+        await ensureNoCaptchaBlocking(page, { context: 'поиск (harvest)' });
+        await sleepMs(randomIntInclusive(searchJitterMin, searchJitterMax));
+        const chunk = await collectVacancyCardsFromSearch(page);
+        if (!chunk.length) break;
+        found.push(...chunk);
+      }
       if (!found.length) {
         const hint = await page
           .evaluate(() => {
